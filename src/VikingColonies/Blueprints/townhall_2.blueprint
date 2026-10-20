@@ -1,0 +1,30 @@
+#Name:Town Hall camp (level 2)
+#Creator:VikingColonies
+#Description:"Town Hall camp, level 2: VikingColonies' design (made by tools/blueprints/vcbp)."
+#Category:VikingColonies
+#Pieces
+vc_colony_hall;Misc;0;0;0;0;0;0;1;"";1;1;1
+piece_logbench01;Furniture;-4.1;0.025;6.28;0;0.707107;0;0.707107;"";1;1;1
+fire_pit;Building;0;0;6.28;0;0;0;1;"";1;1;1
+piece_logbench01;Furniture;0;0.025;10.38;0;0;0;1;"";1;1;1
+piece_maypole;Building;0;-0.018;14.28;0;0;0;1;"";1;1;1
+piece_logbench01;Furniture;4.1;0.025;6.28;0;0.707107;0;0.707107;"";1;1;1
+piece_groundtorch_wood;Building;-2.3;0.652;1.28;0;0;0;1;"";1;1;1
+piece_groundtorch_wood;Building;2.3;0.652;1.28;0;0;0;1;"";1;1;1
+wood_pole_log;Building;-6;1;0.28;0;0;0;1;"";1;1;1
+wood_pole_log;Building;-4;1;0.28;0;0;0;1;"";1;1;1
+wood_pole2;Building;-2;1;-0.72;0;0;0;1;"";1;1;1
+wood_pole2;Building;-2;1;1.28;0;0;0;1;"";1;1;1
+woodwall;Building;-1;1;-0.72;0;0;0;1;"";1;1;1
+woodwall;Building;1;1;-0.72;0;0;0;1;"";1;1;1
+wood_pole2;Building;2;1;-0.72;0;0;0;1;"";1;1;1
+wood_pole2;Building;2;1;1.28;0;0;0;1;"";1;1;1
+itemstand;Furniture;-5.5;1.4;0.53;0;0;0;1;"";1;1;1
+wood_beam;Building;-5;1.4;0.28;0;0;0;1;"";1;1;1
+itemstand;Furniture;-4.5;1.4;0.53;0;0;0;1;"";1;1;1
+wood_roof;Building;-1;2;0.28;0;0;0;1;"";1;1;1
+wood_roof;Building;1;2;0.28;0;0;0;1;"";1;1;1
+wood_pole;Building;-2;2.5;-0.72;0;0;0;1;"";1;1;1
+wood_wall_half;Building;-1;2.5;-0.72;0;0;0;1;"";1;1;1
+wood_wall_half;Building;1;2.5;-0.72;0;0;0;1;"";1;1;1
+wood_pole;Building;2;2.5;-0.72;0;0;0;1;"";1;1;1

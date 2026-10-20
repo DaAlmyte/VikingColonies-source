@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VikingColonies.Core/VikingColonies.Core.csproj" />
+    <Project Path="src/VikingColonies/VikingColonies.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VikingColonies.Tests/VikingColonies.Tests.csproj" />
+  </Folder>
+</Solution>

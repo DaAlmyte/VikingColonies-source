@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">$(APPDATA)\r2modmanPlus-local\Valheim\profiles\ColonyDev</ProfileDir>
+    <ManagedDir>$(ValheimDir)\valheim_Data\Managed</ManagedDir>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+</Project>
