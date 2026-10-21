@@ -58,5 +58,32 @@ namespace VikingColonies.Tests
             Assert.Equal(0.5f, Meals.WorkSpeed(hungry: true, hungrySpeed: 0.5f));
             Assert.Equal(0.1f, Meals.WorkSpeed(hungry: true, hungrySpeed: 0f));   // never quite still
         }
+    
+        // 1.4.2, a player's report: food put in after the meal was missed wasn't eaten until the next day ("Doesn't this
+        // Town Hall have any food to eat?"). A hungry settler looks again during the day, now and then.
+        [Fact]
+        public void A_hungry_settler_looks_again_for_food_the_same_day()
+        {
+            Assert.True(Meals.LooksAgain(hungry: true, lastMealDay: 5, today: 5, night: false, sinceLooked: Meals.HungryLookSeconds));
+            Assert.False(Meals.LooksAgain(hungry: true, lastMealDay: 5, today: 5, night: false, sinceLooked: Meals.HungryLookSeconds - 1f));
+        }
+
+        // The review of 1.4.2: a settler loaded again (the player away and back) "served at the table" never looked again.
+        [Fact]
+        public void A_look_again_goes_ahead_even_while_breakfast_says_it_serves_the_meal()
+        {
+            Assert.True(Meals.ShouldLook(due: false, again: true, atTable: true));
+            Assert.True(Meals.ShouldLook(due: true, again: false, atTable: false));
+            Assert.False(Meals.ShouldLook(due: true, again: false, atTable: true));   // breakfast serves today's meal
+            Assert.False(Meals.ShouldLook(due: false, again: false, atTable: false));
+        }
+
+        [Fact]
+        public void A_fed_settler_or_a_night_or_another_day_is_no_look_again()
+        {
+            Assert.False(Meals.LooksAgain(hungry: false, lastMealDay: 5, today: 5, night: false, sinceLooked: 999f));
+            Assert.False(Meals.LooksAgain(hungry: true, lastMealDay: 5, today: 5, night: true, sinceLooked: 999f));
+            Assert.False(Meals.LooksAgain(hungry: true, lastMealDay: 4, today: 5, night: false, sinceLooked: 999f));   // that's a meal due
+        }
     }
 }

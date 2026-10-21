@@ -8,6 +8,28 @@ namespace VikingColonies.Tests
     // can be brought back as himself (from the 2026-10 review: "citizen data lives on the body").
     public class KeepsakeTests
     {
+        [Fact]
+        public void A_keepsake_doesnt_change_with_his_mood_his_meals_or_his_day()
+        {
+            // The whole-mod review of 1.4.1: mood, its reasons, the last meals, the evening and the day he was hit were kept,
+            // so every mood change rewrote the keepsakes, and the whole Town Hall record went to every player again.
+            var calm = new CitizenRecord { Id = "a1", Name = "Sigrid", Job = "forager", Woodcutting = 12f };
+            var stirred = CitizenRecord.Decode(calm.Encode());
+            stirred.Mood = 80;   // joyful
+            stirred.WhyMood = "a feast";
+            stirred.LastMeals = new List<string> { "Raspberry", "CookedMeat" };
+            stirred.EveningDay = 7;
+            stirred.EveningCompany = true;
+            stirred.HitDay = 7;
+            stirred.Arriving = true;
+            stirred.JoblessSince = 3;
+            Assert.Equal(Keepsake.Of(calm), Keepsake.Of(stirred));
+            // Who he is still counts.
+            var promoted = CitizenRecord.Decode(calm.Encode());
+            promoted.Woodcutting = 13f;
+            Assert.NotEqual(Keepsake.Of(calm), Keepsake.Of(promoted));
+        }
+
         private static CitizenRecord Ivar() => new CitizenRecord
         {
             Id = "abc", Name = "Ivar", Model = 0, Hair = "Hair3", Beard = "Beard2", ColonyId = "col1", ColonyPos = new[] { 1f, 2f, 3f },

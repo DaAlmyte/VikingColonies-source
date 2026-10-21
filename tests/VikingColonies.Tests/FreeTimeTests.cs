@@ -160,6 +160,31 @@ namespace VikingColonies.Tests
             Assert.Equal(FreeTimeRules.ChatGap, ColonyRules.Distance(meeting.First, meeting.Second), 3);
         }
 
+        // 1.4.2, the player: "I don't want them talking to each other through a wall." Halfway first; if a wall stands
+        // between those spots, beside the asker, then beside the other.
+        [Fact]
+        public void A_chat_has_three_places_to_meet_halfway_by_the_asker_and_by_the_other()
+        {
+            GroundPoint a = new GroundPoint(0, 0), b = new GroundPoint(10, 0);
+            List<ChatMeeting> meetings = ChatPairing.Meetings(a, b);
+            Assert.Equal(3, meetings.Count);
+            Assert.Equal(ChatPairing.Meeting(a, b).First.X, meetings[0].First.X, 3);
+            Assert.Equal(0f, meetings[1].First.X, 3);
+            Assert.Equal(FreeTimeRules.ChatGap, meetings[1].Second.X, 3);
+            Assert.Equal(10f - FreeTimeRules.ChatGap, meetings[2].First.X, 3);
+            Assert.Equal(10f, meetings[2].Second.X, 3);
+            Assert.All(meetings, m => Assert.Equal(FreeTimeRules.ChatGap, ColonyRules.Distance(m.First, m.Second), 3));
+        }
+
+        // The review of 1.4.2: each spot at its own settler's height let the wall check climb over a wall on a slope.
+        [Fact]
+        public void A_meetings_two_spots_are_checked_at_one_height()
+        {
+            Assert.Equal(11f, ChatPairing.MeetingHeight(0, myHeight: 10f, theirHeight: 12f));   // halfway: between them
+            Assert.Equal(10f, ChatPairing.MeetingHeight(1, 10f, 12f));   // beside the asker
+            Assert.Equal(12f, ChatPairing.MeetingHeight(2, 10f, 12f));   // beside the other
+        }
+
         [Fact]
         public void Two_on_the_same_spot_still_get_two_spots()
         {
@@ -212,7 +237,7 @@ namespace VikingColonies.Tests
         [Fact]
         public void Every_topic_has_at_least_four_lines_and_there_are_twelve_general_ones()
         {
-            foreach (TalkTopic topic in System.Enum.GetValues(typeof(TalkTopic)).Cast<TalkTopic>().Where(t => t != TalkTopic.Wait))
+            foreach (TalkTopic topic in System.Enum.GetValues(typeof(TalkTopic)).Cast<TalkTopic>().Where(t => t != TalkTopic.Wait && t != TalkTopic.Trade))   // a trade: per job (LivelyTalkTests)
                 Assert.True(SmallTalk.Count(topic, "") >= 4, topic.ToString());
             foreach (string wait in new[] { "$vc_status_no_trees", "$vc_status_crops_growing", "$vc_status_nothing_to_pick", "$vc_status_no_work" })
                 Assert.True(SmallTalk.Count(TalkTopic.Wait, wait) >= 4, wait);
@@ -317,6 +342,42 @@ namespace VikingColonies.Tests
             Assert.Equal("Crops growing (on a bench)", ActivityWords.Hover("Crops growing", "on a bench"));
             Assert.Equal("on a bench", ActivityWords.Hover("", "on a bench"));
             Assert.Equal("Crops growing", ActivityWords.Hover("Crops growing", ""));
+        }
+
+        // The hub's store pictures (2026-10-20): "Evening by the fire (the evening by the fire)".
+        [Fact]
+        public void A_doing_that_says_what_the_status_says_isnt_said_twice()
+        {
+            Assert.Equal("Evening by the fire", ActivityWords.Hover("Evening by the fire", "the evening by the fire"));
+            Assert.Equal("Evening by the fire", ActivityWords.Hover("Evening by the fire", "by the fire"));
+            Assert.Equal("Evening at the Town Hall (talking with Bjorn)", ActivityWords.Hover("Evening at the Town Hall", "talking with Bjorn"));
+        }
+
+        // Its review: at a hall with no fire the hover read "Evening at the Town Hall (no fire is lit outdoors) (the evening
+        // by the fire)". The evening's status says it all, at a fire or at the hall: its doing is never shown.
+        [Fact]
+        public void The_evenings_doing_never_shows_in_the_hover_its_status_says_it()
+        {
+            Assert.False(ActivityWords.InHover(ActivityWords.Token(Leisure.Evening)));
+            Assert.True(ActivityWords.InHover(ActivityWords.Token(Leisure.Chat)));
+            Assert.True(ActivityWords.InHover(ActivityWords.Token(Leisure.Seat)));
+        }
+    
+        // 1.4.2's review: a fire's hover said settlers keep it burning when they never would.
+        [Fact]
+        public void A_fire_is_tended_only_within_reach_of_a_hut_or_the_Town_Hall_in_free_time()
+        {
+            Assert.Equal(FreeTimeRules.Radius + 3f, FreeTimeRules.FireReach);
+            Assert.True(FreeTimeRules.Tends(tendFires: true, freeTime: true, infiniteFuel: false, fromNearestHome: 18f));
+            Assert.False(FreeTimeRules.Tends(tendFires: true, freeTime: true, infiniteFuel: false, fromNearestHome: 18.5f));
+        }
+
+        [Fact]
+        public void No_fire_is_tended_with_free_time_or_fire_tending_off_or_one_that_never_burns_out()
+        {
+            Assert.False(FreeTimeRules.Tends(tendFires: false, freeTime: true, infiniteFuel: false, fromNearestHome: 5f));
+            Assert.False(FreeTimeRules.Tends(tendFires: true, freeTime: false, infiniteFuel: false, fromNearestHome: 5f));
+            Assert.False(FreeTimeRules.Tends(tendFires: true, freeTime: true, infiniteFuel: true, fromNearestHome: 5f));
         }
     }
 }

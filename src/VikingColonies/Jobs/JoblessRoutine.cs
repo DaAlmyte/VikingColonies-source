@@ -31,7 +31,7 @@ namespace VikingColonies.Jobs
             if (headingToWork && r.WorkplacePos != null)
             {
                 // Employed, but the hut isn't loaded here: walk towards it.
-                citizen.Status = "$vc_status_working";
+                citizen.Status = "$vc_status_heading_to_work";
                 if (ai.GoTo(Citizen.ToVector3(r.WorkplacePos), 3f)) ai.Idle();
                 return;
             }
@@ -66,7 +66,7 @@ namespace VikingColonies.Jobs
             citizen.Status = "$vc_status_delivering";
             if (Time.time - _dropOffSince > DropOffPatience)
             {
-                Log.Info($"{citizen.CitizenName} couldn't put his load in the Town Hall's chest; he keeps it for now");
+                Log.Info($"{citizen.CitizenName} couldn't put their load in the Town Hall's chest; they keep it for now");
                 Pause();
                 return false;
             }

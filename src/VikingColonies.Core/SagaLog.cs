@@ -34,7 +34,7 @@ namespace VikingColonies.Core
         public const int MaxEntries = 60;
 
         private static readonly HashSet<string> s_kinds = new HashSet<string>
-            { "arrived", "died", "built", "level", "recalled", "rescued", "hired", "left", "returned", "came", "repelled", "takendown", "raised" };
+            { "arrived", "died", "built", "level", "recalled", "rescued", "hired", "left", "returned", "came", "repelled", "takendown", "raised", "bossfell" };
 
         private readonly List<SagaEntry> _entries = new List<SagaEntry>();   // oldest first
 

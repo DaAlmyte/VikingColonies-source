@@ -32,7 +32,7 @@ namespace VikingColonies.Citizens
                 string status = Localization.instance.Localize(citizen.Status ?? "");
                 // In free time, what he's doing (0.14): "Crops growing (talking with Bjorn)".
                 // Carrying (0.21): "carrying 10 Raspberries to the Town Hall", the item and the building in the player's language.
-                if (ActivityWords.Decode(citizen.Doing, out string doing, out string partner, out string partnerId))
+                if (ActivityWords.Decode(citizen.Doing, out string doing, out string partner, out string partnerId) && ActivityWords.InHover(doing))
                     status = ActivityWords.Hover(status, SafeText.Format(Localization.instance.Localize(doing),   // the pattern is the settler's record's
                         Localization.instance.Localize(partner), Localization.instance.Localize(partnerId)));
                 __result = string.IsNullOrEmpty(status) ? citizen.DisplayName : citizen.DisplayName + "\n" + status;
@@ -83,6 +83,26 @@ namespace VikingColonies.Citizens
                     __result = SettlerSkill.DamageFactor(citizen.Record.Fighting, UnityEngine.Random.value) * citizen.WorkSpeed;   // weaker when hungry
             }
         }
+
+        /// <summary>
+        /// Settlers are spared by the console's kill commands and debug mode's K (1.4.2, a player's report: K killed the
+        /// whole colony). Only that blow: anything else hurts them as before.
+        /// </summary>
+        [HarmonyPatch]
+        private static class CheatKillHook
+        {
+            [HarmonyPatch(typeof(Character), nameof(Character.Damage)), HarmonyPrefix]
+            private static bool Spare(Character __instance, HitData hit)
+            {
+                if (hit == null || __instance == null || __instance.GetComponent<Citizen>() == null) return true;
+                if (!SettlerSafety.CheatKill(hit.m_damage.m_damage, !hit.m_attacker.IsNone())) return true;
+                CheatKillsSparedForTest++;
+                return false;
+            }
+        }
+
+        /// <summary>Console kill blows a settler was spared (the self-test reads it).</summary>
+        internal static int CheatKillsSparedForTest;
 
         /// <summary>
         /// A guard's blow (1.1), on the computer running him: on one of his targets it is practice at Fighting; on anything else

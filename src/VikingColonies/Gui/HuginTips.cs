@@ -147,6 +147,8 @@ namespace VikingColonies.Gui
         private static readonly Vector3 AboveHead = new Vector3(0f, 2.3f, 0f);
         private readonly Dictionary<Citizen, string> _shown = new Dictionary<Citizen, string>();
         private readonly GreetMemory _greeted = new GreetMemory();
+        /// <summary>Greetings picked this look, used up (marked for the day) only once they show (the 1.4.1 review).</summary>
+        private readonly Dictionary<Citizen, int> _greetPending = new Dictionary<Citizen, int>();
         private readonly Dictionary<Citizen, float> _greetUntil = new Dictionary<Citizen, float>();
         private readonly Dictionary<Citizen, string> _greeting = new Dictionary<Citizen, string>();
         private readonly Dictionary<Citizen, float> _talkNext = new Dictionary<Citizen, float>();
@@ -165,6 +167,8 @@ namespace VikingColonies.Gui
         /// <summary>The last words shown above any settler's head here, and the last line of small talk (the self-test reads them).</summary>
         public static string LastWords { get; private set; } = "";
         public static string LastTalk { get; private set; } = "";
+        /// <summary>The settler whose line of small talk was shown last ('vc_cam follow talking').</summary>
+        internal static Citizen LastSpeaker { get; private set; }
         public static string LastGreeting { get; private set; } = "";
 
         private void Update()
@@ -262,6 +266,24 @@ namespace VikingColonies.Gui
                 var kept = new HashSet<Citizen>(nearest.Select(i => seen[i]));
                 foreach (Citizen hidden in now.Keys.Where(c => !kept.Contains(c)).ToList()) now.Remove(hidden);
             }
+            // A greeting is used up only when it shows: one kept off the screen by the cap comes again (the 1.4.1 review).
+            foreach (KeyValuePair<Citizen, int> greet in _greetPending)
+            {
+                if (greet.Key == null) continue;
+                if (player != null && now.TryGetValue(greet.Key, out string said) && _greeting.TryGetValue(greet.Key, out string greeting) && said == greeting)
+                {
+                    _greeted.Mark(greet.Key.Id, player.GetPlayerID(), greet.Value);
+                    LastGreeting = greeting;
+                    GreetingsShown++;
+                    LogForPictures("greet", greet.Key.CitizenName, "", greeting);
+                }
+                else
+                {
+                    _greetUntil.Remove(greet.Key);
+                    _greeting.Remove(greet.Key);
+                }
+            }
+            _greetPending.Clear();
             foreach (KeyValuePair<Citizen, string> gone in _shown.Where(s => s.Key != null && !now.ContainsKey(s.Key)).ToList())
                 chat?.ClearNpcText(gone.Key.gameObject);
             // Drawn again only when the words change or the game dropped them: a redraw fades in anew (review: they blinked).
@@ -291,12 +313,10 @@ namespace VikingColonies.Gui
             int today = EnvMan.instance != null && ZNet.instance != null ? EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()) : 0;
             if (!HelpWords.IsResting(record.Status) && _greeted.ShouldGreet(c.Id, player.GetPlayerID(), today, distance))
             {
-                _greeted.Mark(c.Id, player.GetPlayerID(), today);
                 string greeting = string.Format(Localization.instance.Localize("$vc_greet"), player.GetPlayerName());
                 _greetUntil[c] = now + GreetSeconds;
                 _greeting[c] = greeting;
-                LastGreeting = greeting;
-                GreetingsShown++;
+                _greetPending[c] = today;   // used up once it shows (Refresh)
                 return greeting;
             }
             if (distance > TalkMetres || !ActivityWords.Decode(c.Doing, out string doing, out string partner, out string partnerId)) return "";
@@ -313,7 +333,10 @@ namespace VikingColonies.Gui
                 bool asks = partnerId.Length > 0 ? ChatPairing.Asks(c.Id, partnerId) : ChatPairing.Asks(record.Name, partner);
                 if ((slot % 2 == 0) != asks) return "";
                 TalkShown++;
-                return LastTalk = Say(context, SmallTalk.Seed(c.Id, slot));
+                LastSpeaker = c;
+                LastTalk = Say(context, SmallTalk.Seed(c.Id, slot));
+                LogForPictures("talk", record.Name, partner, LastTalk);
+                return LastTalk;
             }
             if (_talkUntil.TryGetValue(c, out float talkUntil) && now < talkUntil) return _talkLine[c];
             if (!_talkNext.TryGetValue(c, out float next))
@@ -327,7 +350,19 @@ namespace VikingColonies.Gui
             _talkUntil[c] = now + LineSeconds;
             _talkLine[c] = line;
             TalkShown++;
+            LastSpeaker = c;
+            LogForPictures("talk", record.Name, "", line);
             return LastTalk = line;
+        }
+
+        /// <summary>
+        /// While vc_cam has the camera (a picture run), each greeting and line of small talk is logged, so a scenario can
+        /// wait for one and take the picture while it shows: "talk: Runa (Erik): …". Never otherwise.
+        /// </summary>
+        private static void LogForPictures(string kind, string name, string partner, string line)
+        {
+            if (!DevTools.CamCommand.IsOn) return;
+            Log.Event($"{kind}: {name}{(string.IsNullOrEmpty(partner) ? "" : $" ({partner})")}: {line}");
         }
 
         /// <summary>An unhappy or miserable settler's worst reason, in the player's words ("We lost Ingrid."); "" for none.</summary>
@@ -364,6 +399,8 @@ namespace VikingColonies.Gui
             context.Wet = EnvMan.IsWet();
             context.WaitStatus = record.Status ?? "";
             context.Jobless = !record.IsEmployed;
+            // 1.4.2: their trade to talk about (a boss's fall comes from the saga, as news that ends).
+            context.Job = record.IsEmployed ? record.Job ?? "" : "";
             return context;
         }
 

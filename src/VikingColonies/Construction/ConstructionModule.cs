@@ -498,7 +498,16 @@ namespace VikingColonies.Construction
             var ops = new List<GroundOp>();
             Footprint site = SiteFootprint;
             if (site == null) return ops;
-            ops.AddRange(GroundPlan.Plan(site, target, SiteSurvey.GroundAt, (x, z, r) => SiteSurvey.NearOtherBuilding(this, x, z, r)));
+            var keptOff = new List<string>();
+            List<GroundOp> onSite = GroundPlan.Plan(site, target, SiteSurvey.GroundAt, (x, z, r) =>
+            {
+                Piece other = SiteSurvey.OtherBuildingNear(this, x, z, r);
+                if (other != null) keptOff.Add($"({x:0.0}, {z:0.0}) by {Utils.GetPrefabName(other.gameObject)} at ({other.transform.position.x:0.0}, {other.transform.position.z:0.0})");
+                return other != null;
+            });
+            Log.Info($"{_building.TypeId} {_building.Id}: the site is levelled to {target:0.00} with {onSite.Count} spots" +
+                     (keptOff.Count > 0 ? $"; {keptOff.Count} left as they are, near another building: {string.Join(", ", keptOff)}" : ""));
+            ops.AddRange(onSite);
             foreach (Footprint landing in DoorLandings)
             {
                 List<GroundOp> front = GroundPlan.Plan(landing, target, SiteSurvey.GroundAt, (x, z, r) => SiteSurvey.NearOtherBuilding(this, x, z, r));

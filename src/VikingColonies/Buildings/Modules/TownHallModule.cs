@@ -46,9 +46,17 @@ namespace VikingColonies.Buildings
         public ColonyRoster Roster =>
             _nview != null && _nview.IsValid() ? ColonyRoster.Decode(_nview.GetZDO().GetString(RosterKey, "")) : new ColonyRoster();
 
-        /// <summary>What the colony keeps of each member, so one whose body was lost can be brought back (see <see cref="Keepsake"/>).</summary>
+        /// <summary>
+        /// What the colony keeps of each member, so one whose body was lost can be brought back (see <see cref="Keepsake"/>).
+        /// Read again only when the Town Hall's saved data has changed (1.4.2: every settler read it every 2 s). Shared: to
+        /// change it, decode a copy (as the roster's update does).
+        /// </summary>
         public Keepsakes Keepsakes =>
-            _nview != null && _nview.IsValid() ? Keepsakes.Decode(_nview.GetZDO().GetString(KeepsakesKey, "")) : new Keepsakes();
+            _nview != null && _nview.IsValid()
+                ? _keepsakes.Get(_nview.GetZDO().DataRevision, () => Keepsakes.Decode(_nview.GetZDO().GetString(KeepsakesKey, "")))
+                : new Keepsakes();
+
+        private readonly RevisionCache<Keepsakes> _keepsakes = new RevisionCache<Keepsakes>();
 
         /// <summary>The Citizens tab's Bring back: asks the Town Hall's owner to bring a missing member back from his keepsake.</summary>
         public void RequestBringBack(string citizenId) => _nview.InvokeRPC(RpcBringBack, citizenId ?? "");
@@ -222,6 +230,24 @@ namespace VikingColonies.Buildings
                 HallRules.Cost(next), item => contents.TryGetValue(item, out int n) ? n : 0,
                 item => ObjectDB.instance != null && ObjectDB.instance.GetItemPrefab(item) != null,
                 TownHallLevels.UnreadableParts(ColonyConfig.HallLevelCost(next)).Count, seenLevel);
+        }
+
+        /// <summary>
+        /// Test tool (vc_build halllevel): the hall's level set at once, with no trophies or materials, and its camp woken, as a
+        /// Raise does (the hub, 2026-10-20: `vc_build upgrade` built a level-5 hall's camp at level 1). No saga line, no
+        /// celebration and no "rose to level" log line: a scenario waits for "vc_build halllevel:" instead.
+        /// </summary>
+        internal string SetLevelForTest(int level)
+        {
+            if (_nview == null || !_nview.IsValid() || _building == null) return "no Town Hall here.";
+            if (!_nview.IsOwner()) _nview.ClaimOwnership();   // a test tool: this computer takes the hall (its review: a dead end otherwise)
+            int was = _building.Level;
+            level = TownHallLevels.Clamp(level);
+            _building.SetLevel(level);
+            ApplyLevel();
+            GetComponent<Construction.ConstructionModule>()?.CampSoon();
+            Log.Info($"vc_build halllevel: the Town Hall of colony {_building.ColonyId} goes from level {was} to {level}");
+            return $"the Town Hall is now level {level} (from {was}); its camp grows a level at a time while a Builder's Hut allows it, and never goes down.";
         }
 
         /// <summary>Test tool: a Raise as a player who saw <paramref name="seenLevel"/> (a double click).</summary>
@@ -428,6 +454,7 @@ namespace VikingColonies.Buildings
             if (!Founded && _ticksSinceLoad >= 2 && ZNetScene.instance.IsAreaReady(transform.position)) Found();
             else if (Founded) AdoptNearby();   // citizens who lost their colony, or v1 settlers whose hall is gone
             if (Founded) TrackRaid();
+            if (Founded) TrackBoss();
             RefreshRoster();
         }
 
@@ -501,7 +528,7 @@ namespace VikingColonies.Buildings
             int today = EnvMan.instance != null ? EnvMan.instance.GetDay() : 0;
 
             var seen = new HashSet<string>();
-            Keepsakes keepsakes = Keepsakes;
+            Keepsakes keepsakes = Keepsakes.Decode(zdo.GetString(KeepsakesKey, ""));   // its own copy: it changes it
             bool keptChanged = false;
             foreach (Citizen c in Citizen.All)
             {
@@ -587,6 +614,23 @@ namespace VikingColonies.Buildings
             string guards = GuardDuty.Names(GuardDuty.Guarding(Roster.Entries));   // the guards on duty (1.2)
             if (guards.Length > 0) Record("repelled", guards);
             else Record("repelled");
+        }
+
+        /// <summary>
+        /// A boss's fall reaches the colony (1.4.2): the first time this Town Hall's owner sees one further along the way
+        /// than the last it heard of, the saga tells it, and settlers talk of it for a few days (the review of polish round
+        /// 2: talk read from the world's keys went on forever). A colony founded after a fall hears of it then.
+        /// </summary>
+        private void TrackBoss()
+        {
+            if (ZoneSystem.instance == null) return;
+            ZDO zdo = _nview.GetZDO();
+            string heard = zdo.GetString(SaveKeys.BossHeard, "");
+            string latest = TownHallLevels.LatestBeaten(key => ZoneSystem.instance.GetGlobalKey(key));
+            if (!TownHallLevels.BossNews(heard, latest)) return;
+            zdo.Set(SaveKeys.BossHeard, latest);
+            Record("bossfell", latest);
+            Log.Event($"Colony {_building.ColonyId}: word came that {latest} has fallen");
         }
 
         /// <summary>A Valheim raid is running and its area holds this Town Hall.</summary>
@@ -730,7 +774,7 @@ namespace VikingColonies.Buildings
                 IReadOnlyList<ArrivalCandidate> all = rings.SelectMany(r => r).ToList();
                 LastEdgeSeen = all[pick].Seen;
                 LastUnseenUsable = unseenUsable;
-                if (LastEdgeSeen) Log.Info($"A newcomer comes from where a player can see him: no spot out of view has a way in ({unseenUsable} usable out of view).");
+                if (LastEdgeSeen) Log.Info($"A newcomer comes from where a player can see them: no spot out of view has a way in ({unseenUsable} usable out of view).");
                 return spots[pick];
             }
             Log.Info($"No spot at the colony's edge to walk in from ({unloaded} not loaded, {wet} in water, {noWay} with no way in): by the Town Hall.");

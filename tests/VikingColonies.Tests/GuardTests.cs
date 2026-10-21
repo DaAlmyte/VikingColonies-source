@@ -79,6 +79,31 @@ namespace VikingColonies.Tests
     public class GuardRulesTests
     {
         [Fact]
+        public void The_reason_a_target_is_out_of_reach_is_named()
+        {
+            // 1.4.1's release run: two archers gave a Greyling up at once "(no blow landed for 0 s, or out of reach)",
+            // and nobody could tell which.
+            Assert.Equal("it is swimming", GuardRules.WhyOutOfReach(heightAboveGround: 0f, swimming: true, flying: false));
+            Assert.Equal("it is flying", GuardRules.WhyOutOfReach(0f, false, true));
+            Assert.Equal("it is 3.5 m above the ground", GuardRules.WhyOutOfReach(3.5f, false, false));
+            Assert.Null(GuardRules.WhyOutOfReach(1f, false, false));   // within reach
+            Assert.Equal(GuardRules.Reachable(3.5f, false, false), GuardRules.WhyOutOfReach(3.5f, false, false) == null);
+        }
+
+        [Fact]
+        public void An_archer_shoots_what_swims_flies_or_stands_high_up_within_a_bowshot()
+        {
+            // 1.4.1's release run: archers left a swimming Neck alone that their arrows could have reached (polish round 2).
+            Assert.True(GuardRules.Reachable(heightAboveGround: 0f, swimming: true, flying: false, ranged: true));
+            Assert.True(GuardRules.Reachable(6f, false, true, ranged: true));
+            Assert.True(GuardRules.Reachable(GuardRules.MaxShootUp, false, false, ranged: true));
+            Assert.False(GuardRules.Reachable(GuardRules.MaxShootUp + 1f, false, false, ranged: true));
+            Assert.Null(GuardRules.WhyOutOfReach(0f, true, false, ranged: true));
+            Assert.Equal("it is 16 m above the ground", GuardRules.WhyOutOfReach(16f, false, false, ranged: true));
+            Assert.False(GuardRules.Reachable(0f, true, false));   // a sword still can't
+        }
+
+        [Fact]
         public void A_guard_takes_what_is_left_in_his_load_back_to_a_chest_on_his_rounds()
         {
             // The whole-mod review of 1.4.1: bolts left in his load at the alarm stayed there for good.
@@ -520,6 +545,17 @@ namespace VikingColonies.Tests
                 new RosterEntry { Name = "Astrid", Job = SaveKeys.FarmerJob, Workplace = "f", Status = "$vc_status_on_watch" },
             };
             Assert.Equal(new[] { "Ulf" }, GuardDuty.Guarding(entries));
+        }
+
+        // The review of polish round 2: an archer after a Neck swimming far out walked to the shore and stood there till
+        // the give-up time, then took it again later. With the way ended short of bow range for a moment, it is let go.
+        [Fact]
+        public void An_archer_whose_way_ends_short_of_bow_range_lets_it_go()
+        {
+            Assert.True(GuardRules.OutOfBowReach(wayEnded: true, gap: 40f, shootRange: 25f, endedFor: GuardRules.WayEndedSeconds));
+            Assert.False(GuardRules.OutOfBowReach(wayEnded: true, gap: 40f, shootRange: 25f, endedFor: GuardRules.WayEndedSeconds - 1f));
+            Assert.False(GuardRules.OutOfBowReach(wayEnded: false, gap: 40f, shootRange: 25f, endedFor: 60f));   // still walking
+            Assert.False(GuardRules.OutOfBowReach(wayEnded: true, gap: 20f, shootRange: 25f, endedFor: 60f));    // in range: shoots
         }
 
         [Fact]

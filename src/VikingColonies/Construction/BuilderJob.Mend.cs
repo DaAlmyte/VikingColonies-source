@@ -60,7 +60,7 @@ namespace VikingColonies.Construction
                 bool beyond = there && away > ColonyConfig.BuilderReach.Value;
                 if (beyond || stuck)
                 {
-                    Log.Info($"{Citizen.CitizenName} can't get near the {Utils.GetPrefabName(_mend.gameObject)} at {at}; he leaves it for now");
+                    Log.Info($"{Citizen.CitizenName} can't get near the {Utils.GetPrefabName(_mend.gameObject)} at {at}; they leave it for now");
                     _badMends.Add(IdOf(_mend), Time.time);
                     _mend = null;
                     _walkStuck.Reset();

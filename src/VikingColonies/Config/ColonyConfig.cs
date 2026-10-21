@@ -10,6 +10,7 @@ namespace VikingColonies.Config
     {
         public static ConfigEntry<bool> VerboseLog;
         public static ConfigEntry<bool> HuginTips;
+        public static ConfigEntry<bool> AskForFeedback;
         public static ConfigEntry<bool> WordsAboveHeads;
         public static ConfigEntry<bool> SmallTalk;
         public static ConfigEntry<bool> FreeTime;
@@ -210,6 +211,11 @@ namespace VikingColonies.Config
                 "Hugin, the raven, explains the colony as you play: the first Town Hall, a hut without a Builder's Hut, the first " +
                 "things the builder needs, the first worker, night, hunger and a death. Each tip once per character, and only with " +
                 "the game's tutorials on. Each player's own.", synced: false);
+            AskForFeedback = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.AskForFeedback, true,
+                "Once on this computer, at a good moment (a hut near you reaching level 2, or two hours with a colony), a small " +
+                "window asks what you think of the mod, with links to its Discord and its GitHub page. Nothing is sent from the " +
+                "game. Off: it never asks; the Feedback button in the Town Hall's window stays. On a server, the server's setting is used.",
+                synced: true);
             WordsAboveHeads = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.WordsAboveHeads, true,
                 "A settler near you who needs you says so above their head (\"Needs 12 Wood\", \"Storage full\", \"Hungry\"). " +
                 "Each player's own.", synced: false);

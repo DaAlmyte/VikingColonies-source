@@ -16,6 +16,7 @@ namespace VikingColonies.Core
         public const string ColonyPos = "vc_colony_pos";
         public const string ColonyLevel = "vc_colony_level";
         public const string HallRaisedAt = "vc_hall_raised_at";
+        public const string BossHeard = "vc_boss_heard";   // the latest boss's fall the colony heard of (1.4.2's small talk)
         public const string BuildingType = "vc_building_type";
         public const string Level = "vc_level";
         public const string DataVersion = "vc_data_version";

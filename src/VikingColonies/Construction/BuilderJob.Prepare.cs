@@ -36,6 +36,8 @@ namespace VikingColonies.Construction
         private bool _toldHeldRock;
         private string _standFor;   // the rock part his stand spot and aim are for (looked for once, not every frame)
         private string _fromHere;   // the rock part he breaks from where he stands: he couldn't walk up to it
+        private string _fromHereOf;   // the part the walks back below are counted for
+        private int _fromHereWalkBacks;   // times he walked back to it, moved off (RockWork.KeepsFromHere)
         private Vector3 _standAim, _standSpot;
         private readonly Cooldown _askAgain = new Cooldown(RetrySeconds);
         private readonly Cooldown _toolCheck = new Cooldown(ToolCheckSeconds);
@@ -301,7 +303,7 @@ namespace VikingColonies.Construction
                 Bounds box = rockBox.Value;
                 Log.Info($"{Citizen.CitizenName} goes for {Utils.GetPrefabName(thing.Root)} ({box.center.x:0.0}, {box.center.y:0.0}, {box.center.z:0.0}; " +
                          $"{box.size.x:0.0} x {box.size.y:0.0} x {box.size.z:0.0} m): aims at ({_standAim.x:0.0}, {_standAim.y:0.0}, {_standAim.z:0.0}), " +
-                         $"stands at ({_standSpot.x:0.0}, {_standSpot.y:0.0}, {_standSpot.z:0.0}); he is at {Citizen.transform.position}");
+                         $"stands at ({_standSpot.x:0.0}, {_standSpot.y:0.0}, {_standSpot.z:0.0}); they are at {Citizen.transform.position}");
             }
             Vector3 at = rockPart ? _standAim : WorkPoint(thing);
             bool behind = thing.Kind == ClearKind.Tree && _fallPlanned && !_treeFromAnywhere;
@@ -314,8 +316,19 @@ namespace VikingColonies.Construction
         {
             if (_fromHere == thing.Key)
             {
-                Ai.Idle();   // he breaks it from where he stands (RockWork.FromHere)
-                return true;
+                // He breaks it from where he stands (RockWork.FromHere), while it is still in reach: moved off (a hop, a
+                // nudge), he walks up to it again instead of swinging at the air (1.4.1's deferred minors, polish round 2).
+                Bounds? reach = RockBox(thing);
+                Vector3 here = Citizen.transform.position;
+                float off = reach.HasValue ? Vector3.Distance(here, reach.Value.ClosestPoint(here)) : float.MaxValue;
+                if (RockWork.KeepsFromHere(reach.HasValue, off, _fromHereWalkBacks))
+                {
+                    Ai.Idle();
+                    return true;
+                }
+                _fromHere = null;
+                _fromHereWalkBacks++;
+                Log.Info($"{Citizen.CitizenName} is {off:0.0} m off {Utils.GetPrefabName(thing.Root)}: walks back to it ({_fromHereWalkBacks} of {RockWork.MaxWalkBacks})");
             }
             if (Ai.GoTo(at, stop))
             {
@@ -331,13 +344,15 @@ namespace VikingColonies.Construction
                 float distance = rockBox.HasValue ? Vector3.Distance(me, rockBox.Value.ClosestPoint(me)) : float.MaxValue;
                 if (RockWork.FromHere(true, rockBox.HasValue, distance))
                 {
-                    Log.Info($"{Citizen.CitizenName} can't get round to {Utils.GetPrefabName(thing.Root)}; breaks it from where he stands, {distance:0.0} m off");
+                    Log.Info($"{Citizen.CitizenName} can't get round to {Utils.GetPrefabName(thing.Root)}; breaks it from where they stand, {distance:0.0} m off");
+                    if (_fromHereOf != thing.Key) _fromHereWalkBacks = 0;   // a new part: its walks back start afresh
+                    _fromHereOf = thing.Key;
                     _fromHere = thing.Key;
                     return true;
                 }
                 if (behindTree)
                 {
-                    Log.Info($"{Citizen.CitizenName} can't get behind {Utils.GetPrefabName(thing.Root)}; he fells it from where he can get to");
+                    Log.Info($"{Citizen.CitizenName} can't get behind {Utils.GetPrefabName(thing.Root)}; they fell it from where they can get to");
                     _treeFromAnywhere = true;
                     return false;
                 }
@@ -373,8 +388,8 @@ namespace VikingColonies.Construction
                         Vector3 fromTrunk = Citizen.transform.position - thing.Root.transform.position;
                         fromTrunk.y = 0f;
                         Log.Info($"{Citizen.CitizenName} fells {Utils.GetPrefabName(thing.Root)}: it is to fall towards ({_fallDir.x:0.0}, {_fallDir.z:0.0}); " +
-                                 $"he stands {Vector3.Angle(fromTrunk, new Vector3(_fallDir.x, 0f, _fallDir.z)):0} degrees from that, {fromTrunk.magnitude:0.0} m from the trunk" +
-                                 (_treeFromAnywhere ? " (from where he could get to: behind it was out of reach)" : ""));
+                                 $"they stand {Vector3.Angle(fromTrunk, new Vector3(_fallDir.x, 0f, _fallDir.z)):0} degrees from that, {fromTrunk.magnitude:0.0} m from the trunk" +
+                                 (_treeFromAnywhere ? " (from where they could get to: behind it was out of reach)" : ""));
                     }
                     SiteClearer.Chop(thing, _toolCopy, Citizen.Body, _fallDir);
                     break;
@@ -465,8 +480,20 @@ namespace VikingColonies.Construction
         /// 1.4.1's builder: the boulder's rocks were rocks in one piece, and he was sent to their pivots, inside the boulder,
         /// where no way led). Null for anything else.
         /// </summary>
-        private static Bounds? RockBox(SiteThing thing) =>
-            thing.Area != null ? thing.Area.bounds : thing.Kind == ClearKind.Rock ? SolidBounds(thing.Root) : null;
+        private Bounds? RockBox(SiteThing thing)
+        {
+            if (thing.Area != null) return thing.Area.bounds;
+            if (thing.Kind != ClearKind.Rock) return null;
+            // The last rock's shape is kept: it doesn't change until it breaks, and looking up every collider each frame
+            // made garbage (1.4.1's deferred minors, polish round 2).
+            if (thing.Root != null && thing.Root == _rockBoxRoot) return _rockBoxOf;
+            _rockBoxRoot = thing.Root;
+            _rockBoxOf = SolidBounds(thing.Root);
+            return _rockBoxOf;
+        }
+
+        private GameObject _rockBoxRoot;
+        private Bounds? _rockBoxOf;
 
         /// <summary>What a thing's solid colliders take up together; null when it has none.</summary>
         private static Bounds? SolidBounds(GameObject root)
@@ -655,7 +682,7 @@ namespace VikingColonies.Construction
                                  $"({GroundPlan.Stone(_groundOps, GroundShaper.StonePerCubicMetre)} {GroundShaper.StoneItem})");
                     else
                     {
-                        if (_groundPass > MaxGroundPasses) Log.Info($"{Citizen.CitizenName}: the {_site.Building.TypeId} site is as flat as he gets it");
+                        if (_groundPass > MaxGroundPasses) Log.Info($"{Citizen.CitizenName}: the {_site.Building.TypeId} site is as flat as they get it");
                         _smoothSpots = _groundPass > 1   // smooth the edges he changed, but not next to another building
                             ? _site.SmoothSpots()
                             : new List<Vec3>();

@@ -26,7 +26,7 @@ namespace VikingColonies.Tests
             // News comes first: a death is talked about before his temper.
             Assert.Equal(TalkTopic.Mourn, SmallTalk.Topic(new TalkContext { Trait = Trait.Grumpy, DeadName = "Ulf" }, () => 0.1));
             Assert.Equal("$vc_talk_cheerful_1", SmallTalk.Line(TalkTopic.Cheerful, "", 0).Token);
-            Assert.Equal(4, SmallTalk.Count(TalkTopic.Grumpy, ""));
+            Assert.Equal(6, SmallTalk.Count(TalkTopic.Grumpy, ""));   // 4 until 1.4.2
         }
 
         [Fact]

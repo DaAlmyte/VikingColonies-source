@@ -205,14 +205,43 @@ namespace VikingColonies.DevTools
                 ActivityWords.Decode(talker.Doing, out string talkerDoing, out string talkerWith);
                 ActivityWords.Decode(friend != null ? friend.Doing : "", out _, out string friendWith);
                 int gestures = settlers.Sum(c => c.GetComponent<SettlerPose>().GesturesPlayed) - gesturesBefore;
+                SettlerPose talkerPose = talker.GetComponent<SettlerPose>();
                 Check($"Two settlers chat, facing each other, with gestures ({talker.CitizenName} with '{talkerWith}', " +
-                      $"{(friend != null ? friend.CitizenName : "nobody")} with '{friendWith}'; {gestures} gestures)",
+                      $"{(friend != null ? friend.CitizenName : "nobody")} with '{friendWith}'; {gestures} gestures; " +
+                      $"{talker.CitizenName} now {Routine(talker).Doing}, pose {talkerPose.Current} held {talkerPose.Held}; " +
+                      $"{settlers[3].CitizenName} now {Routine(settlers[3]).Doing})",
                     friend != null && talkerDoing == ActivityWords.Token(Leisure.Chat) && talkerWith == friend.CitizenName
                     && friendWith == talker.CitizenName && Facing(talker, friend) && Facing(friend, talker) && gestures > 0);
                 yield return new WaitForSeconds(15f);
                 Citizen still = Routine(talker).Partner;
                 Check($"The chat lasts (15 s on: {talker.CitizenName} talking with {(still != null ? still.CitizenName : "nobody")})",
                     friend != null && still == friend && Routine(friend).Partner == talker);
+
+                // 1.4.2, the player: no chatting through a wall. Two crossed walls halfway between two spots 6 m apart, off
+                // to the side: they'd meet beside the first, the way between clear; then the walls go.
+                Vector3 wallAt = Player.m_localPlayer.transform.position + new Vector3(0f, 0f, 9f);
+                if (ZoneSystem.instance != null) wallAt.y = ZoneSystem.instance.GetGroundHeight(wallAt);
+                // A metre up: the 1.4.2 release run's walls stood with their middle on the ground and reached only 1 m up, so
+                // the chest-high line passed over them. 1 m up they cross it, wherever the piece's pivot is.
+                GameObject wallPrefab = ZNetScene.instance.GetPrefab("woodwall");
+                GameObject wallA = wallPrefab != null ? Object.Instantiate(wallPrefab, wallAt + Vector3.up * 1f, Quaternion.identity) : null;
+                GameObject wallB = wallPrefab != null ? Object.Instantiate(wallPrefab, wallAt + Vector3.up * 1f, Quaternion.identity) : null;
+                if (wallB != null) wallB.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+                yield return new WaitForSeconds(0.5f);   // the walls' colliders are in the physics scene
+                Vector3 chatLeft = wallAt + new Vector3(-3f, 0f, 0f), chatRight = wallAt + new Vector3(3f, 0f, 0f);
+                bool met = FreeTimeRoutine.ChooseMeeting(chatLeft, chatRight, out ChatMeeting meetPlace);
+                bool beside = met && Mathf.Abs(meetPlace.First.X - chatLeft.x) < 0.05f && Mathf.Abs(meetPlace.First.Z - chatLeft.z) < 0.05f;
+                bool open = wallA != null && wallB != null && !Physics.Linecast(chatLeft + Vector3.up * 1.2f, chatRight + Vector3.up * 1.2f, LayerMask.GetMask("piece"));
+                // What the wall is, for a failure to explain itself: its colliders' height above the ground, and their layers.
+                Collider[] wallCols = wallA != null ? wallA.GetComponentsInChildren<Collider>() : new Collider[0];
+                string wallShape = wallCols.Length == 0 ? "no colliders" :
+                    $"{wallCols.Min(c => c.bounds.min.y) - wallAt.y:0.0} to {wallCols.Max(c => c.bounds.max.y) - wallAt.y:0.0} m up, layers " +
+                    string.Join("/", wallCols.Select(c => LayerMask.LayerToName(c.gameObject.layer)).Distinct().ToArray());
+                if (wallA != null) ZNetScene.instance.Destroy(wallA);
+                if (wallB != null) ZNetScene.instance.Destroy(wallB);
+                Check($"With a wall halfway between two settlers they'd meet beside one of them, not through it (walls up {wallA != null && wallB != null}, " +
+                      $"the wall in the way {!open} ({wallShape}), met {met}, beside the first {beside})",
+                    wallA != null && wallB != null && !open && beside);
 
                 // 4. Greeting and small talk: the player walks up to the chatting pair (or was greeted already on the way).
                 int talkBefore = SettlerWords.TalkShown;
@@ -248,13 +277,21 @@ namespace VikingColonies.DevTools
                 Vector3 satAt = sitter.transform.position;
                 Transform seatWas = sitterPose.Point;
                 sitter.RequestRecall();
-                yield return new WaitForSeconds(2f);
-                float fromBench = Utils.DistanceXZ(sitter.transform.position, satAt);   // the spot by the Town Hall can be near the bench
+                // Watched for 2 s: up and away at some moment counts (the 1.4.2 release run: moved 4 m to the Town Hall, they
+                // sat down on the same bench seat again within the 2 s, its only free one).
+                bool leftSeat = false;
+                float fromBench = 0f;
+                for (float t = 0f; t < 2f; t += 0.25f)
+                {
+                    yield return new WaitForSeconds(0.25f);
+                    if (!sitterPose.Held || sitterPose.Point != seatWas) leftSeat = true;
+                    fromBench = Mathf.Max(fromBench, Utils.DistanceXZ(sitter.transform.position, satAt));   // the spot by the Town Hall can be near the bench
+                }
                 // Off the seat he was on (his free time starts again where he lands: he may sit down nearby, run 37 took
                 // the next seat of the same bench).
-                Check($"Recalled from a seat, he stands up and goes (was seated {wasSeated}; pose {sitterPose.Current}, held {sitterPose.Held}, " +
-                      $"on the same seat {sitterPose.Point == seatWas}, {fromBench:0.0} m from where he sat)",
-                    wasSeated && sitterPose.Point != seatWas && fromBench > 0.3f);
+                Check($"Recalled from a seat, they stand up and go (was seated {wasSeated}; left the seat {leftSeat}, now pose {sitterPose.Current}, " +
+                      $"held {sitterPose.Held}; up to {fromBench:0.0} m from where they sat)",
+                    wasSeated && leftSeat && fromBench > 0.3f);
 
                 // 6. A seated worker gets work.
                 ColonyConfig.ForagerWorkRadius.Value = 10f;   // the test's bush, not the meadow's
@@ -330,6 +367,9 @@ namespace VikingColonies.DevTools
                     Check($"A settler keeps the fire fed from the Town Hall's wood ({tender.CitizenName}: fuel 1 -> {fuelNow:0.0} of {fire.m_maxFuel:0}; " +
                           $"wood {woodBefore} -> {woodAfter})",
                         fuelNow > fire.m_maxFuel / 2f && woodAfter < woodBefore && woodAfter >= FireFuel.Keep);
+                    string fireHover = fire.GetHoverText() ?? "";
+                    Check($"The fire's hover says the colony keeps it burning from its chests (1.4.2: '{fireHover.Replace("\n", " / ")}')",
+                        HiddenRules.FireLine(fire).Length > 0 && fireHover.Contains(HiddenRules.FireLine(fire)));
                 }
                 else Check("A settler keeps the fire fed (no fire, Town Hall chest or jobless settler to test with)", false);
 
@@ -511,6 +551,37 @@ namespace VikingColonies.DevTools
                     && Utils.DistanceXZ(newcomer.transform.position, hall.transform.position) <= 10f && came != null
                     && hoverOnTheWay.Contains(Localization.instance.Localize("$vc_status_arriving")));
                 if (newcomer != null) settlers.Add(newcomer);
+
+                // 12b. A boss's fall reaches the colony (1.4.2): the saga tells it once, and settlers talk of it for a few days.
+                // A world with no boss down gets Eikthyr's key for a moment, and everything is put back after.
+                ZDO hallZdo = townHall.GetComponent<ZNetView>().GetZDO();
+                bool anyDown = TownHallLevels.LatestBeaten(key => ZoneSystem.instance.GetGlobalKey(key)).Length > 0;
+                string heardWas = hallZdo.GetString(SaveKeys.BossHeard, "");
+                if (anyDown)
+                {
+                    string latestDown = TownHallLevels.LatestBeaten(key => ZoneSystem.instance.GetGlobalKey(key));
+                    for (float t = 0f; hallZdo.GetString(SaveKeys.BossHeard, "") != latestDown && t < 10f; t += 0.5f) yield return new WaitForSeconds(0.5f);
+                    Check($"A boss's fall reaches the colony: this world's latest is heard of ({latestDown}; heard '{hallZdo.GetString(SaveKeys.BossHeard, "")}')",
+                        hallZdo.GetString(SaveKeys.BossHeard, "") == latestDown);
+                }
+                else
+                {
+                    ZoneSystem.instance.SetGlobalKey("defeated_eikthyr");
+                    for (float t = 0f; hallZdo.GetString(SaveKeys.BossHeard, "") != "$enemy_eikthyr" && t < 10f; t += 0.5f) yield return new WaitForSeconds(0.5f);
+                    int bossDay = EnvMan.instance.GetDay();
+                    SagaEntry fell = townHall.Saga.Page(0, 10).FirstOrDefault(e => e.Kind == "bossfell" && e.Args.Count > 0 && e.Args[0] == "$enemy_eikthyr");
+                    TalkContext bossTalk = SmallTalk.FromSaga(townHall.Saga, bossDay, "nobody");
+                    TalkContext laterTalk = SmallTalk.FromSaga(townHall.Saga, bossDay + SmallTalk.MournDays + 1, "nobody");
+                    int fellLines = townHall.Saga.Page(0, SagaLog.MaxEntries).Count(e => e.Kind == "bossfell");
+                    yield return new WaitForSeconds(4f);   // a tick later: no second line for the same boss
+                    int fellLinesAfter = townHall.Saga.Page(0, SagaLog.MaxEntries).Count(e => e.Kind == "bossfell");
+                    ZoneSystem.instance.RemoveGlobalKey("defeated_eikthyr");
+                    hallZdo.Set(SaveKeys.BossHeard, heardWas);
+                    Check($"A boss's fall reaches the colony once: the saga tells it and settlers talk of it for {SmallTalk.MournDays} days, then not " +
+                          $"(saga '{(fell != null ? SagaText.Line(fell) : "")}', lines {fellLines} -> {fellLinesAfter}; talk '{bossTalk.BossToken}' then '{laterTalk.BossToken}')",
+                        fell != null && fellLinesAfter == fellLines && bossTalk.BossToken == "$enemy_eikthyr" && laterTalk.BossToken == ""
+                        && SagaText.Line(fell).Contains(Localization.instance.Localize("$enemy_eikthyr")));
+                }
 
                 // 13. Who he is: a trait and a trade in the hover; a settler from before 0.16 gets them from his id, once.
                 Citizen old = settlers.FirstOrDefault(c => c != null && !c.Record.IsEmployed);

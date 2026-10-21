@@ -58,7 +58,7 @@ namespace VikingColonies.Construction
             bool another = ChooseOrder(_site) != null;
             if (!OrderPatience.MoveOn(waiting, WaitOnPlayerSeconds, another, _waitLevel, ConstructionModule.HighestStaffedBuilderHutLevel(Citizen.ColonyId))) return;
             Log.Info($"{Citizen.CitizenName} leaves the {_site.Building.TypeId} {_site.Building.Id} site for now: it waited {waiting:0} s on the player " +
-                     $"({Localization.instance.Localize(Citizen.Status)}); {(another ? "he works on another site" : "a better builder can take it")} " +
+                     $"({Localization.instance.Localize(Citizen.Status)}); {(another ? "they work on another site" : "a better builder can take it")} " +
                      $"and comes back in {OrderPatience.AsideSeconds / 60:0} minutes");
             _setAside.Add(_site.Building.Id, Time.time);
             _asideFirst[_site.Building.Id] = _site.Order?.First ?? 0;

@@ -19,6 +19,8 @@ namespace VikingColonies.Citizens
 
         private float _timer = CheckSeconds;
         private float _lookingSince = -1f;
+        /// <summary>When a hungry settler last looked for food (Meals.LooksAgain).</summary>
+        private float _hungryLookedAt = float.NegativeInfinity;
         private readonly CarryLoad _plate = new CarryLoad();
 
         /// <param name="atTable">His breakfast routine serves today's meal (0.15): this only eats for him when it gave up.</param>
@@ -35,11 +37,17 @@ namespace VikingColonies.Citizens
                 citizen.MarkMeal(today, hungry: false);   // he came fed: the player gets a day to stock food
                 return;
             }
-            if (!Meals.Due(r.LastMealDay, today, EnvMan.IsNight()) || atTable)
+            // Hunger seen for the first time here (a load, a test, another computer that ran him): the wait starts now.
+            if (r.Hungry && float.IsNegativeInfinity(_hungryLookedAt))   // each at their own moment, not all in one frame
+                _hungryLookedAt = Time.time - (SmallTalk.Seed(r.Id ?? "", 0) % 20);
+            if (!r.Hungry) _hungryLookedAt = float.NegativeInfinity;
+            bool again = Meals.LooksAgain(r.Hungry, r.LastMealDay, today, EnvMan.IsNight(), Time.time - _hungryLookedAt);
+            if (!Meals.ShouldLook(Meals.Due(r.LastMealDay, today, EnvMan.IsNight()), again, atTable))
             {
                 _lookingSince = -1f;
                 return;
             }
+            if (again) _hungryLookedAt = Time.time;
             if (_lookingSince < 0f) _lookingSince = Time.time;
             var stock = new Dictionary<string, int>();   // all the colony's food
             var spare = new Dictionary<string, int>();   // what buildings don't keep (0.21)
@@ -70,8 +78,14 @@ namespace VikingColonies.Citizens
                 return;
             }
             if (food != null && Time.time - _lookingSince < PatienceSeconds) return;   // the chest is busy: he asks again
+            _hungryLookedAt = Time.time;
+            if (again)   // still nothing: still hungry, and he looks again in a while
+            {
+                _lookingSince = -1f;
+                return;
+            }
             citizen.MarkMeal(today, hungry: true);
-            Log.Info($"{r.Name} found nothing to eat (day {today}); he's hungry.");
+            Log.Info($"{r.Name} found nothing to eat (day {today}); they're hungry.");
         }
     }
 }

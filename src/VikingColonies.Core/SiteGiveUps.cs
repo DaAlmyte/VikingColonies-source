@@ -50,5 +50,17 @@ namespace VikingColonies.Core
         public const float FromHereReach = 4f;
 
         public static bool FromHere(bool stuck, bool rockPart, float distance) => stuck && rockPart && distance <= FromHereReach;
+
+        /// <summary>How far past <see cref="FromHereReach"/> breaking from here still holds (no flapping at the line).</summary>
+        public const float KeepMargin = 1f;
+        /// <summary>Walks back to a part, after which he breaks it from wherever he is (his blow lands where he aims).</summary>
+        public const int MaxWalkBacks = 3;
+
+        /// <summary>
+        /// Whether he goes on breaking a part from where he stands (the review of polish round 2): within reach and a metre,
+        /// or once he has walked back to it <see cref="MaxWalkBacks"/> times (nudged off before every swing, he never stopped).
+        /// </summary>
+        public static bool KeepsFromHere(bool rockPart, float distance, int walkBacks) =>
+            rockPart && (distance <= FromHereReach + KeepMargin || walkBacks >= MaxWalkBacks);
     }
 }

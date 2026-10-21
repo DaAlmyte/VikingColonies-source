@@ -6,7 +6,8 @@ namespace VikingColonies.Core
     /// <summary>
     /// What the colony keeps of a settler so one whose body was lost can come back as himself: who he is, his looks, his
     /// colony, job, home and skill levels. Not what he was doing (status, load, practice towards the next level, hunger),
-    /// so it changes only when who he is changes. From the 2026-10 review: the citizen's data lived only on the body.
+    /// nor how he feels or his day (mood and its reasons, meals, the evening, a hit, arriving: 1.4.2, the whole-mod review
+    /// of 1.4.1), so it changes only when who he is changes. From the 2026-10 review: the citizen's data lived only on the body.
     /// </summary>
     public static class Keepsake
     {
@@ -23,6 +24,14 @@ namespace VikingColonies.Core
             kept.Hungry = false;
             kept.LastMealDay = Meals.NeverAte;
             kept.HallLostAt = ColonyGrace.NotLost;
+            kept.Mood = global::VikingColonies.Core.Mood.Unknown;
+            kept.WhyMood = "";
+            kept.LastMeals = new List<string>();
+            kept.EveningDay = CitizenRecord.NoDay;
+            kept.EveningCompany = false;
+            kept.HitDay = CitizenRecord.NoDay;
+            kept.Arriving = false;
+            kept.JoblessSince = CitizenRecord.NoDay;
             return kept.Encode();
         }
 

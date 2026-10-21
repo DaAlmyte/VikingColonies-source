@@ -236,7 +236,7 @@ namespace VikingColonies.Citizens
             }
             if (!_point || Vector3.Distance(transform.position, _point.position) > SlipDistance)
             {
-                Log.Info($"SettlerPose: {name} lost his seat; he stands up");
+                Log.Info($"SettlerPose: {name} lost their seat; they stand up");
                 Stand();
                 return;
             }

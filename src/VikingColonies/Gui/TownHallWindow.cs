@@ -68,7 +68,9 @@ namespace VikingColonies.Gui
         private float _needsAt = float.NegativeInfinity;
 
         protected override string Title => "$vc_town_hall";
-        protected override float Width => 640f;
+        protected override float Width => 720f;   // 1.4.2: room for Feedback in the bottom row
+        // The bottom row, centred (1.4.2): Sound the alarm 180, Close 140, Report a problem 170, Feedback 100, 10 apart.
+        protected override float CloseX => -50f;
         protected override float Height => 690f;
 
         protected override void Build(Transform root)
@@ -140,7 +142,7 @@ namespace VikingColonies.Gui
             RectTransform needsRect = _ordersNeeds.GetComponent<RectTransform>();
             needsRect.anchoredPosition = new Vector2(needsRect.anchoredPosition.x - 80f, needsRect.anchoredPosition.y);
             // Hand over (0.23): what the chosen order (else the first) still needs, from your bag into this chest.
-            _orderHandOver = UiKit.TopButton(root, L("$vc_handover"), 225f, -135f, 140f, 32f, HandOverChosen);
+            _orderHandOver = UiKit.TopButton(root, L("$vc_handover"), Width / 2f - 100f, -135f, 140f, 32f, HandOverChosen);   // clear of the needs line (review of 1.4.2)
             _ordersControls.Add(_ordersHeader.gameObject);
             _ordersControls.Add(_ordersNeeds.gameObject);
             _ordersControls.Add(_orderHandOver.gameObject);
@@ -176,13 +178,15 @@ namespace VikingColonies.Gui
             _hall = new HallTab(() => Building);
             _hall.Build(root, Width);
             // The alarm (1.3), beside Close on every tab: sounded where you stand.
-            _alarm = UiKit.Button(root, "", -170f, 25f, 180f, 36f, () =>
+            _alarm = UiKit.Button(root, "", -220f, 25f, 180f, 36f, () =>
             {
                 TownHallModule hall = Building != null ? Building.GetComponent<TownHallModule>() : null;
                 if (hall != null && Player.m_localPlayer != null) hall.RequestAlarm(!hall.AlarmOn, Player.m_localPlayer.transform.position);
             });
             // Report a problem (1.4), on the other side of Close on every tab: the bug form with the report, one click.
-            _report = UiKit.Button(root, L("$vc_report_problem"), 170f, 25f, 180f, 36f, () => PressReport(false));
+            _report = UiKit.Button(root, L("$vc_report_problem"), 115f, 25f, 170f, 36f, () => PressReport(false));
+            // Feedback (1.4.2), beside it: the feedback window, with links to Discord and the issues page's feedback form.
+            UiKit.Button(root, L("$vc_feedback"), 260f, 25f, 100f, 36f, PressFeedback);
             Show(Tab.Citizens);
         }
 
@@ -192,6 +196,13 @@ namespace VikingColonies.Gui
             string told = ReportProblem.Run("the Town Hall window", test);
             ShowReportButton();
             if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, told);
+        }
+
+        /// <summary>The Feedback button: this window closes and the feedback window opens (without the ask's "Not now").</summary>
+        internal void PressFeedback()
+        {
+            Close();
+            Windows.Feedback.Show(asking: false);
         }
 
         /// <summary>Greyed "Form opened" for 10 seconds after a report (the spam guard), then "Report a problem" again.</summary>
@@ -601,7 +612,10 @@ namespace VikingColonies.Gui
             ColonyNeeds needs = townHall.Needs();
             string colony = townHall.GetComponent<ColonyBuilding>()?.ColonyId ?? "";
             int hungry = ColonyConfig.SettlersEat.Value ? Citizen.All.Count(c => c != null && c.Record.ColonyId == colony && c.Record.Hungry) : 0;
-            string first = string.Format(L("$vc_colony_summary"), System.Math.Min(needs.Settlers, needs.Beds), needs.Beds, needs.Food,
+            // The food it keeps for newcomers, said where its food is counted (1.4.2: a rule only the guide told).
+            int keptFood = townHall.GetComponent<StockModule>()?.List.Kept(StockList.AnyFood) ?? 0;
+            string food = keptFood > 0 ? $"{needs.Food} ({string.Format(L("$vc_food_kept_newcomers"), keptFood)})" : needs.Food.ToString();
+            string first = string.Format(L("$vc_colony_summary"), System.Math.Min(needs.Settlers, needs.Beds), needs.Beds, food,
                 hungry > 0 ? $"<color=orange>{hungry}</color>" : "0");
             if (ColonyConfig.Mood.Value)
             {

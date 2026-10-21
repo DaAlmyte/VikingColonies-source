@@ -20,7 +20,7 @@ namespace VikingColonies
     {
         public const string PluginGuid = "daalmyte.vikingcolonies";   // the player's GitHub name (decided 2026-10-17): it names the config file and can't change once released
         public const string PluginName = "VikingColonies";
-        public const string PluginVersion = "1.4.1";
+        public const string PluginVersion = "1.4.2";
 
         private Harmony _harmony;
 
@@ -68,6 +68,7 @@ namespace VikingColonies
                 Command<ObserveCommand>(), Command<WorkerTestCommand>(), Command<GuardTestCommand>(), Command<HallTestCommand>(), Command<WatchCommand>(), Command<ShotCommand>(), Command<BugReportCommand>(), Command<PieceDumpCommand>(), Command<SpawnInfoCommand>(), Command<CamCommand>(), Command<TurretCommand>(), Command<BuildRunCommand>(),
             });
             steps.Add(AddPart<Gui.SettlerWords>("words above settlers' heads and Hugin's night tip"));
+            steps.Add(AddPart<Gui.FeedbackAsker>("asking once what the player thinks of the mod"));
             steps.Add(AddPart<Citizens.SettlerBodies>("settlers passing through each other and players instead of shoving"));
             GameCheck.StartupFailures.Clear();
             GameCheck.StartupFailures.AddRange(StartupSteps.Run(steps));

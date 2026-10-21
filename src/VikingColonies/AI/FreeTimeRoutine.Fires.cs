@@ -34,7 +34,7 @@ namespace VikingColonies.AI
             string colony = _citizen.ColonyId;
             Vector3 me = _citizen.transform.position;
             foreach (FirePlace fire in ColonyPlaces.Fires(colony)
-                         .Where(f => f.Valid && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.Radius + 3f && !_skippedFires.IsBlocked(f.Id, now)
+                         .Where(f => f.Valid && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach && !_skippedFires.IsBlocked(f.Id, now)
                                      && !_busyFires.IsBlocked(f.Id, now) && !FreeTimeClaims.TakenByOther(f.Id, f.Position, _citizen.Id))
                          .OrderBy(f => Utils.DistanceXZ(f.Position, me)))
             {

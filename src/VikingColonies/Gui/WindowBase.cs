@@ -18,6 +18,7 @@ namespace VikingColonies.Gui
 
         private GameObject _panel;
         private Text _title;
+        private Button _close;
         private float _refreshTimer;
 
         /// <summary>What the window is about: a colony building, or another thing in the world (a field marker, 0.20).</summary>
@@ -27,6 +28,8 @@ namespace VikingColonies.Gui
         protected abstract string Title { get; }
         protected abstract float Width { get; }
         protected abstract float Height { get; }
+        /// <summary>Where the Close button sits, from the bottom row's centre (the Town Hall's row of four, 1.4.2).</summary>
+        protected virtual float CloseX => 0f;
 
         public bool IsOpen => _panel != null && _panel.activeSelf;
 
@@ -37,6 +40,12 @@ namespace VikingColonies.Gui
         protected virtual void Opened() { }
 
         protected static string L(string token) => Localization.instance.Localize(token);
+
+        /// <summary>The Close button's words for this opening (the feedback ask's "Not now", 1.4.2); call from <see cref="Opened"/>.</summary>
+        protected void CloseLabel(string token)
+        {
+            if (_close != null) UiKit.SetLabel(_close, L(token));
+        }
 
         public void Open(ColonyBuilding building) => OpenOn(building);
 
@@ -49,7 +58,7 @@ namespace VikingColonies.Gui
                 _panel = UiKit.Panel(GetType().Name, Width, Height);
                 _title = UiKit.Label(_panel.transform, "", -20f, Width - 40f, 34f, 24, true, TextAnchor.MiddleCenter);
                 Build(_panel.transform);
-                UiKit.Button(_panel.transform, L("$vc_close"), 0f, 25f, 140f, 36f, Close);
+                _close = UiKit.Button(_panel.transform, L("$vc_close"), CloseX, 25f, 140f, 36f, Close);
                 _panel.AddComponent<WindowDriver>().Window = this;
             }
             Target = target;

@@ -126,7 +126,7 @@ namespace VikingColonies.Construction
             if (_site != null && !StillOpen(_site)) LeaveSite();   // finished, taken by another, or set aside by the player
             if (_site != null && !ReferenceEquals(_site.Plan, _sitePlan))
             {
-                Log.Info($"{Citizen.CitizenName}: the {_site.Building.TypeId} {_site.Building.Id} has a new plan; he takes it afresh");
+                Log.Info($"{Citizen.CitizenName}: the {_site.Building.TypeId} {_site.Building.Id} has a new plan; they take it afresh");
                 LeaveSite();   // an upgrade ordered or cancelled meanwhile (review of 0.13): his work was for the old plan
             }
             MoveOnIfStuck();
@@ -266,7 +266,7 @@ namespace VikingColonies.Construction
             if (_putBackTo.TryDeposit(Citizen.Carry, _putBack) == StorageModule.DepositResult.Busy) return true;
             Citizen.SaveCarry();
             ColonyBuilding where = _putBackTo.GetComponent<ColonyBuilding>();
-            Log.Info($"{Citizen.CitizenName} put back {before - Citizen.Carry.Total} items his new site doesn't need in the " +
+            Log.Info($"{Citizen.CitizenName} put back {before - Citizen.Carry.Total} items their new site doesn't need in the " +
                      $"{(where != null ? where.TypeId : "colony")} storage (still carrying {Citizen.Carry.Total})");
             EndPutBack();
             return false;
@@ -610,7 +610,8 @@ namespace VikingColonies.Construction
             {
                 WaitOnPlayer();   // materials or stone missing
                 string needs = DescribeItems(_fetch.Missing);
-                Citizen.Status = "$vc_status_needs " + needs;
+                // Where more is kept, on their words only: the order's needs stay as they are (Hand over reads them).
+                Citizen.Status = "$vc_status_needs " + needs + KeptNote(needs, _fetch.Missing, dt);
                 ReportNeeds(needs);
                 Tell(needs);
                 Ai.Idle();
@@ -778,7 +779,7 @@ namespace VikingColonies.Construction
             bool stuck = _walkStuck.Update(distance, Time.time);
             if (stuck && goingRound)
             {
-                Log.Info($"{Citizen.CitizenName} can't get round to the chest at {chest.position}; takes from where he can");
+                Log.Info($"{Citizen.CitizenName} can't get round to the chest at {chest.position}; takes from where they can");
                 _chestRound.Failed(key);   // its open side is out of his way: back to the chest itself, and the usual ways from there
                 _walkStuck.Reset();
                 return false;
@@ -1180,7 +1181,7 @@ namespace VikingColonies.Construction
             if (_hut.Storage.TryDeposit(Citizen.Carry) == StorageModule.DepositResult.Busy) return;
             Citizen.SaveCarry();
             if (Citizen.Carry.Total != before)
-                Log.Info($"{Citizen.CitizenName} put {before - Citizen.Carry.Total} leftover items in his hut (still carrying {Citizen.Carry.Total})");
+                Log.Info($"{Citizen.CitizenName} put {before - Citizen.Carry.Total} leftover items in their hut (still carrying {Citizen.Carry.Total})");
         }
 
         private string BuildingStatus(BuildOrderRecord order) => order.Kind == OrderKind.Remove
@@ -1195,6 +1196,39 @@ namespace VikingColonies.Construction
         }
 
         private static string DescribeItems(Dictionary<string, int> items) => PiecePlacer.DescribeItems(items);
+
+        private string _keptNote = "", _keptNoteFor = "";
+        private float _keptNoteTimer;
+
+        /// <summary>
+        /// " (more Wood is kept in the Lumberjack's Hut)" when another building's chest keeps some of a missing item (its Keep
+        /// in stock list), else "". Looked at again when the needs change, or every few seconds.
+        /// </summary>
+        private string KeptNote(string needs, Dictionary<string, int> missing, float dt)
+        {
+            _keptNoteTimer -= dt;
+            if (needs == _keptNoteFor && _keptNoteTimer > 0f) return _keptNote;
+            _keptNoteFor = needs;
+            _keptNoteTimer = 5f;
+            _keptNote = "";
+            foreach (string item in missing.Keys.OrderBy(k => k))
+            {
+                var chests = new List<KeptChest>();
+                foreach (StorageModule store in ColonyStores())
+                {
+                    if (store == null || store == OwnStore) continue;
+                    int held = store.Contents().TryGetValue(item, out int n) ? n : 0;
+                    if (held <= 0) continue;
+                    chests.Add(new KeptChest(store.GetComponent<ColonyBuilding>()?.Type?.NameToken, held, store.Spare(item)));
+                }
+                string where = StockRules.KeptIn(chests);
+                if (string.IsNullOrEmpty(where)) continue;
+                string itemName = ObjectDB.instance?.GetItemPrefab(item)?.GetComponent<ItemDrop>()?.m_itemData.m_shared.m_name ?? item;
+                _keptNote = $" ($vc_needs_more {itemName} $vc_needs_kept_in {where})";
+                break;
+            }
+            return _keptNote;
+        }
 
         private void ReportNeeds(string needs)
         {

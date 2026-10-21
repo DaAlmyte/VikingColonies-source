@@ -330,7 +330,7 @@ namespace VikingColonies.Tests
             var expected = new System.Collections.Generic.Dictionary<string, string>
             {
                 ["BuildingId"] = "vc_building_id", ["ColonyId"] = "vc_colony_id", ["HallLostAt"] = "vc_hall_lost_at", ["TookOver"] = "vc_took_over",
-                ["ColonyOwner"] = "vc_colony_owner", ["ColonyPos"] = "vc_colony_pos", ["ColonyLevel"] = "vc_colony_level", ["HallRaisedAt"] = "vc_hall_raised_at", ["BuildingType"] = "vc_building_type", ["Level"] = "vc_level",
+                ["ColonyOwner"] = "vc_colony_owner", ["ColonyPos"] = "vc_colony_pos", ["ColonyLevel"] = "vc_colony_level", ["HallRaisedAt"] = "vc_hall_raised_at", ["BossHeard"] = "vc_boss_heard", ["BuildingType"] = "vc_building_type", ["Level"] = "vc_level",
                 ["DataVersion"] = "vc_data_version", ["AutoHire"] = "vc_autohire", ["Unticked"] = "vc_unticked", ["Unpicked"] = "vc_unpicked",
                 ["Ungrown"] = "vc_ungrown", ["Order"] = "vc_order", ["Plan"] = "vc_plan", ["TakeAway"] = "vc_takeaway", ["PlanPrev"] = "vc_plan_prev",
                 ["OrderPrev"] = "vc_order_prev", ["Founded"] = "vc_founded", ["Roster"] = "vc_roster", ["NewcomerDay"] = "vc_newcomerday",

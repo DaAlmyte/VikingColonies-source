@@ -96,6 +96,17 @@ namespace VikingColonies.Tests
             Assert.Contains("lumberjack_hut", problem);
         }
 
+        // 1.4.2 (the hub's audit of the public code): a design's name is a file name, so it can't lead out of the folder.
+        [Fact]
+        public void A_design_name_with_anything_but_letters_digits_underscore_and_dash_is_refused()
+        {
+            foreach (string name in new[] { "../../x", "..\\x", "a/b", "C:x", "my design", "", ".hidden", "x.blueprint" })
+                Assert.NotNull(BlueprintNames.SaveProblem(name, "lumberjack_hut", HutTypes));
+            Assert.Null(BlueprintNames.SaveProblem("my-longhouse_2", "lumberjack_hut", HutTypes));
+            Assert.True(BlueprintNames.IsPlainName("Hut_3-b"));
+            Assert.False(BlueprintNames.IsPlainName(null));
+        }
+
         [Fact]
         public void A_design_with_nothing_built_around_the_chest_is_refused()
         {

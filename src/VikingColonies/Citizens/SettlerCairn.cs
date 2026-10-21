@@ -90,7 +90,7 @@ namespace VikingColonies.Citizens
             CarryLoad load = CarryLoad.Deserialize(carry.Serialize());   // his own load goes with his body
             var unknown = new List<string>();
             ItemTransfer.Deposit(load, new InventoryStore(cairn.Container.GetInventory()), null, unknown);
-            foreach (string item in unknown) Log.Warn($"Unknown item '{item}' in {name}'s load; it isn't in his cairn.");
+            foreach (string item in unknown) Log.Warn($"Unknown item '{item}' in {name}'s load; it isn't in the cairn.");
             foreach (string item in load.ItemNames) DropBeside(go.transform.position, item, load.Count(item));
             if (cairn.Container.GetInventory().NrOfItems() == 0)   // nothing the game knows went in: no cairn, no pin
             {

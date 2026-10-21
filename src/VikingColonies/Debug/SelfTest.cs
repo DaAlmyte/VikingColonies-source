@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using Jotunn.Entities;
 using UnityEngine;
 using VikingColonies.AI;
@@ -63,6 +64,26 @@ namespace VikingColonies.DevTools
                   $"{(GameCheck.Missing.Count > 0 ? "; missing: " + string.Join(", ", GameCheck.Missing) : "")}" +
                   $"{(GameCheck.StartupFailures.Count > 0 ? "; failed: " + string.Join(", ", GameCheck.StartupFailures) : "")})",
                 GameCheck.Missing.Count == 0 && GameCheck.StartupFailures.Count == 0);
+            // Issue #1 (1.4.1, MyLittleUI): on a chest, our Shift+E goes before every other mod's and our hover line after.
+            Patches useHooks = Harmony.GetPatchInfo(AccessTools.Method(typeof(Container), nameof(Container.Interact)));
+            Patches hoverHooks = Harmony.GetPatchInfo(AccessTools.Method(typeof(Container), nameof(Container.GetHoverText)));
+            Patch ourUse = useHooks?.Prefixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
+            Patch ourHover = hoverHooks?.Postfixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
+            string others = string.Join(", ", (useHooks?.Prefixes ?? new List<Patch>().AsReadOnly()).Concat(hoverHooks?.Postfixes ?? new List<Patch>().AsReadOnly())
+                .Where(h => h.owner != Plugin.PluginGuid).Select(h => $"{h.owner} {h.priority}").ToArray());
+            Check($"On a chest our Shift+E hook goes first and our hover line last (ours: Shift+E {ourUse?.priority}, hover {ourHover?.priority}; " +
+                  $"others there: {(others.Length > 0 ? others : "none")})",
+                ourUse != null && ourHover != null && ourUse.priority == Priority.First && ourHover.priority == Priority.Last
+                && useHooks.Prefixes.All(h => h.owner == Plugin.PluginGuid || h.priority <= ourUse.priority)
+                && hoverHooks.Postfixes.All(h => h.owner == Plugin.PluginGuid || h.priority >= ourHover.priority));
+            Patches playerHooks = Harmony.GetPatchInfo(AccessTools.Method(typeof(Player), "Interact", new[] { typeof(GameObject), typeof(bool), typeof(bool) }));
+            Patch ourPlayerUse = playerHooks?.Prefixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
+            string playerOthers = string.Join(", ", (playerHooks?.Prefixes ?? new List<Patch>().AsReadOnly())
+                .Where(h => h.owner != Plugin.PluginGuid).Select(h => $"{h.owner} {h.priority}").ToArray());
+            Check($"On any colony building our Shift+E (the player's use) goes first (ours: {ourPlayerUse?.priority}; " +
+                  $"others there: {(playerOthers.Length > 0 ? playerOthers : "none")})",
+                ourPlayerUse != null && ourPlayerUse.priority == Priority.First
+                && playerHooks.Prefixes.All(h => h.owner == Plugin.PluginGuid || h.priority <= ourPlayerUse.priority));
             Vector3 origin = player.transform.position;
             // Nothing may spoil the run: the player can't die, and settlers have no monsters to flee from.
             if (!player.InGodMode()) player.SetGodMode(true);
@@ -73,6 +94,14 @@ namespace VikingColonies.DevTools
             CitizenAI settlerAi = CitizenPrefab.Prefab != null ? CitizenPrefab.Prefab.GetComponent<CitizenAI>() : null;
             Check("Settlers turn while walking", settlerAi != null && settlerAi.m_moveMinAngle >= 90f);
             Check("Hut chests stand without support", HutChestFloats());
+            // A mushroom lying on the ground is an item, though the game gives it a Piece (1.4.1: the levelling kept off
+            // mushrooms and the site check turned red at them, as at another building's pieces).
+            GameObject mushroom = DevHelpers.Spawn("Mushroom", origin + Vector3.up * 0.5f);
+            Piece mushroomPiece = mushroom != null ? mushroom.GetComponent<Piece>() : null;
+            Check($"A mushroom lying on the ground is a loose item, not a building's piece (spawned: {mushroom != null}, a Piece: {mushroomPiece != null}, " +
+                  $"placed as a piece: {mushroom?.GetComponent<ItemDrop>()?.IsPiece()})",
+                mushroom != null && (mushroomPiece == null || PiecePlacer.IsLooseItem(mushroomPiece)));
+            if (mushroom != null) Remove(mushroom);
             IReadOnlyList<ToolInfo> tools = BuilderTools.Known;
             int axes = tools.Count(t => t.Kind == ToolKind.Axe), pickaxes = tools.Count(t => t.Kind == ToolKind.Pickaxe), hoes = tools.Count(t => t.Kind == ToolKind.Hoe);
             Check($"Builder tools known ({axes} axes, {pickaxes} pickaxes, {hoes} hoes)", axes > 0 && pickaxes > 0 && hoes > 0);
@@ -246,7 +275,10 @@ namespace VikingColonies.DevTools
                 yield return new WaitForSeconds(0.5f);   // the site is flattened spot by spot before the pieces go up
             yield return new WaitForSeconds(10f);
             int standing = site.Plan.Count(p => p.IsValid && PiecePlacer.FindStanding(p) != null);
-            Check($"Nothing fell within 10 s ({standing} of {planned} standing)", standing == planned);
+            // Which piece fell and where (1.4.2: one fell on uneven ground at (1100, 450) and the check didn't say which).
+            string gone = string.Join(", ", site.Plan.Where(p => p.IsValid && PiecePlacer.FindStanding(p) == null).Take(3)
+                .Select(p => $"{p.Prefab} at {CoreVectors.U(p.Position)}, the ground there {SiteSurvey.GroundAt(p.Position.X, p.Position.Z):0.00}"));
+            Check($"Nothing fell within 10 s ({standing} of {planned} standing{(gone.Length > 0 ? "; gone: " + gone : "")})", standing == planned);
             // Destroyed objects go at the end of a frame: looked at after the wait.
             Check($"A small tree in front of the hut's door is cleared with the site (spawned: {doorBeech != null || beechListed}, listed: {beechListed}, gone: {doorBeech == null})",
                 beechListed && doorBeech == null);
@@ -466,9 +498,20 @@ namespace VikingColonies.DevTools
             {
                 UpgradeLock beforeBuilder = site.UpgradeCheck();
                 Check($"A level-1 Builder's Hut can't take the Lumberjack's Hut to level 2 ({beforeBuilder})", beforeBuilder == UpgradeLock.BuilderTooLow);
+                // The feedback ask (1.4.2): this is its moment, the first hut near the player reaching level 2. A test world
+                // asks only when armed; it waits a look at the huts at level 1 first.
+                Windows.Feedback.Close();
+                FeedbackAsker.ArmForTest(false);
+                yield return new WaitForSeconds(FeedbackAsker.EverySeconds + 1f);
                 builderSite.RequestUpgradeNow();
                 for (float waited = 0f; builderHut.Level < 2 && waited < 40f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
                 Check($"vc_build upgrade took the Builder's Hut to level 2 (level {builderHut.Level})", builderHut.Level == 2);
+                for (float waited = 0f; !Windows.Feedback.IsOpen && waited < 15f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
+                string ask = Windows.Feedback.TextForTest();
+                Check($"The feedback ask came when a hut near the player reached level 2, with Not now ({ask}; {FeedbackAsker.StateForTest()})",
+                    Windows.Feedback.Asking && ask.Contains(Localization.instance.Localize("$vc_feedback_not_now")) && FeedbackAsker.AskedForTest);
+                if (!Windows.Feedback.Asking) FeedbackAsker.DisarmForTest();   // it didn't come: it mustn't pop up later in the run
+                Windows.Feedback.Close();
                 afterBuilder = site.UpgradeCheck();
             }
             finally { ColonyConfig.HallLevels.Value = hallLevelsWas; }   // never left off (it is saved and synced)
@@ -484,6 +527,8 @@ namespace VikingColonies.DevTools
             yield return new WaitForSeconds(1.5f);   // the chest notices its new level within a second
             Check($"The level-2 Lumberjack's Hut's chest has {hut.Storage.Rows} rows", hut.Storage.Rows == 3 + ColonyConfig.RowsPerLevel.Value);
             Check("The saga tells the Lumberjack's Hut is now level 2", SagaHas(hall, "level", BuildingTypes.LumberjackHut.NameToken, "2"));
+            Check($"The feedback ask didn't come again for the second hut at level 2 ({FeedbackAsker.StateForTest()})", !Windows.Feedback.IsOpen && FeedbackAsker.AskedForTest);
+            FeedbackAsker.DisarmForTest();
 
             // A change another computer saved a moment before a settler's delivery is kept, not overwritten by this
             // computer's older copy of the chest.
@@ -688,6 +733,15 @@ namespace VikingColonies.DevTools
                 Check($"With nothing to eat {eater.CitizenName} is hungry: he works slower and his hover says so (work speed {eater.WorkSpeed:0.00}, hover {hoverSays})",
                     eater.Record.Hungry && eater.WorkSpeed < fedSpeed
                     && Mathf.Abs(eater.WorkSpeed - Mathf.Max(Meals.SlowestWork, fedSpeed * ColonyConfig.HungryWorkSpeed.Value)) < 0.01f && hoverSays);
+                // 1.4.2, a player's report: food put in after the meal was missed is eaten the same day, not the next.
+                larderItems.AddItem(ObjectDB.instance.GetItemPrefab("Raspberry"), 10);   // enough for every hungry settler
+                float hungryWait = 0f;
+                for (; eater != null && eater.Record.Hungry && hungryWait < Meals.HungryLookSeconds + 40f; hungryWait += 0.5f) yield return new WaitForSeconds(0.5f);
+                Check($"Food put in after a hungry settler's meal is eaten the same day ({eater?.CitizenName}: hungry {eater?.Record.Hungry}, " +
+                      $"after {hungryWait:0} s, last meal day {eater?.Record.LastMealDay} of {today})",
+                    eater != null && !eater.Record.Hungry && eater.Record.LastMealDay == today);
+                for (ItemDrop.ItemData it = larderItems.GetItem("Raspberry", -1, true); it != null; it = larderItems.GetItem("Raspberry", -1, true))
+                    larderItems.RemoveItem(it);   // none left over for the newcomer checks, which start with no food
                 eater.MarkMeal(EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()), hungry: false);   // fed again, today (the game's day ran on meanwhile: the player saw "Hungry" stuck over her head)
             }
 
@@ -728,6 +782,23 @@ namespace VikingColonies.DevTools
                 Check($"With free beds but no food in the Town Hall nobody comes, and the Town Hall says so ({room.FreeBeds} free beds of {room.Beds}, " +
                       $"{sizeBefore} -> {ColonySize()} settlers, waits for {noFood}; window: '{summary.Replace('\n', ' ')}')",
                     room.FreeBeds >= 2 && ColonySize() == sizeBefore && noFood == NewcomerWait.Food && summary.Contains(saysFood));
+                // 1.4.2: the summary says the food it keeps for newcomers. This colony keeps nothing (DevHelpers.KeepNothing), so
+                // the note is absent; then a Town Hall's own start (Food (any) x 10) is set for a moment, read, and put back.
+                string keptWords = Localization.instance.Localize("$vc_food_kept_newcomers");
+                string keptTail = keptWords.Substring(keptWords.IndexOf("{0}", System.StringComparison.Ordinal) + 3);
+                ZDO hallZdo = hallModule.GetComponent<ZNetView>()?.GetZDO();
+                string keepWas = hallZdo != null ? hallZdo.GetString(SaveKeys.Keep, "") : "";
+                string withKeep = "";
+                if (hallZdo != null && hallModule.GetComponent<ZNetView>().IsOwner())
+                {
+                    hallZdo.Set(SaveKeys.Keep, StockList.Decode("", true).Encode());
+                    withKeep = TownHallWindow.Summary(hallModule);
+                    hallZdo.Set(SaveKeys.Keep, keepWas);
+                }
+                string saysKept = string.Format(keptWords, StockList.TownHallFood);
+                Check($"The Town Hall's summary says how much food it keeps for newcomers, and nothing when it keeps none " +
+                      $"(keeping {StockList.TownHallFood}: '{withKeep.Replace('\n', ' ')}'; keeping none: '{summary.Replace('\n', ' ')}')",
+                    withKeep.Contains(saysKept) && !summary.Contains(keptTail));
 
                 int foodEach = ColonyConfig.NewcomerFood.Value;
                 // Mood (0.17): with free beds and food, nobody joins an unhappy colony, and the Town Hall says why.
@@ -1243,6 +1314,8 @@ namespace VikingColonies.DevTools
             Check($"With it off the tree hurts him (health {before:0} -> {body.GetHealth():0}; '{SettlerDeaths.LastCloseCall}')",
                 body.GetHealth() < before && SettlerDeaths.LastCloseCall.Contains("health left"));
 
+            CheckCheatKillSpares(victim);   // 1.4.2: before the real death below
+
             GameObject prefab = ZNetScene.instance.GetPrefab("Greydwarf");
             Vector3 aside = origin + Vector3.right * 20f;
             aside.y = ZoneSystem.instance.GetGroundHeight(aside);
@@ -1300,6 +1373,24 @@ namespace VikingColonies.DevTools
                       $"{(his != null ? his.transform.position.ToString() : "none")})", his == null && SettlerDeaths.LastReport.Contains(bareName));
             }
             if (monster != null) Remove(monster.gameObject);
+        }
+
+        /// <summary>1.4.2: the console's kill blow (killall, killenemies, debug mode's K) leaves a settler standing.</summary>
+        private static void CheckCheatKillSpares(Citizen settler)
+        {
+            if (settler == null || settler.Body == null)
+            {
+                Check("The console's kill blow spares a settler (nobody to test with)", false);
+                return;
+            }
+            float before = settler.Body.GetHealth();
+            int spared = CitizenPatches.CheatKillsSparedForTest;
+            var blow = new HitData();
+            blow.m_damage.m_damage = 1E+10f;   // as the game's killall and killenemies hit
+            settler.Body.Damage(blow);
+            Check($"The console's kill blow (killall, killenemies, debug mode's K) spares a settler ({settler.CitizenName}: health {before:0} -> {settler.Body.GetHealth():0}, " +
+                  $"dead {settler.Body.IsDead()}, spared {CitizenPatches.CheatKillsSparedForTest - spared})",
+                !settler.Body.IsDead() && settler.Body.GetHealth() >= before && CitizenPatches.CheatKillsSparedForTest > spared);
         }
 
         private static HitData KillHit(Citizen victim, Character monster)

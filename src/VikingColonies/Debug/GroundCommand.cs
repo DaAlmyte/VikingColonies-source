@@ -15,7 +15,7 @@ namespace VikingColonies.DevTools
     {
         public override string Name => "vc_ground";
         public override string Help => "VikingColonies (test worlds): 'vc_ground <x> <z> [radius 10] [step 2]' logs the ground's heights round a point, " +
-                                       "rows north to south, with the steepest step between neighbours";
+                                       "rows north to south, with the steepest step between neighbours (to the centimetre with a step under 1 m)";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -57,7 +57,7 @@ namespace VikingColonies.DevTools
             for (int i = 2 * n; i >= 0; i--)   // north (bigger z) first
             {
                 var row = new StringBuilder($"vc_ground: z {cz + (i - n) * step,6:0}:");
-                for (int k = 0; k <= 2 * n; k++) row.Append(heights[i, k].ToString(" 00.0", CultureInfo.InvariantCulture));
+                for (int k = 0; k <= 2 * n; k++) row.Append(heights[i, k].ToString(step < 1f ? " 00.00" : " 00.0", CultureInfo.InvariantCulture));
                 BuildCommand.Print(row.ToString());
             }
         }

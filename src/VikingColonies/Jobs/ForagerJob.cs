@@ -260,7 +260,7 @@ namespace VikingColonies.Jobs
                 _pickTimer = 0f;
                 if (_pickStuck.Update(Vector3.Distance(Citizen.transform.position, pos), Time.time))
                 {
-                    Log.Info($"{Citizen.CitizenName} can't reach the {Utils.GetPrefabName(_target.gameObject)} at ({pos.x:0}, {pos.z:0}); he leaves it for now");
+                    Log.Info($"{Citizen.CitizenName} can't reach the {Utils.GetPrefabName(_target.gameObject)} at ({pos.x:0}, {pos.z:0}); they leave it for now");
                     _blacklist.Add(_targetId, Time.time);
                     ForgetTarget();
                     _pickStuck.Reset();

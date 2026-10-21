@@ -415,7 +415,7 @@ namespace VikingColonies.Jobs
             if (_walkStuck.Update(Vector3.Distance(Citizen.transform.position, at), Time.time))
             {
                 // Rested like a plot he couldn't plant (0.20: removed, it came back with the plot list every minute).
-                MarkBad(at, FailedPlotSeconds, "he can't get to it");
+                MarkBad(at, FailedPlotSeconds, "they can't get to it");
                 _walkStuck.Reset();
                 _rescanTimer = 0f;
             }
@@ -569,7 +569,7 @@ namespace VikingColonies.Jobs
                 if (_walkStuck.Update(Vector3.Distance(Citizen.transform.position, at), Time.time))
                 {
                     // Review of 0.12: an unreachable crop was chosen again and again; now it waits a minute.
-                    Log.Info($"{Citizen.CitizenName} can't get to the {Utils.GetPrefabName(crop.gameObject)} at ({at.x:0.0}, {at.z:0.0}); he tries again later");
+                    Log.Info($"{Citizen.CitizenName} can't get to the {Utils.GetPrefabName(crop.gameObject)} at ({at.x:0.0}, {at.z:0.0}); they try again later");
                     _unreachable.Add(id, Time.time);
                     s_claims.Release(id, Citizen.Id);
                     _ripe = null;

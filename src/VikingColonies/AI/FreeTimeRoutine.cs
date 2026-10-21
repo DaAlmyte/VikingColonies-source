@@ -142,7 +142,7 @@ namespace VikingColonies.AI
         private bool TooLongOnTheWay(float now)
         {
             if (_arrived || _doing == Leisure.None || now - _startedAt <= ReachSeconds) return false;
-            Log.Info($"{_citizen.CitizenName}'s free time: couldn't get to his {_doing} within {ReachSeconds:0} s; he picks something else");
+            Log.Info($"{_citizen.CitizenName}'s free time: couldn't get to their {_doing} within {ReachSeconds:0} s; they pick something else");
             if (_seat != null) _skippedSeats.Add(_seat.Id, now);
             if (_fire != null) _skippedFires.Add(_fire.Id, now);
             if (_tendFire != null) _skippedFires.Add(_tendFire.Id, now);
@@ -162,13 +162,13 @@ namespace VikingColonies.AI
                             && !FreeTimeClaims.TakenByOther(s.Id, s.Point, _citizen.Id) && !ColonyPlaces.Taken(s, _citizen))
                 .ToList();
             List<FirePlace> fires = ColonyPlaces.Fires(colony)
-                .Where(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.Radius + 3f && (!wet || f.Roofed)
+                .Where(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach && (!wet || f.Roofed)
                             && !_skippedFires.IsBlocked(f.Id, now))
                 .ToList();
             FreeTimeRoutine partner = FindPartner(me);
             // Nothing to sit on or by at all (not merely taken, or out in the rain): Hugin says so, once.
             if (!ColonyPlaces.Seats(colony).Any(s => s.Valid && Utils.DistanceXZ(s.Point, _anchor) <= FreeTimeRules.Radius)
-                && !ColonyPlaces.Fires(colony).Any(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.Radius + 3f))
+                && !ColonyPlaces.Fires(colony).Any(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach))
                 Gui.HuginTips.ShowNear(_anchor, Gui.HuginTips.FreeTime);
             FirePlace tend = FireToTend(now, out string fuelItem, out int fuelWant, out string fuelChest);
             StockRun carry = StockToCarry(now);   // 0.21
@@ -199,7 +199,11 @@ namespace VikingColonies.AI
                     SaveDoing(ActivityWords.Token(Leisure.Fire), "");
                     break;
                 case Leisure.Chat:
-                    StartChat(partner, now);
+                    if (StartChat(partner, now)) break;
+                    // A wall between them wherever they'd meet: a stroll instead (1.4.2).
+                    Begin(Leisure.Stroll, now);
+                    _spot = StrollSpot(me);
+                    SaveDoing(ActivityWords.Token(Leisure.Stroll), "");
                     break;
                 case Leisure.Stroll:
                     _spot = StrollSpot(me);
@@ -367,10 +371,52 @@ namespace VikingColonies.AI
             return id.Length == 0 ? null : s_active.FirstOrDefault(r => r._citizen != null && r._citizen.Id == id);
         }
 
-        private void StartChat(FreeTimeRoutine partner, float now)
+        private static int s_chatWallMask;
+
+        /// <summary>A wall, a post or a door between the two spots at chest height: they'd face each other through it.</summary>
+        private static bool WallBetween(Vector3 first, Vector3 second)
         {
+            if (s_chatWallMask == 0) s_chatWallMask = LayerMask.GetMask("piece");
+            return Physics.Linecast(first + Vector3.up * 1.2f, second + Vector3.up * 1.2f, s_chatWallMask, QueryTriggerInteraction.Ignore);
+        }
+
+        /// <summary>
+        /// Starts a chat at the first meeting place with no wall between the two (halfway, by him, by the other); false,
+        /// and nothing changed, when every one has a wall between.
+        /// </summary>
+        /// <summary>
+        /// The first meeting place with no wall between its two spots, both checked at one height
+        /// (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall (the life test checks it).
+        /// </summary>
+        internal static bool ChooseMeeting(Vector3 mine, Vector3 theirs, out ChatMeeting meeting)
+        {
+            List<ChatMeeting> places = ChatPairing.Meetings(Ground(mine), Ground(theirs));
+            for (int i = 0; i < places.Count; i++)
+            {
+                float y = ChatPairing.MeetingHeight(i, mine.y, theirs.y);
+                ChatMeeting place = places[i];
+                if (WallBetween(new Vector3(place.First.X, y, place.First.Z), new Vector3(place.Second.X, y, place.Second.Z))) continue;
+                meeting = place;
+                return true;
+            }
+            meeting = default(ChatMeeting);
+            return false;
+        }
+
+        private bool StartChat(FreeTimeRoutine partner, float now)
+        {
+            Vector3 mine = _citizen.transform.position, theirs = partner._citizen.transform.position;
+            if (!ChooseMeeting(mine, theirs, out ChatMeeting chosen))
+            {
+                Log.Info($"{_citizen.CitizenName} won't chat with {partner._citizen.CitizenName}: a wall stands between them wherever they'd meet");
+                return false;
+            }
             partner.StopActivity();
-            ChatMeeting meeting = ChatPairing.Meeting(Ground(_citizen.transform.position), Ground(partner._citizen.transform.position));
+            ChatMeeting meeting = chosen;
+            string where = Mathf.Abs(chosen.First.X - mine.x) < 0.05f && Mathf.Abs(chosen.First.Z - mine.z) < 0.05f ? "beside " + _citizen.CitizenName
+                : Mathf.Abs(chosen.Second.X - theirs.x) < 0.05f && Mathf.Abs(chosen.Second.Z - theirs.z) < 0.05f ? "beside " + partner._citizen.CitizenName : "halfway";
+            Log.Info($"{_citizen.CitizenName} and {partner._citizen.CitizenName} meet to chat {where} (at ({chosen.First.X:0.0}, {chosen.First.Z:0.0}) " +
+                     $"and ({chosen.Second.X:0.0}, {chosen.Second.Z:0.0}); {Utils.DistanceXZ(mine, theirs):0.0} m apart)");
             _partner = partner;
             partner._partner = this;
             // Both start afresh: a stroller's end time left over would end the chat as they meet (review of 0.14).
@@ -385,6 +431,7 @@ namespace VikingColonies.AI
             _chatLength = partner._chatLength = length;
             SaveDoing(ActivityWords.Token(Leisure.Chat), partner._citizen.CitizenName, partner._citizen.Id);
             partner.SaveDoing(ActivityWords.Token(Leisure.Chat), _citizen.CitizenName, _citizen.Id);
+            return true;
         }
 
         private float _chatLength;

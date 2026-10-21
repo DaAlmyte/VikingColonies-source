@@ -95,9 +95,39 @@ namespace VikingColonies.Core
         private static int Clamp(int amount) => Math.Max(MinAmount, Math.Min(MaxAmount, amount));
     }
 
+    /// <summary>A chest that holds an item, and how many of it it can spare (the rest its building keeps).</summary>
+    public struct KeptChest
+    {
+        public KeptChest(string building, int held, int spare)
+        {
+            Building = building ?? "";
+            Held = held;
+            Spare = spare;
+        }
+
+        /// <summary>The building's name (its translation token).</summary>
+        public string Building { get; }
+        public int Held { get; }
+        public int Spare { get; }
+        public int Kept => Math.Max(0, Held - Spare);
+    }
+
     /// <summary>What a chest can spare when its building keeps some of it, and what its building is short of.</summary>
     public static class StockRules
     {
+        /// <summary>
+        /// Where more of a missing item is kept: the building keeping the most of it, or null when none keeps any. The
+        /// builder's "Needs 12 Wood" says so (1.4.2: kept items are left alone, a rule only the guide told).
+        /// </summary>
+        public static string KeptIn(IEnumerable<KeptChest> chests)
+        {
+            if (chests == null) return null;
+            KeptChest? most = null;
+            foreach (KeptChest chest in chests)
+                if (chest.Kept > 0 && (most == null || chest.Kept > most.Value.Kept)) most = chest;
+            return most?.Building;
+        }
+
         /// <summary>
         /// Whether settlers carry an item from chest to chest: only what stacks. A settler's carry keeps an item's name and
         /// count, so a sword, armour or a tool would be put down as a new one, its quality, wear and maker lost (the whole-mod

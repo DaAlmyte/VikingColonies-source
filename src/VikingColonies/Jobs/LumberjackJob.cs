@@ -86,7 +86,7 @@ namespace VikingColonies.Jobs
             ColonyBuilding hut = _hut;
             long timer = Perf.Start();
             EnsureAxeEquipped(hut, dt);
-            Perf.Stop("lumberjack: his axe", timer);
+            Perf.Stop("lumberjack: the axe", timer);
             if (Citizen.Carry.Total == 0) _storageFull = false;
             if (_fullChest.Tick(Citizen, Ai, hut, SeedPlan.Reserved(Citizen.Carry, SpotSeeds()))) return;
 
@@ -136,7 +136,7 @@ namespace VikingColonies.Jobs
             // After a felling blow or a log breaking he keeps clear until the logs nearby lie still.
             if (_logWatch.Active && (action == LumberjackAction.Chop || action == LumberjackAction.Collect || action == LumberjackAction.Plant))
             {
-                Citizen.Status = "$vc_status_working";
+                Citizen.Status = "$vc_status_keeping_clear";   // 1.4.2: what he is doing, not "Working"
                 timer = Perf.Start();
                 _logWatch.Step();
                 Perf.Stop("lumberjack: watching logs settle", timer);
@@ -170,7 +170,7 @@ namespace VikingColonies.Jobs
                     if (ReachHut(hut)) Deliver(hut, dt, StorageFullRetrySeconds);
                     break;
                 case LumberjackAction.Collect:
-                    Citizen.Status = "$vc_status_working";
+                    Citizen.Status = "$vc_status_gathering_logs";
                     Collect();
                     break;
                 case LumberjackAction.Plant:
@@ -178,7 +178,7 @@ namespace VikingColonies.Jobs
                     Plant();
                     break;
                 case LumberjackAction.Chop:
-                    Citizen.Status = "$vc_status_working";
+                    Citizen.Status = "$vc_status_felling";
                     Chop();
                     break;
                 case LumberjackAction.WaitNoTrees:
@@ -330,7 +330,7 @@ namespace VikingColonies.Jobs
                 {
                     float fromHut = Vector3.Distance(candidate.Value.transform.position, hutPos);
                     if (fromHut > radius)
-                        Log.Info($"{Citizen.CitizenName} finishes the {Utils.GetPrefabName(candidate.Value)} of the tree he felled, past his work area ({fromHut:0} m from the hut)");
+                        Log.Info($"{Citizen.CitizenName} finishes the {Utils.GetPrefabName(candidate.Value)} of the tree they felled, past their work area ({fromHut:0} m from the hut)");
                     return candidate.Value;
                 }
                 // By one of the player's buildings: left standing (checked only for the nearest few, the pieces gathered once).

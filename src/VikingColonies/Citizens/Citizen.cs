@@ -631,7 +631,7 @@ namespace VikingColonies.Citizens
                 else if (!ai.RecallToHut()) result = "$vc_recall_no_spot_hut";
                 else result = ai.IndoorsNow ? "$vc_recalled_hut_goes_in" : "$vc_recalled_to_hut";
             }
-            if (result != "$vc_recalled_to_hut" && result != "$vc_recalled_hut_goes_in") Log.Info($"{CitizenName} wasn't called back to his hut ({result}).");
+            if (result != "$vc_recalled_to_hut" && result != "$vc_recalled_hut_goes_in") Log.Info($"{CitizenName} wasn't called back to their hut ({result}).");
             _nview.InvokeRPC(sender, RpcRecallResult, result);
         }
 

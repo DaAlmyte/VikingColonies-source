@@ -241,7 +241,7 @@ namespace VikingColonies.AI
             if (!lieAsked && _lying) GetUp();
             timer = Perf.Start();
             _doors.Tick(dt);   // closes the doors he opened once he is past them
-            Perf.Stop("settler: closing doors behind him", timer);
+            Perf.Stop("settler: closing doors behind them", timer);
             if (Time.time >= _trappedCheckAt)
             {
                 _trappedCheckAt = Time.time + TrappedCheckSeconds;
@@ -472,7 +472,7 @@ namespace VikingColonies.AI
             catch (Exception e)
             {
                 // An error escaping here would stop the game's AI loop for every creature this tick.
-                Log.Error($"{_citizen.CitizenName}: stopping his job failed: {e}");
+                Log.Error($"{_citizen.CitizenName}: stopping their job failed: {e}");
             }
         }
 
@@ -490,7 +490,7 @@ namespace VikingColonies.AI
                 string kept = hall != null ? hall.GetComponent<TownHallModule>()?.Keepsakes.Get(r.Id) : null;
                 if (kept != null && Keepsake.Outdated(r.Life, CitizenRecord.Decode(kept).Life))
                 {
-                    Log.Event($"{_citizen.CitizenName}: an old copy of him (he was brought back since) goes");
+                    Log.Event($"{_citizen.CitizenName}: an old copy (brought back since) goes");
                     ZNetScene.instance.Destroy(gameObject);
                     return;
                 }
@@ -505,7 +505,7 @@ namespace VikingColonies.AI
                     if (!ColonyGrace.IsLost(r.HallLostAt))
                     {
                         _citizen.MarkHallLost(now);
-                        Log.Info($"{r.Name}'s Town Hall is gone; he stays with the colony for {ColonyConfig.TownHallGraceDays.Value} days.");
+                        Log.Info($"{r.Name}'s Town Hall is gone; they stay with the colony for {ColonyConfig.TownHallGraceDays.Value} days.");
                     }
                     if (ColonyGrace.Expired(_citizen.Record.HallLostAt, now, ColonyConfig.TownHallGraceDays.Value, ColonyBuilding.GraceDaySeconds))
                     {
@@ -685,7 +685,7 @@ namespace VikingColonies.AI
             if (step.JustSettled)
             {
                 Idle();
-                Log.Info($"{_citizen.CitizenName} can't get onto his spot in hut {_refugeId} ({toSpot:0.0} m away); he stays where he is, at {transform.position}.");
+                Log.Info($"{_citizen.CitizenName} can't get onto their spot in hut {_refugeId} ({toSpot:0.0} m away); they stay where they are, at {transform.position}.");
             }
             if (!step.In) _inside = false;
             else if (!_inside)
@@ -743,7 +743,7 @@ namespace VikingColonies.AI
             _bedSide = _refugeSpot;   // where he gets up: by this bed, whatever hut he goes to next
             _lying = true;
             _lieAsked = true;
-            Log.Info($"{_citizen.CitizenName} lies down in his bed.");
+            Log.Info($"{_citizen.CitizenName} lies down in their bed.");
         }
 
         /// <summary>A bed nobody has made his own (a player's spawn bed) and no player lies in.</summary>
@@ -1023,7 +1023,7 @@ namespace VikingColonies.AI
             Vector3? spot = FreeSpotNear(centre.Value, anyway);
             if (!spot.HasValue)
             {
-                if (!_toldNoFreeSpot) Log.Info($"{_citizen.CitizenName} may be boxed in at {At(from)} ({_trapped.WalkedFor:0} s trying to walk, {_trapped.WantedFor:0} s wanting to be elsewhere), but there's no free spot by the Town Hall out of sight; he keeps trying.");
+                if (!_toldNoFreeSpot) Log.Info($"{_citizen.CitizenName} may be boxed in at {At(from)} ({_trapped.WalkedFor:0} s trying to walk, {_trapped.WantedFor:0} s wanting to be elsewhere), but there's no free spot by the Town Hall out of sight; they keep trying.");
                 _toldNoFreeSpot = true;
                 _trappedCheckAt = now + TrappedBackOffSeconds;
                 return;
@@ -1094,7 +1094,7 @@ namespace VikingColonies.AI
             Vector3? spot = centre.HasValue ? FreeSpotNear(centre.Value, anyway: true) : null;
             if (!spot.HasValue)
             {
-                Log.Info($"{_citizen.CitizenName} was called back to the Town Hall, but there's no free spot by it; he stays at {At(from)}.");
+                Log.Info($"{_citizen.CitizenName} was called back to the Town Hall, but there's no free spot by it; they stay at {At(from)}.");
                 return false;
             }
             _doors.Reset();   // a door passing half done would pull him back to that door
@@ -1117,13 +1117,13 @@ namespace VikingColonies.AI
             Vector3? spot = SpotOutside(hut.GetComponent<ConstructionModule>(), hut.transform.position);
             if (!spot.HasValue)
             {
-                Log.Info($"{_citizen.CitizenName} was called back to his {hut.TypeId}, but there's no free spot by it; he stays at {At(from)}.");
+                Log.Info($"{_citizen.CitizenName} was called back to their {hut.TypeId}, but there's no free spot by it; they stay at {At(from)}.");
                 return false;
             }
             _doors.Reset();
             Vector3 to = PlaceAt(spot.Value);
             _trapped.Arrived(to.x, to.z);
-            Log.Info($"{_citizen.CitizenName} was called back from {At(from)} to {At(to)} by his {hut.TypeId}.");
+            Log.Info($"{_citizen.CitizenName} was called back from {At(from)} to {At(to)} by their {hut.TypeId}.");
             return true;
         }
 
@@ -1160,7 +1160,7 @@ namespace VikingColonies.AI
             Vector3? spot = site != null && site.IsCamp ? FreeSpotNear(piece, anyway: true) : SpotOutside(site, piece);
             if (!spot.HasValue)
             {
-                Log.Info($"{_citizen.CitizenName} would make way for {builder}, but there's no free spot to go to; he stays at {At(from)}.");
+                Log.Info($"{_citizen.CitizenName} would make way for {builder}, but there's no free spot to go to; they stay at {At(from)}.");
                 return false;
             }
             _freeTime.End();   // off his seat
@@ -1249,7 +1249,7 @@ namespace VikingColonies.AI
             if (!there && !_walkIn.TimedOut && hall.HasValue) return;
             if (!there)
             {
-                Log.Info($"{r.Name} didn't get to the Town Hall in {WalkInWatch.GiveUpSeconds:0} s of walking; he is placed there.");
+                Log.Info($"{r.Name} didn't get to the Town Hall in {WalkInWatch.GiveUpSeconds:0} s of walking; they are placed there.");
                 PlaceByHall();
             }
             Idle();
@@ -1438,7 +1438,7 @@ namespace VikingColonies.AI
             {
                 case UnstuckMove.Hop:
                     _hops++;
-                    Log.Info($"{_citizen.CitizenName} hasn't moved for {Unstuck.HopAfter:0} s on his way to ({point.x:0.0}, {point.z:0.0}): he hops " +
+                    Log.Info($"{_citizen.CitizenName} hasn't moved for {Unstuck.HopAfter:0} s on the way to ({point.x:0.0}, {point.z:0.0}): they hop " +
                              $"(at ({me.x:0.0}, {me.y:0.0}, {me.z:0.0}))");
                     _citizen.Body.Jump();
                     ForgetPath();   // the path he kept leads back into what stopped him
@@ -1453,7 +1453,7 @@ namespace VikingColonies.AI
                     _sidestep = right * side;
                     _sidestepUntil = Time.time + Unstuck.SidestepSeconds;
                     ForgetPath();
-                    Log.Info($"{_citizen.CitizenName} still hasn't moved on his way to ({point.x:0.0}, {point.z:0.0}): he steps to the " +
+                    Log.Info($"{_citizen.CitizenName} still hasn't moved on the way to ({point.x:0.0}, {point.z:0.0}): they step to the " +
                              $"{(side > 0 ? "right" : "left")} (at ({me.x:0.0}, {me.y:0.0}, {me.z:0.0}))");
                     MoveTowards(_sidestep, false);
                     break;

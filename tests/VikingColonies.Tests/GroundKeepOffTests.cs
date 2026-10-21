@@ -36,9 +36,17 @@ namespace VikingColonies.Tests
         [Fact]
         public void A_dropped_item_is_a_loose_item_one_a_player_placed_is_a_piece()
         {
-            Assert.True(SiteRules.IsLooseItem(isItem: true, placedByPlayer: false));
-            Assert.False(SiteRules.IsLooseItem(isItem: true, placedByPlayer: true));
-            Assert.False(SiteRules.IsLooseItem(isItem: false, placedByPlayer: false));
+            Assert.True(SiteRules.IsLooseItem(isItem: true, placedAsPiece: false, placedByPlayer: false));
+            Assert.False(SiteRules.IsLooseItem(isItem: true, placedAsPiece: false, placedByPlayer: true));
+            Assert.False(SiteRules.IsLooseItem(isItem: false, placedAsPiece: false, placedByPlayer: false));
+        }
+
+        // The review of the fix (1.4.2): an item the game marks as placed as a piece (ItemDrop.IsPiece: a decoration, which
+        // Infinity Hammer can place with no creator) is a piece like any other, as the mod's other jobs already treat it.
+        [Fact]
+        public void An_item_placed_as_a_piece_is_not_loose_even_without_a_creator()
+        {
+            Assert.False(SiteRules.IsLooseItem(isItem: true, placedAsPiece: true, placedByPlayer: false));
         }
 
         [Fact]

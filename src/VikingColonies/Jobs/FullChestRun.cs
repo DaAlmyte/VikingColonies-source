@@ -48,7 +48,7 @@ namespace VikingColonies.Jobs
             _to = FullChest.Choose(chests, new GroundPoint(me.x, me.z)) ?? "";
             _since = now;
             _stuck.Reset();
-            if (Active) Log.Info($"{citizen.CitizenName}'s chest is full: he takes his load to {_to}");
+            if (Active) Log.Info($"{citizen.CitizenName}'s chest is full: they take their load to {_to}");
             return Active;
         }
 
@@ -73,7 +73,7 @@ namespace VikingColonies.Jobs
             float now = Time.time;
             if (now - _since > PatienceSeconds)
             {
-                Log.Info($"{citizen.CitizenName} couldn't put his load in {_to}'s chest within {PatienceSeconds:0} s; he tries elsewhere later");
+                Log.Info($"{citizen.CitizenName} couldn't put their load in {_to}'s chest within {PatienceSeconds:0} s; they try elsewhere later");
                 _skipped.Add(_to, now);
                 _to = "";
                 return false;
@@ -86,7 +86,7 @@ namespace VikingColonies.Jobs
             if (result == StorageModule.DepositResult.Busy) return true;   // its owner is handing it over, or a player has it open
             citizen.SaveCarry();
             int moved = before - citizen.Carry.Total;
-            Log.Info($"{citizen.CitizenName} put {moved} of his load in {_to}'s chest (his own is full)");
+            Log.Info($"{citizen.CitizenName} put {moved} of their load in {_to}'s chest (their own is full)");
             if (moved == 0) _skipped.Add(_to, now);   // it took nothing after all: not that one again for a while
             _to = "";
             if (result == StorageModule.DepositResult.StorageFull) Choose(citizen, full, keep);   // that one filled up too: the next

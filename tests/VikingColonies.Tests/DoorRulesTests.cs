@@ -317,10 +317,88 @@ namespace VikingColonies.Tests
             Assert.False(DoorRules.InDoorway(Door, new Vec3(0f, 5f, 3f)));      // on the floor above
         }
 
+        // The 1.4.1 release run (2026-10-20): at night a settler came round a hut whose door the self-test had blocked,
+        // opened the door from 3.5 m along its wall, stepped up onto the low eave there and "went through" past the door's
+        // line, then opened it again from the roof, 4 m above the doorway, and "went through" onto the roof. Each pass
+        // started the 45 s give-up clock again, and the hut wasn't passed over before morning. A door is opened in front of
+        // its doorway, at its height, and only a step through the doorway counts as going through.
+        // The wood door of the tests: its doorway's middle at (0, 3) on a floor at y -1, 2 m tall.
+        private static readonly Doorway WoodDoor = new Doorway(new Vec3(0, -1, 3), Forward, floorY: -1f, height: 2f);
+
+        [Fact]
+        public void He_opens_a_door_only_in_front_of_its_doorway_at_its_height()
+        {
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f, 3f - 2.8f), 2.8f));      // on the floor, at his spot
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(1.5f, -1f, 3f - 1.5f), 2.8f));    // coming from an angle
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(3.4f, -1f, 2.9f), 2.8f));        // along its wall
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0.6f, 3.3f, 3f - 1f), 2.8f));    // on the roof above it
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f, 3f - 4f), 2.8f));       // too far out
+        }
+
+        [Fact]
+        public void Only_a_step_through_the_doorway_counts_as_going_through()
+        {
+            Assert.Equal(DoorCrossing.Through, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(0.3f, -1f, 4.5f), onGround: true));
+            Assert.Equal(DoorCrossing.Through, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(1.2f, -1f, 4.4f), onGround: true));   // drifted a little
+            Assert.Equal(DoorCrossing.NotYet, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(0f, -1f, 2f), onGround: true));        // still in front
+            Assert.Equal(DoorCrossing.NotYet, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(0f, -1f, 3.5f), onGround: true));      // in the doorway
+            Assert.Equal(DoorCrossing.Round, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(3.2f, 0.2f, 3.3f), onGround: true));    // past its line, beside it
+            Assert.Equal(DoorCrossing.Round, DoorRules.Crossing(WoodDoor, startSide: -1, settler: new Vec3(0f, 3.2f, 4.5f), onGround: true));      // on the roof beyond it
+        }
+
+        // The review of the door rules (1.4.2): a door's pivot isn't always 1 m above its floor (a palisade gate's is at its
+        // floor, the hexagonal door's 2 m up), so its height is judged from its doorway: its floor and how tall it is.
+        [Fact]
+        public void A_tall_gate_is_opened_from_ground_that_rises_to_it_a_low_door_only_a_step_above_its_floor()
+        {
+            var gate = new Doorway(new Vec3(0, 0, 3), Forward, floorY: 0f, height: 4f);   // a palisade gate sunk into a slope
+            Assert.True(DoorRules.ReadyToOpen(gate, new Vec3(0f, 2.2f, 3f - 1.2f), 1.2f));   // its height less a settler's
+            Assert.False(DoorRules.ReadyToOpen(gate, new Vec3(0f, 2.4f, 3f - 1.2f), 1.2f));
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f + DoorRules.AboveFloor, 3f - 1.2f), 1.2f));   // a step up
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f + DoorRules.AboveFloor + 0.1f, 3f - 1.2f), 1.2f));
+        }
+
+        [Fact]
+        public void A_door_is_opened_from_below_its_floor_at_a_stairs_foot_or_a_step_down()
+        {
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f - 2.5f, 3f - 2.8f), 2.8f));   // the stair's foot, 2.8 m out
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f - DoorRules.BelowFloor, 3f - 2.8f), 2.8f));
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f - DoorRules.BelowFloor - 0.1f, 3f - 2.8f), 2.8f));
+            var hexagonal = new Doorway(new Vec3(0, 0, 3), Forward, floorY: 0f, height: 4.3f);
+            Assert.True(DoorRules.ReadyToOpen(hexagonal, new Vec3(0f, -0.5f, 3f - 1.2f), 1.2f));   // a step down in front
+        }
+
+        [Fact]
+        public void The_sideways_limits_hold_to_the_edge()
+        {
+            Assert.True(DoorRules.ReadyToOpen(WoodDoor, new Vec3(DoorRules.OpenReach, -1f, 3f - 0.5f), 2.8f));
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(DoorRules.OpenReach + 0.05f, -1f, 3f - 0.5f), 2.8f));
+            Assert.Equal(DoorCrossing.Through, DoorRules.Crossing(WoodDoor, -1, new Vec3(DoorRules.ThroughSideways, -1f, 4.5f), onGround: true));
+            Assert.Equal(DoorCrossing.Round, DoorRules.Crossing(WoodDoor, -1, new Vec3(DoorRules.ThroughSideways + 0.05f, -1f, 4.5f), onGround: true));
+        }
+
+        [Fact]
+        public void In_the_air_on_a_hop_he_isnt_judged_round_until_he_lands()
+        {
+            var hopping = new Vec3(0f, -1f + DoorRules.AboveFloor + 0.3f, 4.3f);   // up on a hop, 1.3 m past the door
+            Assert.Equal(DoorCrossing.NotYet, DoorRules.Crossing(WoodDoor, -1, hopping, onGround: false));
+            Assert.Equal(DoorCrossing.Round, DoorRules.Crossing(WoodDoor, -1, hopping, onGround: true));
+        }
+
         [Fact]
         public void A_door_another_settler_is_going_through_stays_open()
         {
             Assert.False(DoorRules.ShouldClose(wentThrough: true, distance: 10f, doorwayClear: true, othersPassing: true));
+        }
+
+        [Fact]
+        public void No_door_leading_there_is_logged_only_when_a_door_by_the_goal_was_weighed_or_the_settler_is_under_a_roof()
+        {
+            // 1.4.1's colony watch: 119 of 123 such lines were a lumberjack's logs just off the walking map, out in the
+            // open, with only the door of their own hut nearby.
+            Assert.False(DoorRules.ExplainNoDoor(doorNearGoal: false, underRoof: false));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: false, underRoof: true));
         }
 
         [Fact]

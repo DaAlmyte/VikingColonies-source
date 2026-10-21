@@ -2,7 +2,7 @@
 
 NPC settlers for your own Viking village: found a Town Hall, give settlers homes and jobs, and they build, farm, chop, forage, repair and guard the colony on their own. MineColonies-style. Server and clients.
 
-This is the code of **VikingColonies 1.4.1**, the version on [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/). It's refreshed with each release, without history.
+This is the code of **VikingColonies 1.4.2**, the version on [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/). It's refreshed with each release, without history.
 
 - **To play it:** [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/), with r2modman or the Thunderstore app.
 - **Bugs and ideas:** [the issues page](https://github.com/DaAlmyte/VikingColonies-issues), not here.
@@ -23,10 +23,9 @@ tests in `tests/`.
 
 ## Making your own version
 
-It's MIT-licensed (see LICENSE), so you may copy it and change it. Please:
-
-- keep the LICENSE file and its copyright line in your version, and say it's based on VikingColonies;
-- give it its own name and its own plugin ID (the GUID in the `[BepInPlugin]` line), so the two mods don't clash in one game;
-- don't upload it as VikingColonies.
+The code has its own licence (see LICENSE). You may read it, build it and change it for your own use, share
+the mod unchanged, and make add-ons and compatibility patches that work alongside VikingColonies. Publishing this
+code or a changed copy of it needs DaAlmyte's OK first: ask on the issues page or the Discord. Versions up to 1.4.1
+were MIT.
 
 If what you're making would fit VikingColonies itself, say so on the issues page or the Discord.

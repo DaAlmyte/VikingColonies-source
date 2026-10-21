@@ -68,6 +68,7 @@ namespace VikingColonies.Construction
 
         public static string Save(string name, BlueprintFile blueprint)
         {
+            if (!BlueprintNames.IsPlainName(name)) throw new System.ArgumentException($"'{name}' isn't a plain design name");   // the command checks first
             Directory.CreateDirectory(UserFolder);
             string path = Path.Combine(UserFolder, name + ".blueprint");
             File.WriteAllLines(path, blueprint.ToLines().ToArray());

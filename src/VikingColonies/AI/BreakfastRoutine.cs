@@ -147,7 +147,7 @@ namespace VikingColonies.AI
             ColonyBuilding chest = ColonyBuilding.FindById(_chestId);
             if (chest == null || chest.Storage == null || now - _since > ChestPatience)
             {
-                GiveUp(chest == null ? "his chest is gone" : "couldn't get to the chest in time");
+                GiveUp(chest == null ? "their chest is gone" : "couldn't get to the chest in time");
                 return;
             }
             if (!_ai.GoTo(chest.transform.position, ReachChest)) return;
@@ -219,7 +219,7 @@ namespace VikingColonies.AI
 
         private void GiveUp(string why)
         {
-            Log.Info($"{_citizen.CitizenName} has no breakfast at the table ({why}); he eats where he is.");
+            Log.Info($"{_citizen.CitizenName} has no breakfast at the table ({why}); they eat where they are.");
             _gaveUpDay = Today();
             Finish();
         }

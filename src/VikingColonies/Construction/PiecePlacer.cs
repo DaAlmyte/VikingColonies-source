@@ -276,8 +276,14 @@ namespace VikingColonies.Construction
         }
 
         /// <summary>An item lying on the ground that nobody placed, though the game gives it a Piece (SiteRules.IsLooseItem).</summary>
-        public static bool IsLooseItem(Piece piece) =>
-            piece != null && SiteRules.IsLooseItem(piece.GetComponent<ItemDrop>() != null, piece.IsPlacedByPlayer());
+        public static bool IsLooseItem(Piece piece)
+        {
+            ItemDrop drop = piece != null ? piece.GetComponent<ItemDrop>() : null;
+            if (drop == null) return false;
+            ZNetView nview = piece.GetComponent<ZNetView>();
+            bool placedAsPiece = nview != null && nview.IsValid() && drop.IsPiece();   // IsPiece reads its ZDO: gone once picked up
+            return SiteRules.IsLooseItem(true, placedAsPiece, piece.IsPlacedByPlayer());
+        }
 
         /// <summary>The id of the hut this piece was built for; "" for any other piece.</summary>
         public static string SiteOf(GameObject go)

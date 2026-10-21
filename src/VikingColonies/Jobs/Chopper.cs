@@ -222,7 +222,7 @@ namespace VikingColonies.Jobs
                 Vector3 fromTrunk = _standSpot - trunk;
                 fromTrunk.y = 0f;
                 Log.Info($"{_citizen.CitizenName} fells {_targetPrefab}: it is to fall towards ({_fallDir.x:0.0}, {_fallDir.z:0.0}); " +
-                         $"he stands {Vector3.Angle(fromTrunk, new Vector3(_fallDir.x, 0f, _fallDir.z)):0} degrees from that, {fromTrunk.magnitude:0.0} m from the trunk");
+                         $"they stand {Vector3.Angle(fromTrunk, new Vector3(_fallDir.x, 0f, _fallDir.z)):0} degrees from that, {fromTrunk.magnitude:0.0} m from the trunk");
                 _toldStanceFor = _target;
             }
         }
@@ -244,7 +244,7 @@ namespace VikingColonies.Jobs
             if (outcome.EnableDirectDamage && !_alwaysDirect)
             {
                 _directDamage = true;
-                Log.Event($"{_citizen.CitizenName}'s axe swings are not hurting his targets; from now on they hit directly.");   // handled: no warning
+                Log.Event($"{_citizen.CitizenName}'s axe swings are not hurting the targets; from now on the hits land directly.");   // handled: no warning
             }
             if (outcome.ApplyDirectHit && !_directHitThisSwing) ApplyDirectHit(_target);
             return outcome.GiveUp;
@@ -306,7 +306,7 @@ namespace VikingColonies.Jobs
                 case SwingLogKind.Detail:
                     string what = hits.Count == 0
                         ? "hit nothing"
-                        : "hit " + string.Join(", ", hits.Select(h => $"{h.Name} for {h.Chop:0} chop{(h.Stopped ? " (stopped: not his target)" : "")}"));
+                        : "hit " + string.Join(", ", hits.Select(h => $"{h.Name} for {h.Chop:0} chop{(h.Stopped ? " (stopped: not their target)" : "")}"));
                     Log.Info($"{_citizen.CitizenName} swing {tally.Swings} at {_targetPrefab}, " +
                              $"{Utils.DistanceXZ(_citizen.transform.position, _targetPos):0.0} m from its centre: {what}");
                     break;

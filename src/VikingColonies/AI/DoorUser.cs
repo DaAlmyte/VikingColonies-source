@@ -67,6 +67,7 @@ namespace VikingColonies.AI
         private readonly HashSet<string> _explained = new HashSet<string>();   // goals whose door search went into the log
         private Stage _stage;
         private Door _door;
+        private Doorway _doorway;   // _door's doorway, from its shape (DoorwayOf)
         private Vector3 _goal;
         private int _startSide;
         private float _standOff = DoorRules.StandOff;
@@ -181,8 +182,9 @@ namespace VikingColonies.AI
                     }
                     _waitChosen = false;
                     _waitIndex = -1;
-                    // He opens it only standing at it on his own side, so going through is a real crossing.
-                    if (SideOf(_door, me) == _startSide && DoorRules.ReadyToOpen(Utils.DistanceXZ(me, centre), _standOff))
+                    // He opens it only standing at it on his own side, in front of its doorway and at its height, so going
+                    // through is a real crossing (1.4.1's release run: opened from along its wall, and from its roof).
+                    if (SideOf(_door, me) == _startSide && DoorRules.ReadyToOpen(_doorway, V(me), _standOff))
                     {
                         // Someone in the doorway who isn't going through with the door (a player, a settler walking through an open
                         // door or run by another computer): he waits for them, but not for ever (the approach clock runs on).
@@ -256,7 +258,7 @@ namespace VikingColonies.AI
                         if (_straight)
                         {
                             Log.Info($"{_citizen.CitizenName} walks straight to the spot in front of the {Describe(_door)} at {At(stand)}: " +
-                                     $"inside its hut the paths {(wayEnded ? "give him no way there" : "bring him no closer")} (he stands at {At(me)})");
+                                     $"inside its hut the paths {(wayEnded ? "give them no way there" : "bring them no closer")} (standing at {At(me)})");
                             _straightWalk.Start(me.x, me.z, now, DoorRules.AsideFromMiddle(V(me), V(stand), _hutAround.Centre));
                         }
                     }
@@ -265,8 +267,14 @@ namespace VikingColonies.AI
                     // He gets no closer, or his time for the way there is up (1.4.1: a flat 12 s cut off settlers walking well
                     // to a door 40-60 m off).
                     if (DoorRules.ApproachGivesUp(elapsed, now - _closerAt, _approachFrom))
-                        Stop(failed: true, why: $"he couldn't get to the spot in front of it at {At(stand)} (he stands at {At(me)}, " +
-                                                $"{(now - _closerAt > DoorRules.ApproachStallSeconds ? "getting no closer" : "out of time")})");
+                    {
+                        // On its spot but not at its height (up on something there): said as it is (the review of 1.4.2's door rules).
+                        if (toSpot <= 0.5f && !DoorRules.AtDoorHeight(_doorway, me.y))
+                            Stop(failed: true, why: $"they stand at its spot but not at its height ({me.y - _doorway.FloorY:+0.0;-0.0} m from its floor; standing at {At(me)})");
+                        else
+                            Stop(failed: true, why: $"they couldn't get to the spot in front of it at {At(stand)} (standing at {At(me)}, " +
+                                                    $"{(now - _closerAt > DoorRules.ApproachStallSeconds ? "getting no closer" : "out of time")})");
+                    }
                     return true;
                 case Stage.Opening:
                     _ai.Idle();
@@ -279,7 +287,7 @@ namespace VikingColonies.AI
                         if (_reswung && !_openedIt && !DoorRules.AskAgain(now - _askedAt)) return true;   // let it close first
                         if (DoorRules.MayReswing(_openedIt, _reswung, StateOf(_door), _startSide, DoorwayClear(centre, _citizen.Body)))
                         {
-                            Log.Info($"{_citizen.CitizenName} re-swings the {Describe(_door)}: it was open towards him");
+                            Log.Info($"{_citizen.CitizenName} re-swings the {Describe(_door)}: it was open towards them");
                             Use(_door, me);   // closes it; it opens from his side on the next ask
                             _reswung = true;
                             _askedAt = now;
@@ -299,11 +307,19 @@ namespace VikingColonies.AI
                     if (elapsed > OpeningSeconds) Stop(failed: true, why: "it didn't open");
                     return true;
                 default:   // Through: a straight step, as the paths don't know the doorway is open yet
-                    if (SideOf(_door, me) == -_startSide && Utils.DistanceXZ(me, centre) >= DoorRules.StandOff)
+                    DoorCrossing crossing = DoorRules.Crossing(_doorway, _startSide, V(me), _citizen.Body == null || _citizen.Body.IsOnGround());
+                    if (crossing == DoorCrossing.Through)
                     {
                         Log.Info($"{_citizen.CitizenName} went through the {Describe(_door)}; now at {At(me)}");
                         Passes++;
                         Stop(failed: false);
+                        return false;
+                    }
+                    if (crossing == DoorCrossing.Round)
+                    {
+                        // Past its line beside or above the doorway (round its wall, over its roof): not a way in.
+                        Stop(failed: true, why: $"they got past its line beside or above its doorway, not through it (standing at {At(me)}, " +
+                                                $"{me.y - _doorway.FloorY:+0.0;-0.0} m from its floor)");
                         return false;
                     }
                     if (!IsOpen(_door))
@@ -319,7 +335,7 @@ namespace VikingColonies.AI
                     var stepTo = new Vector3(step.X, me.y, step.Z);
                     if (elapsed > ThroughSeconds)
                     {
-                        Stop(failed: true, why: $"he couldn't step through (he stands at {At(me)}, {Utils.DistanceXZ(me, centre):0.0} m from its " +
+                        Stop(failed: true, why: $"they couldn't step through (standing at {At(me)}, {Utils.DistanceXZ(me, centre):0.0} m from its " +
                                                 $"middle, {me.y - centre.y:+0.0;-0.0} m in height; {InTheWay(me, stepTo)})");
                         return false;
                     }
@@ -360,6 +376,7 @@ namespace VikingColonies.AI
             }
             if (chosen == null) return false;
             _door = chosen;
+            _doorway = DoorwayOf(chosen);
             _goal = goal;
             _startSide = side;
             _reswung = false;
@@ -377,8 +394,8 @@ namespace VikingColonies.AI
             if (!users.Contains(this)) users.Add(this);
             Next(Stage.Approach);
             _ai.ForgetPath();   // his kept path still leads to his goal, not to the door
-            Log.Info($"{_citizen.CitizenName} goes through the {Describe(chosen)} on his way to {At(goal)} " +
-                     $"({(unreachable ? "his way ends short of it" : "it is closed in front of him")}); he stands at {At(me)}, " +
+            Log.Info($"{_citizen.CitizenName} goes through the {Describe(chosen)} on the way to {At(goal)} " +
+                     $"({(unreachable ? "their way ends short of it" : "it is closed in front of them")}); they stand at {At(me)}, " +
                      $"goes in from {At(Spot(chosen, side, _standOff))}");
             return true;
         }
@@ -406,11 +423,11 @@ namespace VikingColonies.AI
                 if (!DoorRules.ShouldClose(opened.WentThrough, Utils.DistanceXZ(me, centre), DoorwayClear(centre), OthersPassing(opened.Door))) continue;
                 if (opened.Asks >= MaxCloseAsks)
                 {
-                    Log.Warn($"{_citizen.CitizenName} couldn't close the {Describe(opened.Door)}; he leaves it");
+                    Log.Warn($"{_citizen.CitizenName} couldn't close the {Describe(opened.Door)}; it stays open");
                     _opened.RemoveAt(i);
                     continue;
                 }
-                if (opened.Asks == 0) Log.Info($"{_citizen.CitizenName} closes the {Describe(opened.Door)} behind him");
+                if (opened.Asks == 0) Log.Info($"{_citizen.CitizenName} closes the {Describe(opened.Door)} behind them");
                 Use(opened.Door, me);   // the door's own RPC closes an open door; it stays on the list until it reads closed
                 opened.AskedAt = now;
                 opened.Asks++;
@@ -548,7 +565,7 @@ namespace VikingColonies.AI
             // The first search for a goal says in the log why each door near it didn't fit.
             string goalKey = $"{Mathf.RoundToInt(goal.x)},{Mathf.RoundToInt(goal.z)}";
             if (_explained.Count > 64) _explained.Clear();
-            StringBuilder why = !early && _explained.Add(goalKey) ? new StringBuilder() : null;
+            StringBuilder why = !early && !_explained.Contains(goalKey) ? new StringBuilder() : null;   // used up only when written
             // Heading home into the colony: the door beside him may be his way out wherever the colony ends (DoorRules.MayLeaveBy).
             bool goalInColony = DoorRules.InColonyArea(Utils.DistanceXZ(goal, hall), HallRules.RadiusOf(_citizen.ColonyId), NearestHut(goal));
             Cover.GetCoverForPoint(me + Vector3.up, out float cover, out bool underRoof);   // inside something: the door beside him is his way out
@@ -566,11 +583,13 @@ namespace VikingColonies.AI
                 }
             }
             if (!sheltered || nearestDoor > DoorRules.RoomReach) roomDoor = null;
+            bool doorNearGoal = false;   // only then, or under a roof, is "no door leads there" worth its line
             foreach (Door door in Jobs.WorldScan.Doors())
             {
                 if (door == null) continue;
                 Vector3 at = door.transform.position;
                 if (Utils.DistanceXZ(at, me) > DoorRules.SearchRange && Utils.DistanceXZ(at, goal) > DoorRules.SearchRange) continue;
+                if (Utils.DistanceXZ(at, goal) <= DoorRules.SearchRange) doorNearGoal = true;
                 if (early && !DoorRules.NearEnoughToLookEarly(Utils.DistanceXZ(at, me))) continue;
                 if (Blocked(Key(door, goal)))
                 {
@@ -606,8 +625,8 @@ namespace VikingColonies.AI
                         outInTheOpen: !underRoof)) byHut = 0;
                 if (byHut != 0 && byHut != side)
                 {
-                    why?.Append($"; {Describe(door)}: the hut's shape says he starts from side {byHut} (the walking map said {side})");
-                    Log.Info($"{_citizen.CitizenName} at {At(me)}: the hut's shape puts him on side {byHut} of the {Describe(door)} (the walking map said {side})");
+                    why?.Append($"; {Describe(door)}: the hut's shape says they start from side {byHut} (the walking map said {side})");
+                    Log.Info($"{_citizen.CitizenName} at {At(me)}: the hut's shape puts them on side {byHut} of the {Describe(door)} (the walking map said {side})");
                 }
                 if (byHut != 0) side = byHut;
                 if (side != 0)
@@ -624,13 +643,13 @@ namespace VikingColonies.AI
                 else
                 {
                     float doorY = door.transform.position.y;
-                    why?.Append($"; {Describe(door)}: he can reach {(frontReachable ? "both sides" : "neither side")} of it " +
+                    why?.Append($"; {Describe(door)}: they can reach {(frontReachable ? "both sides" : "neither side")} of it " +
                                 $"(spots {front.y - doorY:+0.0;-0.0} and {back.y - doorY:+0.0;-0.0} m from its middle)");
                 }
                 _skipped.Add(Key(door, goal), Time.time);   // it doesn't stand between him and his goal, from here
                 side = 0;
             }
-            if (why != null && why.Length > 0) Log.Info($"{_citizen.CitizenName} can't get right to ({goal.x:0}, {goal.z:0}) and no door leads there{why}");
+            if (why != null && why.Length > 0 && DoorRules.ExplainNoDoor(doorNearGoal, underRoof) && _explained.Add(goalKey)) Log.Info($"{_citizen.CitizenName} can't get right to ({goal.x:0}, {goal.z:0}) and no door leads there{why}");
             return null;
         }
 
@@ -942,6 +961,20 @@ namespace VikingColonies.AI
         /// A spot on one side of the door, on whatever is underfoot there: the floor, a stair, the ground (a door on a raised
         /// floor can be well above the ground in front of it).
         /// </summary>
+        /// <summary>
+        /// A door's doorway from its prefab's shape, the leaf closed: its middle (a door may hinge off it), floor and height,
+        /// whatever its pivot (a palisade gate's is at its floor, a wood door's 1 m up, the hexagonal door's 2 m up).
+        /// </summary>
+        internal static Doorway DoorwayOf(Door door)
+        {
+            Transform t = door.transform;
+            GameObject prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(Utils.GetPrefabName(door.gameObject)) : null;
+            Bounds shape = Construction.PieceShape.Of(prefab != null ? prefab : door.gameObject).Extents;
+            Vector3 middle = t.position + t.rotation * new Vector3(shape.center.x, 0f, shape.center.z);
+            float floor = t.position.y + shape.min.y;   // doors stand upright: only turned about y
+            return new Doorway(new Vec3(middle.x, floor, middle.z), V(t.forward), floor, shape.size.y);
+        }
+
         internal static Vector3 Spot(Door door, int side, float distance)
         {
             Vector3 at = door.transform.position;
@@ -961,7 +994,8 @@ namespace VikingColonies.AI
         /// </summary>
         internal static string Probe(Door door, CitizenAI ai)
         {
-            var text = new StringBuilder($"{Describe(door)}, open: {IsOpen(door)}");
+            Doorway doorway = DoorwayOf(door);
+            var text = new StringBuilder($"{Describe(door)}, open: {IsOpen(door)}, its doorway's floor at {doorway.FloorY:0.0}, {doorway.Height:0.0} m tall");
             float doorY = door.transform.position.y;
             foreach (int side in new[] { 1, -1 })
             {
@@ -1009,7 +1043,7 @@ namespace VikingColonies.AI
         {
             Vector3 way = target - me;
             way.y = 0f;
-            if (way.sqrMagnitude < 0.01f) return "he stands on his step's end";
+            if (way.sqrMagnitude < 0.01f) return "standing on their step's end";
             var found = new List<string>();
             CapsuleCollider body = _citizen.GetComponent<CapsuleCollider>();
             float radius = body != null ? body.radius : 0.4f;
@@ -1040,7 +1074,7 @@ namespace VikingColonies.AI
                     ground.Add($"{ahead:0.0} m: {hit.point.y - me.y:+0.00;-0.00} {what}");
                 }
             }
-            return "in his way: " + (found.Count > 0 ? string.Join(", ", found) : "nothing") + "; ground ahead: " + string.Join(", ", ground);
+            return "in their way: " + (found.Count > 0 ? string.Join(", ", found) : "nothing") + "; ground ahead: " + string.Join(", ", ground);
         }
 
         private static string Describe(Door door)

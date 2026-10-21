@@ -17,6 +17,14 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void Every_talk_token_has_its_words_trades_too()
+        {
+            string text = Translations();
+            foreach (string token in SmallTalk.AllTokens())
+                Assert.Contains("\"" + token.Substring(1) + "\"", text);
+        }
+
+        [Fact]
         public void Every_small_talk_line_has_its_words()
         {
             string text = Translations();

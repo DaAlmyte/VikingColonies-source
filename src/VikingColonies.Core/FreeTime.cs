@@ -38,6 +38,15 @@ namespace VikingColonies.Core
     {
         /// <summary>How far from his hut (or the Town Hall) he spends free time.</summary>
         public const float Radius = 15f;
+        /// <summary>A fire this near his hut (or the Town Hall) is one he sits by and keeps fed.</summary>
+        public const float FireReach = Radius + 3f;
+
+        /// <summary>
+        /// Whether settlers keep a fire fed: fire tending and free time on, a fire that burns out, and within reach of a
+        /// hut or the Town Hall (1.4.2's review: the fire's hover must say so only when they will).
+        /// </summary>
+        public static bool Tends(bool tendFires, bool freeTime, bool infiniteFuel, float fromNearestHome) =>
+            tendFires && freeTime && !infiniteFuel && fromNearestHome <= FireReach;
         /// <summary>By a fire he sits this far from it.</summary>
         public const float FireSitMin = 2f;
         /// <summary>
@@ -189,6 +198,30 @@ namespace VikingColonies.Core
         /// <summary>Only one of the two asks: the one whose id comes first.</summary>
         public static bool Asks(string me, string other) => string.CompareOrdinal(me ?? "", other ?? "") < 0;
 
+        /// <summary>
+        /// Where two may meet, in order: halfway, then beside the asker, then beside the other. The first with no wall
+        /// between its two spots is used (1.4.2, the player: "I don't want them talking to each other through a wall").
+        /// </summary>
+        public static List<ChatMeeting> Meetings(GroundPoint a, GroundPoint b)
+        {
+            ChatMeeting halfway = Meeting(a, b);
+            float dx = (halfway.Second.X - halfway.First.X) / FreeTimeRules.ChatGap, dz = (halfway.Second.Z - halfway.First.Z) / FreeTimeRules.ChatGap;
+            float gap = FreeTimeRules.ChatGap;
+            return new List<ChatMeeting>
+            {
+                halfway,
+                new ChatMeeting(a, new GroundPoint(a.X + dx * gap, a.Z + dz * gap)),
+                new ChatMeeting(new GroundPoint(b.X - dx * gap, b.Z - dz * gap), b),
+            };
+        }
+
+        /// <summary>
+        /// The height a meeting's two spots are checked at (the review of 1.4.2: each at its own settler's height, a wall
+        /// check on a slope climbed over the wall): halfway between them, else the height of the one it's beside.
+        /// </summary>
+        public static float MeetingHeight(int meeting, float myHeight, float theirHeight) =>
+            meeting == 1 ? myHeight : meeting == 2 ? theirHeight : (myHeight + theirHeight) / 2f;
+
         public static ChatMeeting Meeting(GroundPoint a, GroundPoint b)
         {
             float dx = b.X - a.X, dz = b.Z - a.Z;
@@ -260,10 +293,19 @@ namespace VikingColonies.Core
             return token.Length > 0;
         }
 
+        /// <summary>
+        /// Whether a doing shows in brackets in the hover: never the evening's, which its status says whole, at a fire or at
+        /// the hall (1.4.2: "Evening at the Town Hall (no fire is lit outdoors) (the evening by the fire)").
+        /// </summary>
+        public static bool InHover(string token) => !string.IsNullOrEmpty(token) && token != Token(Leisure.Evening);
+
         public static string Hover(string status, string activity)
         {
             if (string.IsNullOrEmpty(activity)) return status ?? "";
             if (string.IsNullOrEmpty(status)) return activity;
+            // Said once when the status says it already (the hub's store pictures: "Evening by the fire (the evening by the fire)").
+            string said = activity.StartsWith("the ", StringComparison.OrdinalIgnoreCase) ? activity.Substring(4) : activity;
+            if (status.IndexOf(said, StringComparison.OrdinalIgnoreCase) >= 0) return status;
             return status + " (" + activity + ")";
         }
     }

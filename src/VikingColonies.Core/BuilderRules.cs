@@ -148,9 +148,10 @@ namespace VikingColonies.Core
         /// <summary>
         /// An item lying on the ground that nobody placed: an item, not a building's piece, though the game gives some a
         /// Piece (a mushroom: the site check took them for another building, and the builder never carried them off).
-        /// One a player placed is theirs, as any piece.
+        /// One a player placed is theirs, as any piece, and so is one the game marks as placed as a piece (a decoration,
+        /// which Infinity Hammer can place with no creator: the review of the fix, 1.4.2).
         /// </summary>
-        public static bool IsLooseItem(bool isItem, bool placedByPlayer) => isItem && !placedByPlayer;
+        public static bool IsLooseItem(bool isItem, bool placedAsPiece, bool placedByPlayer) => isItem && !placedAsPiece && !placedByPlayer;
 
         /// <summary>
         /// A piece in the way that the builder may take down himself: part of a colony building whose hut is gone
@@ -221,6 +222,8 @@ namespace VikingColonies.Core
         /// </summary>
         public static string SaveProblem(string name, string chestTypeId, IEnumerable<string> hutTypeIds)
         {
+            if (!IsPlainName(name))
+                return $"a design's name may hold only letters, digits, _ and - ('{name}'): nothing was saved.";
             if (name == chestTypeId || !hutTypeIds.Contains(name)) return null;
             return $"this was built around a {chestTypeId} chest, so it can't be the {name} design (that needs a {name} chest). " +
                    $"Nothing was saved; use the name {chestTypeId} or another name.";
@@ -232,6 +235,13 @@ namespace VikingColonies.Core
         /// </summary>
         public static string EmptyProblem(int buildingPieces, float radius) =>
             buildingPieces > 0 ? null : $"nothing is built within {radius:0} m of the chest, so nothing was saved.";
+
+        /// <summary>
+        /// A name that is a plain file name: letters, digits, _ and - only (1.4.2, the hub's audit of the public code: a
+        /// typed "../../x" would have been written outside the designs' folder).
+        /// </summary>
+        public static bool IsPlainName(string name) =>
+            !string.IsNullOrEmpty(name) && name.All(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-');
 
         /// <summary>The design file for a hut's level: the hut's name for level 1, "&lt;hut&gt;_&lt;level&gt;" for levels 2–5.</summary>
         public static string FileName(string typeId, int level)

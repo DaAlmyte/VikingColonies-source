@@ -8,6 +8,29 @@ namespace VikingColonies.Core
     /// <summary>What he does about a player standing in the doorway (0.20.1).</summary>
     public enum DoorwayChoice { Wait, PressOn, GiveUp }
 
+    /// <summary>Where he is, going through a door (<see cref="DoorRules.Crossing"/>).</summary>
+    public enum DoorCrossing { NotYet, Through, Round }
+
+    /// <summary>
+    /// A door's doorway, from its shape: its middle (at its floor; a door may hinge off its middle), the way through, its
+    /// floor's height and how tall it is.
+    /// </summary>
+    public struct Doorway
+    {
+        public Doorway(Vec3 middle, Vec3 forward, float floorY, float height)
+        {
+            Middle = middle;
+            Forward = forward;
+            FloorY = floorY;
+            Height = height;
+        }
+
+        public Vec3 Middle { get; }
+        public Vec3 Forward { get; }
+        public float FloorY { get; }
+        public float Height { get; }
+    }
+
     public static class DoorRules
     {
         /// <summary>He closes a door he went through once he is this far past it.</summary>
@@ -339,6 +362,13 @@ namespace VikingColonies.Core
         }
 
         /// <summary>
+        /// Whether "no door leads there" is worth its log line: a door by the goal was weighed (the goal may be shut in), or
+        /// the settler is under a roof (inside, the door is the way out). Out in the open with only doors by the settler,
+        /// it's routine: a log just off the walking map, the door of their own hut nearby (1.4.1's colony watch, 119 of 123).
+        /// </summary>
+        public static bool ExplainNoDoor(bool doorNearGoal, bool underRoof) => doorNearGoal || underRoof;
+
+        /// <summary>
         /// Through the door he gets to his goal: beyond it the way goes all the way there, or at least ends
         /// <see cref="CloserBy"/> nearer the goal than his own way does. (A goal out of reach for other reasons isn't helped
         /// by walking into a building.)
@@ -427,6 +457,54 @@ namespace VikingColonies.Core
 
         /// <summary>He stands at the door, close enough to open it, having come to a spot <paramref name="standOff"/> out.</summary>
         public static bool ReadyToOpen(float distanceToDoor, float standOff) => distanceToDoor <= standOff + (OpenReach - StandOff);
+
+        /// <summary>
+        /// He stands at the door to open it: close enough (as from a spot <paramref name="standOff"/> out), in front of its
+        /// doorway rather than along its wall (this matters from the spots further out), and at its height (1.4.1's release
+        /// run: a settler opened a blocked hut's door from 3.5 m along its wall, then from its roof).
+        /// </summary>
+        public static bool ReadyToOpen(Doorway door, Vec3 settler, float standOff) =>
+            ReadyToOpen(Vec3.Distance(settler.Flat, door.Middle.Flat), standOff) && Sideways(door, settler) <= OpenReach
+            && AtDoorHeight(door, settler.Y);
+
+        /// <summary>A step through stays within this of the doorway's middle, sideways (a hut's door or gate is 2 m wide).</summary>
+        public const float ThroughSideways = 1.5f;
+
+        /// <summary>
+        /// Where he is, going through a door from <paramref name="startSide"/>: not past it yet, through its doorway, or past
+        /// its line beside or above the doorway (round the end of its wall, over its roof: 1.4.1's release run, where each
+        /// such "pass" started the clock for giving a blocked hut up again). Up on a hop he is judged once he lands.
+        /// </summary>
+        public static DoorCrossing Crossing(Doorway door, int startSide, Vec3 settler, bool onGround)
+        {
+            if (SideOf(door.Middle, door.Forward, settler) != -startSide || Vec3.Distance(settler.Flat, door.Middle.Flat) < StandOff)
+                return DoorCrossing.NotYet;
+            if (Sideways(door, settler) > ThroughSideways) return DoorCrossing.Round;
+            if (AtDoorHeight(door, settler.Y)) return DoorCrossing.Through;
+            return onGround ? DoorCrossing.Round : DoorCrossing.NotYet;
+        }
+
+        /// <summary>Feet may be this far above a doorway's floor at least (a step up, a hop)...</summary>
+        public const float AboveFloor = 1.2f;
+        /// <summary>... or as far as a settler still fits under its top (a tall gate in a slope); this is a settler's height.</summary>
+        public const float SettlerHeight = 1.8f;
+        /// <summary>Feet may be this far below a doorway's floor (a stair's foot, the farthest spot out).</summary>
+        public const float BelowFloor = 3f;
+
+        /// <summary>
+        /// Feet at a doorway's height: from a stair's foot below its floor up to a step above it, or as high as a settler
+        /// still fits under a tall gate; not on a roof or a floor above it (the review of 1.4.2's door rules: judged from
+        /// the doorway's floor, as a door's pivot may be at its floor, 1 m up or 2 m up).
+        /// </summary>
+        public static bool AtDoorHeight(Doorway door, float feetY) =>
+            feetY >= door.FloorY - BelowFloor && feetY <= door.FloorY + Math.Max(AboveFloor, door.Height - SettlerHeight);
+
+        /// <summary>How far a point is from a doorway's middle line, across it (flat).</summary>
+        private static float Sideways(Doorway door, Vec3 point)
+        {
+            Vec3 axis = door.Forward.Flat.Normalized, offset = (point - door.Middle).Flat;
+            return (offset - axis * Vec3.Dot(offset, axis)).Length;
+        }
 
         /// <summary>Someone in the doorway or waiting by it: near its middle across the floor, at its height (not a floor above).</summary>
         public static bool InDoorway(Vec3 door, Vec3 person) =>

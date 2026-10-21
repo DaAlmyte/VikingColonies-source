@@ -11,7 +11,7 @@ namespace VikingColonies.Construction
     internal sealed class BuildCommand : ConsoleCommand
     {
         public override string Name => "vc_build";
-        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
+        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -73,7 +73,14 @@ namespace VikingColonies.Construction
                     break;
                 case "upgrade":
                     site.RequestUpgradeNow();
-                    Print($"vc_build: upgrading {site.Building.TypeId} from level {site.Building.Level} at once (a bigger site is flattened first, which takes a few seconds).");
+                    Print($"vc_build: upgrading {site.Building.TypeId} from level {site.Building.Level} at once (a bigger site is flattened first, which takes a few seconds)." +
+                          (site.Building.IsTownHall ? " A Town Hall's own level comes from its Raise: 'vc_build halllevel <1-5>' sets it for a test." : ""));
+                    break;
+                case "halllevel":
+                    TownHallModule hall = site.GetComponent<TownHallModule>();
+                    if (hall == null || args.Length < 2 || !int.TryParse(args[1], out int hallLevel))
+                        Print("vc_build halllevel <1-5>: at a Town Hall, sets its level at once (no trophies or materials).");
+                    else Print("vc_build: " + hall.SetLevelForTest(hallLevel));
                     break;
                 case "order":
                     Print(Order(site));
@@ -377,7 +384,9 @@ namespace VikingColonies.Construction
             if (prefab == null || inventory == null) return $"vc_build: no item called '{item}', or no chest.";
             int added = 0;
             while (added < amount && inventory.AddItem(prefab, 1)) added++;
-            return $"vc_build: put {added} of {amount} {item} in the {site.Building.TypeId}'s chest.";
+            // Said plainly when it didn't all fit (the hub lost two picture runs to a silent "0 of 300", 2026-10-20).
+            string full = added < amount ? $" The chest is full: {amount - added} didn't fit." : "";
+            return $"vc_build: put {added} of {amount} {item} in the {site.Building.TypeId}'s chest.{full}";
         }
 
         private static string Status(ConstructionModule site)

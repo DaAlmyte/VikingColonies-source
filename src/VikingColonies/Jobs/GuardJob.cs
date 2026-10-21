@@ -63,6 +63,8 @@ namespace VikingColonies.Jobs
         private int _towerPlace, _alarmPlace;
         private Character _target;
         private float _targetHealth, _harmedAt, _giveUpAfter = GuardRules.GiveUpSeconds;
+        /// <summary>When an archer's way to the target ended short of bow range (-infinity while it goes on).</summary>
+        private float _wayEndedAt = float.NegativeInfinity;
         /// <summary>The post his walk last stopped short of (the way ends there), while he stays by it.</summary>
         private Vector3? _stoppedShortOf;
         /// <summary>The middle and radius of the watch he took it from (his tower's, a call's, the alarm's), for the leash.</summary>
@@ -597,12 +599,19 @@ namespace VikingColonies.Jobs
             return victim != null && ColonyAreas.ColonyAt(victim.transform.position) == colony;
         }
 
-        /// <summary>He can walk up to it: not swimming, flying or high above the ground.</summary>
-        private static bool Reachable(Character c)
+        /// <summary>He can walk up to it (not swimming, flying or high above the ground), or shoot it with his bow (1.4.2).</summary>
+        private bool Reachable(Character c)
         {
             Vector3 at = c.transform.position;
             float ground = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(at) : at.y;
-            return GuardRules.Reachable(at.y - ground, c.IsSwimming(), c.IsFlying());
+            return GuardRules.Reachable(at.y - ground, c.IsSwimming(), c.IsFlying(), _ranged);
+        }
+
+        private string WhyOutOfReach(Character c)
+        {
+            Vector3 at = c.transform.position;
+            float ground = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(at) : at.y;
+            return GuardRules.WhyOutOfReach(at.y - ground, c.IsSwimming(), c.IsFlying(), _ranged);
         }
 
         private static string IdOf(Character c)
@@ -659,7 +668,7 @@ namespace VikingColonies.Jobs
             _targetHealth = health;
             if (!Reachable(target) || Time.time - _harmedAt > _giveUpAfter)
             {
-                Log.Info($"{Citizen.CitizenName} gives the {target.m_name} up (no blow landed for {Time.time - _harmedAt:0} s, or out of reach)");
+                Log.Info($"{Citizen.CitizenName} gives the {target.m_name} up ({WhyOutOfReach(target) ?? $"no blow landed for {Time.time - _harmedAt:0} s"})");
                 _givenUp.Add(IdOf(target), Time.time);
                 return false;
             }
@@ -668,7 +677,7 @@ namespace VikingColonies.Jobs
             Vector3 velocity = Citizen.Body.GetVelocity(), outward = Citizen.transform.position - _leashCentre;
             float speed = GuardRules.OutwardSpeed(outward.x, outward.z, velocity.x, velocity.z);
             if (!GuardRules.LetGoFrom(fromCentre, _leashRadius, ColonyConfig.ChaseBeyondPatrol.Value, speed)) return true;
-            Log.Info($"{Citizen.CitizenName} lets the {target.m_name} go ({fromCentre:0.0} m from the middle of his watch) and goes back");
+            Log.Info($"{Citizen.CitizenName} lets the {target.m_name} go ({fromCentre:0.0} m from the middle of their watch) and goes back");
             return false;
         }
 
@@ -745,11 +754,22 @@ namespace VikingColonies.Jobs
                 // Out of range he closes to 15 m; in range but out of sight (behind a wall, a rock) he walks on until he sees it
                 // (1.2's review: within 15 m he stood where he was).
                 bool walked = Ai.GoTo(_target.transform.position, gap > ShootRange ? ShootRange * 0.6f : MinReach, hurry: true);
+                bool endedShort = walked && gap > ShootRange;
+                if (!endedShort) _wayEndedAt = float.NegativeInfinity;
+                else if (float.IsNegativeInfinity(_wayEndedAt)) _wayEndedAt = Time.time;
+                if (GuardRules.OutOfBowReach(endedShort, gap, ShootRange, Time.time - _wayEndedAt))
+                {
+                    Log.Info($"{Citizen.CitizenName} gives the {_target.m_name} up: their way ends {gap:0} m from it, past a bow's reach");
+                    _givenUp.Add(IdOf(_target), Time.time);
+                    _wayEndedAt = float.NegativeInfinity;
+                    ForgetTarget();
+                    return;
+                }
                 if (Time.time >= _approachLogAt)
                 {
                     _approachLogAt = Time.time + 5f;
-                    Log.Info($"{Citizen.CitizenName} closes on the {_target.m_name} to shoot ({gap:0.0} m, {_target.transform.position.y - me.y:0.0} m above him, " +
-                             $"in sight {seen}, his way {(walked ? "ended" : "goes on")})");
+                    Log.Info($"{Citizen.CitizenName} closes on the {_target.m_name} to shoot ({gap:0.0} m, {_target.transform.position.y - me.y:0.0} m above them, " +
+                             $"in sight {seen}, their way {(walked ? "ended" : "goes on")})");
                 }
                 return;
             }
@@ -812,7 +832,7 @@ namespace VikingColonies.Jobs
                 foreach (string item in Citizen.Carry.ItemNames.ToList()) Citizen.InHand.Add(item, Citizen.Carry.Count(item));
                 Citizen.Carry.Clear();
                 Citizen.SaveCarry();
-                Log.Info($"{Citizen.CitizenName} takes what is left in his load ({Citizen.InHand.Total}) back to a chest");
+                Log.Info($"{Citizen.CitizenName} takes what is left in their load ({Citizen.InHand.Total}) back to a chest");
             }
             if (Citizen.InHand.Total > 0 && _ballista == null && OnRounds) return ReturnAmmo();
             if (!LoadingAllowed) return false;

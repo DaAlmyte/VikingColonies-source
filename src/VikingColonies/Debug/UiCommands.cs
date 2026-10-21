@@ -21,8 +21,10 @@ namespace VikingColonies.DevTools
         public override string Name => "vc_ui";
         public override string Help => "VikingColonies (test worlds): 'vc_ui window [townhall|builder|lumberjack|longhouse|forager]' opens the nearest such " +
                                        "building's window (within 8 m) and logs its text; 'vc_ui text' logs the open windows; 'vc_ui treelist' (or replant) opens the " +
-                                       "nearest Lumberjack's Hut's Trees list; 'vc_ui order <hut> first|aside|resume|cancel' presses a Work orders button on the open Town Hall window; 'vc_ui report' presses its Report a problem button (the bug form's address goes to the log); 'vc_ui pick' the nearest Forager's Hut's \"What to pick\" list; 'vc_ui pickables' " +
-                                       "logs every pickable the game has (what it gives, whether it grows back, where it grows); 'vc_ui chest' opens the nearest colony chest; 'vc_ui hover [metres]' " +
+                                       "nearest Lumberjack's Hut's Trees list; 'vc_ui order <hut> first|aside|resume|cancel' presses a Work orders button on the open Town Hall window; 'vc_ui report' presses its Report a problem button (the bug form's address goes to the log); " +
+                                       "'vc_ui feedback' presses its Feedback button; 'vc_ui feedback discord|github' presses that button in the open Feedback window (the address goes to the log); " +
+                                       "'vc_ui feedback arm' forgets the feedback ask on this computer and lets it come in this test world; 'vc_ui feedback due' also makes it due now; 'vc_ui feedback state' logs it; 'vc_ui pick' the nearest Forager's Hut's \"What to pick\" list; 'vc_ui pickables' " +
+                                       "logs every pickable the game has (what it gives, whether it grows back, where it grows); 'vc_ui chest' opens the nearest colony chest; 'vc_ui shifte <hut>' logs its chest's hover, then presses Shift+E on it through every mod's hooks; 'vc_ui hover [metres]' " +
                                        "logs the hover texts of settlers and cairns nearby; 'vc_ui tab <tab>' shows a tab of the open window (stock: Keep in stock); " +
                                        "'vc_ui keep <hut> <item|food> <amount>' sets the nearest such building's Keep in stock entry (0 takes it off); " +
                                        "'vc_ui close' closes everything";
@@ -80,6 +82,9 @@ namespace VikingColonies.DevTools
                     Windows.TownHall.PressReport(true);   // test: the address goes to the log; no browser, no clipboard
                     Plugin.Instance.StartCoroutine(LogSoon());
                     break;
+                case "feedback":
+                    Feedback(args.Length > 1 ? args[1].ToLowerInvariant() : "");
+                    break;
                 case "order":
                     if (!Windows.TownHall.IsOpen)
                     {
@@ -134,6 +139,30 @@ namespace VikingColonies.DevTools
                     BuildCommand.Print($"vc_ui: opened the {store.TypeId}'s chest ({container.GetInventory().GetWidth()} x {container.GetInventory().GetHeight()}, " +
                                        $"{container.GetInventory().GetAllItems().Count} stacks)");
                     break;
+                case "shifte":
+                {
+                    // vc_ui shifte <hut>: the building's chest hover, then Shift+E on it as the game calls it, through every
+                    // mod's hooks (issue #1, 1.4.1: MyLittleUI's rename took Shift+E and dropped "Manage").
+                    ColonyBuilding used = Nearest(p, args.Length > 1 ? args[1] : null, 8f);
+                    Container chest = used != null ? used.GetComponent<Container>() : null;
+                    if (chest == null)
+                    {
+                        BuildCommand.Print("vc_ui: no colony chest within 8 m");
+                        return;
+                    }
+                    BuildCommand.Print($"vc_ui: the {used.TypeId}'s hover: {(chest.GetHoverText() ?? "").Replace("\n", " / ")}");
+                    // As the game does it: the player's Interact on what they look at (it calls the chest's, through every mod's hooks).
+                    System.Reflection.MethodInfo press = HarmonyLib.AccessTools.Method(typeof(Player), "Interact", new[] { typeof(GameObject), typeof(bool), typeof(bool) });
+                    bool took = press != null;
+                    TextRequestWatch.On = true;   // who asks for a text box while it's pressed, to the log
+                    try { press?.Invoke(p, new object[] { chest.gameObject, false, true }); }
+                    finally { TextRequestWatch.On = false; }
+                    WindowBase opened = used.IsTownHall ? (WindowBase)Windows.TownHall : Windows.Hut;
+                    // Not TextInput.IsVisible: Jötunn makes it true while a mod window blocks input. A text box asked for is logged
+                    // by TextRequestWatch.
+                    BuildCommand.Print($"vc_ui: Shift+E on the {used.TypeId}: {(took ? "taken" : "not taken")}, its window {(opened.IsOpen ? "open" : "closed")}");
+                    break;
+                }
                 case "hover":
                     float range = args.Length > 1 && float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float r) ? r : 15f;
                     LogHovers(p, range);
@@ -269,6 +298,7 @@ namespace VikingColonies.DevTools
                     Windows.Grow.Close();
                     Windows.Field.Close();
                     Windows.FieldCrop.Close();
+                    Windows.Feedback.Close();
                     if (InventoryGui.instance != null && InventoryGui.IsVisible()) InventoryGui.instance.Hide();
                     ItemDrop.ItemData held = p.GetInventory().GetItem("$item_hammer");
                     if (held != null && p.IsItemEquiped(held)) p.UnequipItem(held);
@@ -476,7 +506,10 @@ namespace VikingColonies.DevTools
             var found = near.Where(x => x != null && (prefab == "" || prefab == "all" || Utils.GetPrefabName(x.gameObject) == prefab))
                             .Select(x => $"{Utils.GetPrefabName(x.gameObject)} ({x.transform.position.x:0.0}, {x.transform.position.y:0.0}, {x.transform.position.z:0.0}) " +
                                          $"turned {x.transform.rotation.eulerAngles.y:0}, site '{Construction.PiecePlacer.SiteOf(x.gameObject)}'" +
-                                         $"{(x.GetComponent<WearNTear>() != null ? ", wears" : "")}{(Construction.PiecePlacer.IsWildVegetation(x) ? ", wild vegetation" : "")}")
+                                         $"{(x.GetComponent<WearNTear>() != null ? ", wears" : "")}{(Construction.PiecePlacer.IsWildVegetation(x) ? ", wild vegetation" : "")}" +
+                                         $"{(x.GetComponent<ItemDrop>() != null ? ", an item" : "")}{(x.GetComponent<ItemDrop>()?.IsPiece() == true ? " placed as a piece" : "")}" +
+                                         $"{(Construction.PiecePlacer.IsLooseItem(x) ? ", loose" : "")}{(x.IsPlacedByPlayer() ? ", placed by a player" : "")}" +
+                                         $", parts: {string.Join("/", x.GetComponents<Component>().Select(c => c.GetType().Name))}")
                             .ToList();
             BuildCommand.Print($"vc_ui: {found.Count} pieces within {range:0} m: {string.Join("; ", found)}");
         }
@@ -548,6 +581,45 @@ namespace VikingColonies.DevTools
                 .FirstOrDefault();
         }
 
+        /// <summary>vc_ui feedback: the Town Hall's Feedback button, the Feedback window's buttons, and the ask's state (1.4.2).</summary>
+        private static void Feedback(string what)
+        {
+            switch (what)
+            {
+                case "":
+                    if (!Windows.TownHall.IsOpen)
+                    {
+                        BuildCommand.Print("vc_ui: open the Town Hall window first (vc_ui window townhall)");
+                        return;
+                    }
+                    Windows.TownHall.PressFeedback();
+                    Plugin.Instance.StartCoroutine(LogSoon());
+                    return;
+                case "discord":
+                case "github":
+                    if (!Windows.Feedback.IsOpen)
+                    {
+                        BuildCommand.Print("vc_ui: no Feedback window is open (vc_ui feedback, or vc_ui feedback due)");
+                        return;
+                    }
+                    Windows.Feedback.Press(what == "discord", true);   // test: the address goes to the log; no browser
+                    BuildCommand.Print($"vc_ui: pressed {what}; the window is {(Windows.Feedback.IsOpen ? "open" : "closed")}");
+                    return;
+                case "arm":
+                case "due":
+                    FeedbackAsker.ArmForTest(what == "due");
+                    BuildCommand.Print($"vc_ui: feedback {what}: {FeedbackAsker.StateForTest()}");
+                    return;
+                case "state":
+                    BuildCommand.Print($"vc_ui: feedback {FeedbackAsker.StateForTest()}; window " +
+                                       (Windows.Feedback.IsOpen ? Windows.Feedback.Asking ? "open as the ask" : "open" : "closed"));
+                    return;
+                default:
+                    BuildCommand.Print("vc_ui: feedback [discord|github|arm|due|state]");
+                    return;
+            }
+        }
+
         private static IEnumerator LogSoon()
         {
             yield return new WaitForSecondsRealtime(1f);   // a refresh has filled it in
@@ -557,7 +629,7 @@ namespace VikingColonies.DevTools
         private static void LogWindows()
         {
             int open = 0;
-            foreach (WindowBase window in new WindowBase[] { Windows.Hut, Windows.TownHall, Windows.Trees, Windows.Pick, Windows.Grow })
+            foreach (WindowBase window in new WindowBase[] { Windows.Hut, Windows.TownHall, Windows.Trees, Windows.Pick, Windows.Grow, Windows.Feedback })
             {
                 if (!window.IsOpen) continue;
                 open++;
@@ -702,6 +774,29 @@ namespace VikingColonies.DevTools
                 BuildCommand.Print($"vc_set: {definition.Section}.{definition.Key} {before} -> {entry.GetSerializedValue()}");
             }
             else BuildCommand.Print($"vc_set: {definition.Section}.{definition.Key} = {entry.GetSerializedValue()}");
+        }
+    }
+}
+
+namespace VikingColonies.DevTools
+{
+    /// <summary>vc_ui shifte (issue #1): while it presses Shift+E, who asks the game for a text box, to the log.</summary>
+    internal static class TextRequestWatch
+    {
+        internal static bool On;
+
+        [HarmonyLib.HarmonyPatch]
+        private static class RequestHook
+        {
+            [HarmonyLib.HarmonyPatch(typeof(TextInput), nameof(TextInput.RequestText)), HarmonyLib.HarmonyPrefix]
+            private static void Asked(TextReceiver sign, string topic)
+            {
+                if (!On) return;
+                var frames = new System.Diagnostics.StackTrace().GetFrames() ?? new System.Diagnostics.StackFrame[0];
+                string from = string.Join(" < ", frames.Skip(1).Take(8).Select(f => f.GetMethod()).Where(m => m != null)
+                    .Select(m => $"{m.DeclaringType?.Name}.{m.Name}").ToArray());
+                Construction.BuildCommand.Print($"vc_ui: a text box was asked for ('{topic}', for {sign?.GetType().Name}): {from}");
+            }
         }
     }
 }

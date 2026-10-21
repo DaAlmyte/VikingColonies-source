@@ -67,6 +67,22 @@ namespace VikingColonies.Core
         /// first day on the house (<see cref="FirstDay"/>).</summary>
         public static bool Due(int lastMealDay, int today, bool night) => !FirstDay(lastMealDay) && today != lastMealDay && !night;   // a later day: the clock was put back
 
+        /// <summary>A hungry settler looks for food again this often during the day.</summary>
+        public const float HungryLookSeconds = 30f;
+
+        /// <summary>
+        /// A settler who went hungry today looks again for food, every <see cref="HungryLookSeconds"/> and never at night,
+        /// so food put in later that day is eaten (1.4.2, a player's report: it waited until the next day).
+        /// </summary>
+        public static bool LooksAgain(bool hungry, int lastMealDay, int today, bool night, float sinceLooked) =>
+            hungry && lastMealDay == today && !night && sinceLooked >= HungryLookSeconds;
+
+        /// <summary>
+        /// Whether the meal check looks for food now: a meal due that breakfast isn't serving, or a hungry settler's look
+        /// again, whatever breakfast says (the review of 1.4.2: a settler loaded again never looked).
+        /// </summary>
+        public static bool ShouldLook(bool due, bool again, bool atTable) => again || (due && !atTable);
+
         /// <summary>He never ate: a new settler, or one from before meals. He counts as fed today.</summary>
         public static bool FirstDay(int lastMealDay) => lastMealDay == NeverAte;
 

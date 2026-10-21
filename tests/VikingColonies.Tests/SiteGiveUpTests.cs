@@ -60,6 +60,18 @@ namespace VikingColonies.Tests
             Assert.False(RockWork.FromHere(stuck: true, rockPart: false, distance: 1f));   // a tree: felled from the right side
         }
 
+        // The review of polish round 2: keeping and dropping "from here" at the same 4 m line made a builder idling at the
+        // line flap between swinging and walking back; nudged off before every swing, he never stopped walking back.
+        [Fact]
+        public void Breaking_from_here_holds_a_metre_past_the_line_and_after_a_few_walks_back_for_good()
+        {
+            Assert.True(RockWork.KeepsFromHere(rockPart: true, distance: RockWork.FromHereReach + 0.5f, walkBacks: 0));
+            Assert.False(RockWork.KeepsFromHere(rockPart: true, distance: RockWork.FromHereReach + RockWork.KeepMargin + 0.5f, walkBacks: 0));
+            Assert.False(RockWork.KeepsFromHere(rockPart: true, distance: 20f, walkBacks: RockWork.MaxWalkBacks - 1));
+            Assert.True(RockWork.KeepsFromHere(rockPart: true, distance: 20f, walkBacks: RockWork.MaxWalkBacks));   // his blow lands anyway
+            Assert.False(RockWork.KeepsFromHere(rockPart: false, distance: 1f, walkBacks: 0));
+        }
+
         [Fact]
         public void A_new_site_starts_afresh()
         {

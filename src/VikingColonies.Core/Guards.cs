@@ -237,9 +237,38 @@ namespace VikingColonies.Core
         /// </summary>
         public static float GiveUpAfter(float distance) => GiveUpSeconds + Math.Max(0f, distance) / ApproachSpeed;
 
-        /// <summary>Only what he can walk up to: not something swimming, flying or high above the ground.</summary>
-        public static bool Reachable(float heightAboveGround, bool swimming, bool flying) =>
-            !swimming && !flying && heightAboveGround <= MaxReachUp;
+        /// <summary>How long an archer's way may have ended short of bow range before the target is let go.</summary>
+        public const float WayEndedSeconds = 3f;
+
+        /// <summary>
+        /// An archer whose way to a target ended short of bow range for <see cref="WayEndedSeconds"/> (a Neck swimming far
+        /// out, past the shore where the walk stops) lets it go (the review of polish round 2: they stood at the shore till
+        /// the give-up time, then took it again).
+        /// </summary>
+        public static bool OutOfBowReach(bool wayEnded, float gap, float shootRange, float endedFor) =>
+            wayEnded && gap > shootRange && endedFor >= WayEndedSeconds;
+
+        /// <summary>An archer shoots what is up to this many metres above the ground under it (1.4.2).</summary>
+        public const float MaxShootUp = 15f;
+
+        /// <summary>
+        /// Only what he can walk up to: not something swimming, flying or high above the ground. With a bow and arrows
+        /// (<paramref name="ranged"/>), what swims or flies too, and what stands up to <see cref="MaxShootUp"/> high (1.4.2:
+        /// archers left a swimming Neck alone that their arrows could reach).
+        /// </summary>
+        public static bool Reachable(float heightAboveGround, bool swimming, bool flying, bool ranged = false) =>
+            ranged ? heightAboveGround <= MaxShootUp : !swimming && !flying && heightAboveGround <= MaxReachUp;
+
+        /// <summary>
+        /// Why a target is out of his reach, for the log; null when it isn't (1.4.1's release run: archers gave a Greyling
+        /// up at once, and the line didn't say which reason held).
+        /// </summary>
+        public static string WhyOutOfReach(float heightAboveGround, bool swimming, bool flying, bool ranged = false) =>
+            ranged ? (heightAboveGround > MaxShootUp ? $"it is {heightAboveGround.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} m above the ground" : null)
+            : swimming ? "it is swimming"
+            : flying ? "it is flying"
+            : heightAboveGround > MaxReachUp ? $"it is {heightAboveGround.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} m above the ground"
+            : null;
 
         /// <summary>Only a monster's brain attacks what it is after; an animal's "target" is what it flees from.</summary>
         public static bool Attacks(string brain) => brain == "MonsterAI";

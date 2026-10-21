@@ -72,6 +72,25 @@ namespace VikingColonies.Core
             "$enemy_eikthyr", "$enemy_gdking", "$enemy_bonemass", "$enemy_dragon", "$enemy_goblinking", "$enemy_seekerqueen", "$enemy_fader",
         };
 
+        /// <summary>
+        /// Whether <paramref name="latest"/> (<see cref="LatestBeaten"/>) is news to a colony that last heard of
+        /// <paramref name="heard"/>: a boss further along the way (the review of polish round 2: the boss topic never ended,
+        /// "Eikthyr, fallen!" on day 300). The colony's saga tells it, and settlers talk of it for a few days.
+        /// </summary>
+        public static bool BossNews(string heard, string latest)
+        {
+            int now = Array.IndexOf(s_bosses, latest ?? "");
+            return now >= 0 && now > Array.IndexOf(s_bosses, heard ?? "");
+        }
+
+        /// <summary>The name token of the boss furthest along the way that this world has beaten ("" for none) (1.4.2's small talk).</summary>
+        public static string LatestBeaten(Func<string, bool> isBeaten)
+        {
+            for (int i = s_bossKeys.Length - 1; i >= 0; i--)
+                if (isBeaten != null && isBeaten(s_bossKeys[i])) return s_bosses[i];
+            return "";
+        }
+
         private static readonly string[] s_defaultCosts =
         {
             "Wood:40, Stone:20, DeerHide:10",

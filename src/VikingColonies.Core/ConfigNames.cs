@@ -63,6 +63,7 @@ namespace VikingColonies.Core
         public const string BeatenBossesCount = "BeatenBossesCount";
         public const string VerboseLog = "VerboseLog";
         public const string HuginTips = "HuginTips";
+        public const string AskForFeedback = "AskForFeedback";
         public const string WordsAboveHeads = "WordsAboveHeads";
         public const string RebuildMissingPieces = "RebuildMissingPieces";
         public const string FreeTime = "FreeTime";
@@ -91,7 +92,7 @@ namespace VikingColonies.Core
             SkipIntro, AutoStartCharacter, AutoStartWorld, StorageSection, RadiusPerLevel, RowsPerLevel,
             MessagesSection, SettlersSafeFromTrees, DeathMessage, SettlersGoIndoorsAtNight, SettlersShelterInRaids,
             TownHallGraceDays, LonghouseSection, SettlersEat, HungryWorkSpeed, NewcomersPerDay, NewcomerFood, MaxSettlers,
-            ForagerHutSection, ForagerSection, VerboseLog, HuginTips, WordsAboveHeads, FarmSection, FarmerSection,
+            ForagerHutSection, ForagerSection, VerboseLog, HuginTips, AskForFeedback, WordsAboveHeads, FarmSection, FarmerSection,
             RebuildMissingPieces, FreeTime, SmallTalk, EveningGathering, SleepInBeds, TendFires, CarryToStock, LeaveTreesNearBuildings, NewcomersWalkIn, CallingBonus,
             Mood, FieldSection, WatchtowerSection, GuardsSection, MaxReach, Enabled, ChaseBeyondPatrol, RetreatHealth, HelpRadius, LoadBallistas, StopsSpawns,
             Levels, SettlersAtLevel1, SettlersPerLevel, Level2Cost, Level3Cost, Level4Cost, Level5Cost, BeatenBossesCount,

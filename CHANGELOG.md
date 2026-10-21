@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.4.2 (2026-10-21) — Polish
+
+**For server owners:** the server and every player need 1.4.2. One new setting, `Messages.AskForFeedback` (on by
+default; the server's value counts for everyone). Worlds and colonies load as they were.
+
+### Added
+- **Tell us what you think.** Once, at a good moment (the first time a hut near you reaches level 2, or after two hours
+  with a colony), a small window asks what you think of the mod, with a link to our Discord and one to the feedback
+  form on GitHub. "Not now" closes it for good, and it never comes during a fight, a raid or over another window.
+  There's also a **Feedback** button in the Town Hall's window, beside Report a problem. Nothing is sent from the game:
+  the links open a page in your browser. Don't want the ask? Turn off `Messages.AskForFeedback`.
+
+### Changed
+- Settlers have much more to say: they talk about their own trade (the lumberjack about trees, the farmer about crops,
+  the guard about the watch), about a raid the colony held off, and for a few days after a boss falls in your world
+  (the Town Hall's saga tells it), and every topic has more lines (127 in all, from 68).
+- A lumberjack says what they're doing ("Felling trees", "Gathering wood", "Keeping clear of falling logs"), and a
+  settler on the way to a hut you're far from says "Heading to work", instead of a plain "Working".
+- Archers in a Watchtower shoot monsters that swim or fly, and ones standing up to 15 m high; guards with swords still
+  leave those alone.
+- The colony says more of its rules where they happen:
+  - the Town Hall's summary shows the food it keeps for newcomers ("Food in the Town Hall: 14 (it keeps 10 for
+    newcomers)");
+  - a fire the settlers keep burning says so when you look at it, with what it takes from the colony's chests;
+  - a builder who needs something another building keeps says where ("Needs 12 Wood (more Wood is kept in the
+    Lumberjack's Hut)");
+  - settlers gathering at the Town Hall in the evening say no fire is lit outdoors.
+- The licence, from this version: free to play, to share unchanged (in a modpack, with friends) and to make add-ons
+  and compatibility patches for; publishing the code or a changed copy needs DaAlmyte's OK first. Versions up to 1.4.1
+  stay MIT.
+
+### Fixed
+- A settler's daily greeting is no longer used up when too many words are on screen to show it.
+- A builder breaking a rock from where they stand walks back to it if nudged away, instead of swinging at the air.
+- Debug mode's K, and the console's killall, killenemies and killtame, no longer kill your settlers.
+- A hungry settler eats food you put in later that day, instead of staying hungry until the next day (they look again
+  every half minute).
+- With MyLittleUI installed, Shift+E on the Town Hall and the huts opens their window again, and their hover says
+  "Manage" instead of "Rename" (#1).
+- Two settlers no longer chat face to face through a wall: they meet where nothing stands between them, or do
+  something else.
+- Settlers no longer open a door from beside it or from a roof above it. When a hut's door was blocked, a settler could
+  step onto the low edge of its roof, "go through" the door onto the roof and keep trying all night; now the hut is
+  given up within 45 seconds for another.
+- `vc_blueprint save` takes only a plain name (letters, digits, `_` and `-`), so a design can't be written outside
+  the designs' folder.
+
 ## 1.4.1 (2026-10-20) — Fixes
 
 **For server owners:** the server and every player need 1.4.1. No settings changed; worlds and colonies load as they

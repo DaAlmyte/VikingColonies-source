@@ -1,21 +1,22 @@
-MIT License
+VikingColonies licence
 
-Copyright (c) 2026 DaAlmyte
+Copyright (c) 2026 DaAlmyte. All rights reserved, except for what this licence allows.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+You may, without asking:
+- read this code, build it and change it for your own use;
+- share the mod unchanged, as it is released on Thunderstore (in a modpack, or with the people you play with);
+- make and publish your own add-ons, compatibility patches and other mods that work alongside VikingColonies, as long
+  as they don't contain this code or a changed copy of it.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You need written permission from DaAlmyte first to:
+- publish this code, a changed copy of it, or a mod built from it;
+- sell any of it, or put it behind a paywall.
+Ask on https://github.com/DaAlmyte/VikingColonies-issues or on the mod's Discord.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This licence covers VikingColonies 1.4.2 and every later version. Versions up to and including 1.4.1 were released
+under the MIT licence, and whoever got one of them keeps those rights to that version.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

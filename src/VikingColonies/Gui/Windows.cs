@@ -10,5 +10,10 @@ namespace VikingColonies.Gui
         public static readonly FieldWindow Field = new FieldWindow();
         public static readonly FieldCropWindow FieldCrop = new FieldCropWindow();
         public static readonly StockAddWindow StockAdd = new StockAddWindow();
+        public static readonly FeedbackWindow Feedback = new FeedbackWindow();
+
+        /// <summary>Any colony window is open (the feedback ask waits until none is, 1.4.2).</summary>
+        public static bool AnyOpen() =>
+            Hut.IsOpen || TownHall.IsOpen || Trees.IsOpen || Pick.IsOpen || Grow.IsOpen || Field.IsOpen || FieldCrop.IsOpen || StockAdd.IsOpen || Feedback.IsOpen;
     }
 }

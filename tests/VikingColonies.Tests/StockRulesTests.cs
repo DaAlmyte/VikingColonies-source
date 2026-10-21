@@ -73,5 +73,26 @@ namespace VikingColonies.Tests
             Assert.False(StockRules.Carried(maxStack: 1));    // a sword, armour, a tool
             Assert.False(StockRules.Carried(maxStack: 0));    // an item the game doesn't know
         }
+    
+        // 1.4.2: the builder's "Needs 12 Wood" says where more is kept (a rule only the guide told).
+        [Fact]
+        public void Where_more_is_kept_names_the_building_keeping_the_most_of_it()
+        {
+            var chests = new List<KeptChest>
+            {
+                new KeptChest("$vc_hut_farm", held: 10, spare: 10),
+                new KeptChest("$vc_hut_lumberjack", held: 50, spare: 0),
+                new KeptChest("$vc_town_hall", held: 30, spare: 25),
+            };
+            Assert.Equal("$vc_hut_lumberjack", StockRules.KeptIn(chests));
+        }
+
+        [Fact]
+        public void Nothing_kept_anywhere_names_nobody()
+        {
+            Assert.Null(StockRules.KeptIn(new List<KeptChest> { new KeptChest("$vc_hut_farm", held: 10, spare: 10) }));
+            Assert.Null(StockRules.KeptIn(new List<KeptChest>()));
+            Assert.Null(StockRules.KeptIn(null));
+        }
     }
 }
