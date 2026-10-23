@@ -23,6 +23,7 @@ namespace VikingColonies.Construction
         public const string TakeAwayKey = SaveKeys.TakeAway;
         private const string PrevPlanKey = SaveKeys.PlanPrev;
         private const string PrevOrderKey = SaveKeys.OrderPrev;
+        private const string EarthKey = SaveKeys.EarthLevel;
         public const int PieceDone = 0;
         public const int PieceFailed = 1;
         public const int PieceGone = 2;
@@ -962,10 +963,7 @@ namespace VikingColonies.Construction
         /// <summary>On the asker's computer: why nothing happened, in the open window or on screen.</summary>
         private void OnMessage(long sender, string token)
         {
-            string text = Localization.instance.Localize(token);
-            if (Gui.Windows.Hut.IsOpen) Gui.Windows.Hut.ShowMessage(text);
-            else if (Gui.Windows.TownHall.IsOpen) Gui.Windows.TownHall.ShowMessage(text);
-            else if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, text);
+            Gui.Windows.Reply(Localization.instance.Localize(token));   // the open window, else the message corner (1.4.3)
         }
 
         private void OnUpgrade(long sender, int target)
@@ -1427,7 +1425,94 @@ namespace VikingColonies.Construction
         {
             BuildOrderRecord order = IsValid && _nview.IsOwner() ? Order : null;
             if (order != null && order.Kind == OrderKind.Remove && order.State == BuildState.Done) StartCoroutine(FinishTakeDownSoon());
-            else CheckForRepair();
+            else
+            {
+                CheckForRepair();
+                PaintEarthOnce();
+            }
+        }
+
+        /// <summary>
+        /// Owner only, with the repair check: a finished building's earth under its roof painted as trodden earth, once a
+        /// level (<see cref="EarthFloor"/>; the review of 2026-10-21: the Longhouse's earth floor was meadow grass and
+        /// shrubs). A building finished before this gets it once too.
+        /// </summary>
+        private void PaintEarthOnce()
+        {
+            if (!IsValid || !_nview.IsOwner()) return;
+            BuildOrderRecord order = Order;
+            // Finished, or finished and under repair (a piece or two fell: the earth test of 2026-10-21 waited for ever).
+            if (order == null || order.Kind == OrderKind.Remove || (order.State != BuildState.Done && order.Kind != OrderKind.Repair)) return;
+            ZDO zdo = _nview.GetZDO();
+            if (zdo.GetInt(EarthKey, 0) == DesignLevel) return;
+            if (!GroundShaper.Ready || ZNetScene.instance == null || !ZNetScene.instance.IsAreaReady(transform.position)) return;
+            PaintEarthNow();
+        }
+
+        /// <summary>The earth under its roof is painted for its level (vc_selftest waits for it: painting remakes the walking map there).</summary>
+        internal bool EarthPaintedForTest => IsValid && _nview.GetZDO().GetInt(EarthKey, 0) == DesignLevel;
+
+        /// <summary>
+        /// Owner only: paints the earth under the roof now (and as done for this level), or -1 when the ground there isn't
+        /// loaded yet (it is tried again with the next check). Test command: vc_build earth.
+        /// </summary>
+        internal int PaintEarthNow()
+        {
+            if (!IsValid || !_nview.IsOwner() || !GroundShaper.Ready) return 0;
+            List<Vector3> spots = EarthSpots(Plan, transform.position, transform.rotation);
+            if (spots == null) return -1;
+            _nview.GetZDO().Set(EarthKey, DesignLevel);
+            StartCoroutine(PaintSpots(spots));
+            if (spots.Count > 0) Log.Info($"{_building.TypeId} {_building.Id}: the earth under its roof painted at {spots.Count} spots (level {DesignLevel})");
+            return spots.Count;
+        }
+
+        /// <summary>A few spots a frame: a Longhouse's 100 at once made the game stutter (the review of 2026-10-21).</summary>
+        private const int EarthPerFrame = 4;
+
+        private static IEnumerator PaintSpots(List<Vector3> spots)
+        {
+            for (int i = 0; i < spots.Count; i++)
+            {
+                GroundShaper.Earth(spots[i]);
+                if (i % EarthPerFrame == EarthPerFrame - 1) yield return null;
+            }
+        }
+
+        /// <summary>
+        /// Paints the earth under a plan's roofs (the plan laid round <paramref name="origin"/>): how many spots, or -1 when
+        /// the ground under one isn't loaded. The game changes only the ground near a player (its heightmaps): the gallery
+        /// run, 2026-10-21, painted a Longhouse 140 m away, its log said so, and the grass stayed in its back rooms.
+        /// </summary>
+        internal static int PaintEarth(IReadOnlyList<PlannedPiece> plan, Vector3 origin, Quaternion rotation)
+        {
+            List<Vector3> spots = EarthSpots(plan, origin, rotation);
+            if (spots == null) return -1;
+            foreach (Vector3 at in spots) GroundShaper.Earth(at);
+            return spots.Count;
+        }
+
+        /// <summary>
+        /// The spots to paint under a plan's roofs (laid round <paramref name="origin"/>), on the ground, cultivated ground
+        /// left as it is (a player's crops by a hut); null when the ground under one isn't loaded or another computer
+        /// changes it (try again later).
+        /// </summary>
+        private static List<Vector3> EarthSpots(IReadOnlyList<PlannedPiece> plan, Vector3 origin, Quaternion rotation)
+        {
+            Quaternion undo = Quaternion.Inverse(rotation);
+            List<PlannedPiece> local = plan.Where(p => p.IsValid)
+                .Select(p => new PlannedPiece(p.Index, p.Prefab, V(undo * (U(p.Position) - origin)), p.Rotation)).ToList();
+            var spots = new List<Vector3>();
+            foreach (GroundPoint spot in EarthFloor.Spots(local, GroundShaper.EarthSpacing))
+            {
+                Vector3 at = origin + rotation * new Vector3(spot.X, 0f, spot.Z);
+                Heightmap ground = Heightmap.FindHeightmap(at);
+                if (ground == null || !GroundShaper.OwnsGround(at)) return null;
+                if (ground.IsCultivated(at)) continue;
+                at.y = ZoneSystem.instance.GetGroundHeight(at);
+                spots.Add(at);
+            }
+            return spots;
         }
 
         /// <summary>
@@ -1527,15 +1612,16 @@ namespace VikingColonies.Construction
         /// Test command (vc_build costchest): the materials of the pieces this level added to the one before (all its
         /// pieces at level 1), as the builder needed them; the hut's own chest isn't counted.
         /// </summary>
-        internal Dictionary<string, int> LevelCost()
+        internal Dictionary<string, int> LevelCost() => LevelCost(_building.Type, DesignLevel, Plan, transform.position, transform.rotation);
+
+        /// <summary>The same for a level's plan laid round <paramref name="origin"/> (vc_stamp's designs, which have no hut).</summary>
+        internal static Dictionary<string, int> LevelCost(BuildingType type, int level, IReadOnlyList<PlannedPiece> plan, Vector3 origin, Quaternion rotation)
         {
-            IReadOnlyList<PlannedPiece> plan = Plan;
             IEnumerable<int> added = Enumerable.Range(0, plan.Count);
-            BuildingType type = _building.Type;
-            if (DesignLevel > 1 && type != null)
+            if (level > 1 && type != null)
             {
-                BlueprintFile before = BlueprintLibrary.For(type, DesignLevel - 1, out _);
-                if (before != null && BlueprintPlan.TryPlace(before, type.PrefabName, V(transform.position), Q(transform.rotation), out List<PlannedPiece> previous, out _))
+                BlueprintFile before = BlueprintLibrary.For(type, level - 1, out _);
+                if (before != null && BlueprintPlan.TryPlace(before, type.PrefabName, V(origin), Q(rotation), out List<PlannedPiece> previous, out _))
                     added = DesignDiff.Compare(previous, plan).Build;
             }
             var needs = new Dictionary<string, int>();
@@ -1549,13 +1635,17 @@ namespace VikingColonies.Construction
         }
 
         /// <summary>Test command: how far the plan's pieces reach in the hut's own space (x from the chest's right, z to its front).</summary>
-        internal void PlanReach(out float maxX, out float maxZ)
+        internal void PlanReach(out float maxX, out float maxZ) => PlanReach(Plan, transform.position, transform.rotation, out maxX, out maxZ);
+
+        /// <summary>The same for a plan laid round <paramref name="origin"/>, turned by <paramref name="rotation"/>.</summary>
+        internal static void PlanReach(IReadOnlyList<PlannedPiece> plan, Vector3 origin, Quaternion rotation, out float maxX, out float maxZ)
         {
             maxX = maxZ = 0f;
-            foreach (PlannedPiece p in Plan)
+            Quaternion undo = Quaternion.Inverse(rotation);
+            foreach (PlannedPiece p in plan)
             {
                 if (!p.IsValid) continue;
-                Vector3 local = transform.InverseTransformPoint(U(p.Position));
+                Vector3 local = undo * (U(p.Position) - origin);
                 maxX = Mathf.Max(maxX, local.x);
                 maxZ = Mathf.Max(maxZ, local.z);
             }

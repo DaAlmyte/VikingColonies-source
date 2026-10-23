@@ -11,7 +11,7 @@ namespace VikingColonies.Construction
     internal sealed class BuildCommand : ConsoleCommand
     {
         public override string Name => "vc_build";
-        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
+        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build earth' paints the earth under its roof as trodden earth now (a finished building does it on its own within a minute), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -99,6 +99,11 @@ namespace VikingColonies.Construction
                 case "costchest":   // the gallery's tools put chests, signs and pieces up: test worlds only (1.4's review)
                     if (DevTools.DevHelpers.RefuseOutsideTestWorld("vc_build costchest")) break;
                     Print(CostChest(site));
+                    break;
+                case "earth":
+                    int painted = site.PaintEarthNow();
+                    Print(painted < 0 ? $"vc_build: the ground under {site.Building.TypeId}'s roof isn't loaded here, or another computer changes it: come nearer"
+                        : $"vc_build: painted the earth under {site.Building.TypeId}'s roof at {painted} spots (0: no roof, or another computer owns the hut)");
                     break;
                 case "mend":
                     if (DevTools.DevHelpers.RefuseOutsideTestWorld("vc_build mend")) break;
@@ -276,18 +281,29 @@ namespace VikingColonies.Construction
         /// </summary>
         private static string CostChest(ConstructionModule site)
         {
-            Dictionary<string, int> cost = site.LevelCost();
             site.PlanReach(out float maxX, out float maxZ);
-            Transform hut = site.transform;
+            string name = Localization.instance.Localize(Colony.Saga.HutWord(site.Building));
+            return CostChestAt(site.transform.position, site.transform.rotation, maxX, maxZ, site.LevelCost(),
+                $"{name}, level {site.Building.Level}", "vc_build costchest");
+        }
+
+        /// <summary>
+        /// The cost chest and sign beyond the front right corner of a design laid round <paramref name="origin"/> (its
+        /// chest's spot) and turned by <paramref name="rotation"/>, reaching <paramref name="maxX"/> to the right and
+        /// <paramref name="maxZ"/> to the front (vc_build costchest; vc_stamp's designs, which have no hut).
+        /// </summary>
+        internal static string CostChestAt(Vector3 origin, Quaternion rotation, float maxX, float maxZ, Dictionary<string, int> cost,
+            string label, string command)
+        {
             Vector3 Spot(float x, float z)
             {
-                Vector3 p = hut.TransformPoint(new Vector3(x, 0f, z));
+                Vector3 p = origin + rotation * new Vector3(x, 0f, z);
                 p.y = ZoneSystem.instance.GetGroundHeight(p);
                 return p;
             }
             float cx = maxX + 2.5f, cz = maxZ + 2.5f;
             GameObject chestPrefab = PiecePlacer.Prefab("piece_chest_blackmetal");
-            if (chestPrefab == null || chestPrefab.GetComponent<Container>() == null) return "vc_build costchest: no black metal chest in this game";
+            if (chestPrefab == null || chestPrefab.GetComponent<Container>() == null) return $"{command}: no black metal chest in this game";
             var parts = new List<string>();
             Inventory chest = null;
             int chests = 0;
@@ -304,7 +320,7 @@ namespace VikingColonies.Construction
                 {
                     if (chest == null || !chest.AddItem(item, 1))
                     {
-                        GameObject box = Object.Instantiate(chestPrefab, Spot(cx + 2.4f * chests, cz), hut.rotation);
+                        GameObject box = Object.Instantiate(chestPrefab, Spot(cx + 2.4f * chests, cz), rotation);
                         MarkCostChest(box);
                         chest = box.GetComponent<Container>().GetInventory();
                         chests++;
@@ -314,26 +330,27 @@ namespace VikingColonies.Construction
                 }
                 parts.Add($"{need.Value} {Localization.instance.Localize(item.GetComponent<ItemDrop>().m_itemData.m_shared.m_name)}");
             }
-            string name = Localization.instance.Localize(Colony.Saga.HutWord(site.Building));
-            string label = $"{name}, level {site.Building.Level}";
             Vector3 post = Spot(cx, cz + 2f);
             GameObject pole = PiecePlacer.Prefab("wood_pole2"), signPrefab = PiecePlacer.Prefab("sign");
-            if (pole != null) MarkCostChest(Object.Instantiate(pole, post + Vector3.up, hut.rotation));
+            if (pole != null) MarkCostChest(Object.Instantiate(pole, post + Vector3.up, rotation));
             foreach (float side in signPrefab != null ? new[] { 1f, -1f } : new float[0])
             {
-                GameObject sign = Object.Instantiate(signPrefab, post + Vector3.up * 1.6f + hut.forward * (0.15f * side),
-                    hut.rotation * Quaternion.Euler(0f, side > 0 ? 0f : 180f, 0f));
+                GameObject sign = Object.Instantiate(signPrefab, post + Vector3.up * 1.6f + rotation * Vector3.forward * (0.15f * side),
+                    rotation * Quaternion.Euler(0f, side > 0 ? 0f : 180f, 0f));
                 ZNetView view = sign.GetComponent<ZNetView>();
                 if (view != null && view.IsValid()) view.GetZDO().Set(ZDOVars.s_text, label);
                 MarkCostChest(sign);
             }
-            return $"vc_build costchest: {label}: {(parts.Count == 0 ? "nothing" : string.Join(", ", parts))} in {chests} chest{(chests == 1 ? "" : "s")} beside it";
+            return $"{command}: {label}: {(parts.Count == 0 ? "nothing" : string.Join(", ", parts))} in {chests} chest{(chests == 1 ? "" : "s")} beside it";
         }
 
-        /// <summary>Marks what vc_build costchest puts up (its chests, post and signs), so test colonies' wipes take it too.</summary>
+        /// <summary>
+        /// Marks what the gallery's tools put up (vc_build costchest's chests, post and signs; vc_stamp's pieces), so test
+        /// colonies' wipes and 'vc_build costchest clear' take it too.
+        /// </summary>
         private const string CostChestKey = "vc_costchest";
 
-        private static void MarkCostChest(GameObject go)
+        internal static void MarkCostChest(GameObject go)
         {
             ZNetView view = go != null ? go.GetComponent<ZNetView>() : null;
             if (view != null && view.IsValid()) view.GetZDO().Set(CostChestKey, true);

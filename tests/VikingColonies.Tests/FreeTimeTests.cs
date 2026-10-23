@@ -128,10 +128,39 @@ namespace VikingColonies.Tests
         private static ChatCandidate At(string id, float x, float z, bool free = true) => new ChatCandidate(id, new GroundPoint(x, z), free);
 
         [Fact]
+        public void Up_to_three_are_asked_nearest_first()
+        {
+            var others = new[] { At("d", 4, 0), At("a", 1, 0), At("c", 3, 0), At("b", 2, 0) };
+            Assert.Equal(new[] { "a", "b", "c" }, ChatPairing.ToAsk("me", new GroundPoint(0, 0), others));
+            Assert.Equal(3, ChatPairing.Tries);
+        }
+
+        [Fact]
+        public void The_log_names_everyone_asked_in_one_line()
+        {
+            // 1.4.3's review: one "won't chat" line per try made three lines of one choice; and the free-time line named the
+            // nearest while the chat began with the next.
+            Assert.Equal("nobody", ChatPairing.Names(new string[0]));
+            Assert.Equal("Astrid", ChatPairing.Names(new[] { "Astrid" }));
+            Assert.Equal("Astrid or Bjorn", ChatPairing.Names(new[] { "Astrid", "Bjorn" }));
+            Assert.Equal("Astrid, Bjorn or Arne", ChatPairing.Names(new[] { "Astrid", "Bjorn", "Arne" }));
+        }
+
+        [Fact]
         public void The_nearest_free_settler_within_reach_is_the_partner()
         {
             var others = new[] { At("me", 0, 0), At("far", 15, 0), At("near", 5, 0), At("busy", 2, 0, free: false), At("out", 25, 0) };
             Assert.Equal("near", ChatPairing.Partner("me", new GroundPoint(0, 0), others));
+        }
+
+        // 1.4.2's review (a deferred minor, done in 1.4.3): a settler whose nearest friend stood behind a wall always went for a
+        // walk alone; now the next nearest is asked.
+        [Fact]
+        public void The_free_settlers_within_reach_are_asked_nearest_first()
+        {
+            var others = new[] { At("me", 0, 0), At("far", 15, 0), At("near", 5, 0), At("busy", 2, 0, free: false), At("out", 25, 0) };
+            Assert.Equal(new[] { "near", "far" }, ChatPairing.Partners("me", new GroundPoint(0, 0), others));
+            Assert.Empty(ChatPairing.Partners("me", new GroundPoint(0, 0), new ChatCandidate[0]));
         }
 
         [Fact]

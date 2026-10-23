@@ -333,7 +333,7 @@ namespace VikingColonies.Tests
                 ["ColonyOwner"] = "vc_colony_owner", ["ColonyPos"] = "vc_colony_pos", ["ColonyLevel"] = "vc_colony_level", ["HallRaisedAt"] = "vc_hall_raised_at", ["BossHeard"] = "vc_boss_heard", ["BuildingType"] = "vc_building_type", ["Level"] = "vc_level",
                 ["DataVersion"] = "vc_data_version", ["AutoHire"] = "vc_autohire", ["Unticked"] = "vc_unticked", ["Unpicked"] = "vc_unpicked",
                 ["Ungrown"] = "vc_ungrown", ["Order"] = "vc_order", ["Plan"] = "vc_plan", ["TakeAway"] = "vc_takeaway", ["PlanPrev"] = "vc_plan_prev",
-                ["OrderPrev"] = "vc_order_prev", ["Founded"] = "vc_founded", ["Roster"] = "vc_roster", ["NewcomerDay"] = "vc_newcomerday",
+                ["OrderPrev"] = "vc_order_prev", ["EarthLevel"] = "vc_earth_level", ["Founded"] = "vc_founded", ["Roster"] = "vc_roster", ["NewcomerDay"] = "vc_newcomerday",
                 ["Saga"] = "vc_saga", ["Keepsakes"] = "vc_keepsakes", ["Site"] = "vc_site", ["Citizen"] = "vc_citizen", ["Dead"] = "vc_dead",
                 ["Pose"] = "vc_pose", ["PoseTarget"] = "vc_pose_at", ["Doing"] = "vc_doing",
                 ["CairnName"] = "vc_cairn_name", ["CairnJob"] = "vc_cairn_job", ["CairnCause"] = "vc_cairn_cause", ["CairnCauseArg"] = "vc_cairn_cause_arg",

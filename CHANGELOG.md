@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.4.3 (2026-10-23) — The huts polished, and fixes
+
+**For server owners:** the server and every player need 1.4.3. Each colony building saves one new value,
+`vc_earth_level` (the level whose earth was painted), and there is a new ground operation, `vc_ground_earth` (it paints
+trodden earth without moving the ground). Only the computer that owns a patch of ground sends it, so a player still on
+1.4.2 who owns the ground there is skipped until a 1.4.3 player does it. Worlds and colonies load as they were.
+
+### Changed
+- **The huts, polished.** Every hut and the Town Hall's camp got a careful going-over:
+  - every wall shows its plain side outside, on all four sides (the back and left walls showed their framing outside);
+  - the Watchtower's ladders climb in one line onto a landing beside the platform, its roof stands higher, and the way
+    from the landing onto the platform is clear;
+  - the Town Hall's camp is drawn again as a camp site: shelters round one fire, the trophy stands in the side
+    shelters, the chieftain's seat across the fire, a banner pole at the way in (the maypole, which can only be built in
+    its season, is gone);
+  - timber frames round the doors, posts at the wall joints and beams along the gables' edges from level 2, and crossed
+    beams over both ends of every gabled hut;
+  - the Longhouse has plank sleeping platforms along its walls with the beds on them, and trodden earth down the middle
+    round the fire;
+  - the Forager's porch keeps its front wall closed up to the roof round the door;
+  - smaller fixes: the Builder's tool shelf hangs on the wall, the dvergr wall lanterns hang higher, no bed stands in
+    the Longhouse's stone wall, the Lumberjack's torch stands by its door.
+- **Trodden earth under every roof.** When a building or an upgrade is finished, the ground under its roof becomes
+  trodden earth, as the hoe's path makes it: no more grass growing up through an earth floor or a low floor. Buildings
+  you already have get it once, the first time they load with this version. Tilled ground is left as it is.
+- **Your huts at their next upgrade:** the builder takes the back and left walls down and puts them up again turned
+  round (a little wood, once), and a Longhouse's beds move up onto the new sleeping platforms.
+
+### Fixed
+- The Town Hall camp's left sitting log and the Longhouse's sitting log faced away from their fire: whoever sat there had
+  their back to it. Both face the fire now (a camp or Longhouse already built gets it at its next upgrade).
+- **Huts can be upgraded to level 4 again:** a level that needs a Dvergr lantern stopped the builder for good. It is built from a
+  Lantern, which doesn't stack, and since 1.4.1 settlers took only items that stack from chests. The builder now takes
+  anything a piece is built from.
+- A Farm's seeds stay in its chest: settlers no longer eat the carrots a Farm plants (in the game a carrot is planted
+  to grow carrot seeds), nor burn, build with or carry off the seeds its fields need.
+- A field in the Farm's own fenced yard is worked: a finished Farm's yard is farmland. A Farm whose fields have no
+  free ground says so, instead of "Needs a field".
+- A tree stump standing partly on a hut's site is cleared before building, not built round.
+- Messages such as "No jobless settlers…" show in the open window, or in the corner of the screen, instead of
+  running across the middle of it.
+- Guards gather at the alarm where they can stand: when it's sounded inside the Town Hall or beside a hut, each guard
+  takes the nearest open spot round it that they can walk to, never one behind a wall, in a fenced yard or by the
+  colony's fire.
+- A settler whose nearest friend stands behind a wall asks the next one for a chat, instead of strolling off alone.
+- Shift+E on a colony building no longer opens its window while you're attacking or dodging, and another mod's object
+  on a hut keeps its own Shift+E.
+- A shorter log for bug reports: a routine "no door leads there" line, written while a settler was already where they
+  were going, is gone.
+- A fallen settler's cairn says "Here lies …" first again when another mod changes what chests show on hover.
+
 ## 1.4.2 (2026-10-21) — Polish
 
 **For server owners:** the server and every player need 1.4.2. One new setting, `Messages.AskForFeedback` (on by

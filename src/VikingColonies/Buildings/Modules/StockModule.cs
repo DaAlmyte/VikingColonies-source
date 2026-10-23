@@ -50,10 +50,7 @@ namespace VikingColonies.Buildings
         /// <summary>On the asker's computer: why nothing changed, in the open window or on screen.</summary>
         private void OnMessage(long sender, string token)
         {
-            string text = Localization.instance.Localize(token);
-            if (Gui.Windows.Hut.IsOpen) Gui.Windows.Hut.ShowMessage(text);
-            else if (Gui.Windows.TownHall.IsOpen) Gui.Windows.TownHall.ShowMessage(text);
-            else if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, text);
+            Gui.Windows.Reply(Localization.instance.Localize(token));
         }
 
         /// <summary>Test tool (vc_workertest): a change as if <paramref name="sender"/> asked for it.</summary>

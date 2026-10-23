@@ -602,9 +602,16 @@ namespace VikingColonies.Construction
 
         private Dictionary<string, int> NeedsOf(PlannedPiece piece) => PiecePlacer.Needs(piece.Prefab);
 
+        private float _fetchPauseUntil;
+
         /// <param name="upcoming">What the next jobs need, the one at hand first (pieces, or stone for the ground).</param>
         private void Fetch(System.Func<List<IReadOnlyDictionary<string, int>>> upcoming, float dt)
         {
+            if (Time.time < _fetchPauseUntil)   // took none of it last time: a moment before trying again (1.4.3)
+            {
+                Ai.Idle();
+                return;
+            }
             if (_fetch == null) PlanFetch(upcoming());
             if (_fetch.Missing.Count > 0)
             {
@@ -639,7 +646,7 @@ namespace VikingColonies.Construction
             Ai.Idle();
             if (store.Claim() != StorageModule.Access.Ready) return;   // its owner is handing it over, or a player has it open: he waits
             int taken = 0;
-            while (taken < step.Amount && store.TryTakeItem(step.Item, Citizen.Carry, ownUse: store == OwnStore)) taken++;
+            while (taken < step.Amount && store.TryTakeItem(step.Item, Citizen.Carry, ownUse: store == OwnStore, toBuildWith: true)) taken++;
             if (taken > 0)
             {
                 Citizen.SaveCarry();
@@ -649,6 +656,7 @@ namespace VikingColonies.Construction
             Log.Info($"{Citizen.CitizenName} fetched {taken} of {step.Amount} {step.Item} from the {(from != null ? from.TypeId : "?")} storage (now carrying {Citizen.Carry.Total})");
             _fetch.Steps.RemoveAt(0);
             if (taken < step.Amount) _fetch = null;   // taken by someone else meanwhile: plan again
+            _fetchPauseUntil = Time.time + StockRules.FetchPause(taken);
         }
 
         /// <summary>The piece at hand's needs, then the next pieces'.</summary>

@@ -131,10 +131,7 @@ namespace VikingColonies.Buildings
             _nview.InvokeRPC(sender, RpcMessage, "$vc_post_cleared");
         }
 
-        private void RPC_Message(long sender, string text)
-        {
-            if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, Localization.instance.Localize(text));
-        }
+        private void RPC_Message(long sender, string text) => Gui.Windows.Reply(Localization.instance.Localize(text));
 
         /// <summary>On the tower's owner: a colony manager's choice of role.</summary>
         private void RPC_SetRole(long sender, int role)

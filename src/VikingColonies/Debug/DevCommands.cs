@@ -549,14 +549,75 @@ namespace VikingColonies.DevTools
     internal sealed class PerfCommand : ConsoleCommand
     {
         public override string Name => "vc_perf";
-        public override string Help => "VikingColonies (test worlds): 'vc_perf [seconds]' measures frame times and the settlers' share of them (default 20 s)";
+        public override string Help => "VikingColonies (test worlds): 'vc_perf [seconds]' measures frame times and the settlers' share of them (default 20 s); " +
+                                       "'vc_perf drop [count] [timescale]' drops Wood from your bag that many times and measures the frames right after";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
         {
+            if (args != null && args.Length > 0 && args[0] == "drop")
+            {
+                if (DevHelpers.RefuseOutsideTestWorld(Name)) return;
+                int count = args.Length > 1 && int.TryParse(args[1], out int c) ? Mathf.Clamp(c, 1, 50) : 10;
+                float scale = args.Length > 2 && float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float sc) ? Mathf.Clamp(sc, 0.5f, 5f) : 1f;
+                Plugin.Instance.StartCoroutine(MeasureDrops(count, scale));
+                BuildCommand.Print($"vc_perf: dropping Wood {count} times at timescale {scale:0.#}");
+                return;
+            }
             float seconds = args != null && args.Length > 0 && float.TryParse(args[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float s) ? Mathf.Clamp(s, 2f, 120f) : 20f;
             Plugin.Instance.StartCoroutine(Measure(seconds));
             BuildCommand.Print($"vc_perf: measuring for {seconds:0} s");
+        }
+
+        /// <summary>
+        /// 1.4.3, the player's watch of 1.4.2: a lag spike each time an item was dropped, worse at timescale 3. The frames right
+        /// after each drop against the frames before, and the mod's measured parts meanwhile (none of it patches dropping).
+        /// </summary>
+        private static IEnumerator MeasureDrops(int count, float scale)
+        {
+            Player p = Player.m_localPlayer;
+            if (p == null) yield break;
+            float was = Time.timeScale;
+            Time.timeScale = scale;
+            var before = new List<float>();
+            float until = Time.realtimeSinceStartup + 3f;
+            while (Time.realtimeSinceStartup < until)
+            {
+                yield return null;
+                before.Add(Time.unscaledDeltaTime * 1000f);
+            }
+            var after = new List<float>();
+            Perf.Clear();
+            Perf.On = true;
+            AI.CitizenAI.ProfileTicks = 0;
+            AI.CitizenAI.Profiling = true;
+            GameObject wood = ObjectDB.instance.GetItemPrefab("Wood");
+            for (int i = 0; i < count && wood != null; i++)
+            {
+                Inventory bag = p.GetInventory();
+                bag.AddItem(wood, 5);
+                ItemDrop.ItemData item = bag.GetAllItems().FirstOrDefault(it => it.m_dropPrefab != null && it.m_dropPrefab.name == "Wood");
+                yield return null;
+                if (item != null) p.DropItem(bag, item, Mathf.Min(5, item.m_stack));   // what it added, not the tester's own (its review)
+                float worst = 0f;
+                for (int f = 0; f < 3; f++)
+                {
+                    yield return null;
+                    worst = Mathf.Max(worst, Time.unscaledDeltaTime * 1000f);
+                }
+                after.Add(worst);
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
+            AI.CitizenAI.Profiling = false;
+            Perf.On = false;
+            double aiMs = AI.CitizenAI.ProfileTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            int settlers = Citizen.All.Count(c => c != null);
+            float ran = Time.timeScale;   // vc_speed may hold the game's speed (its review): what it ran at
+            Time.timeScale = was;
+            BuildCommand.Print($"vc_perf drop: timescale {scale:0.#} (ran at {ran:0.#}), {settlers} settlers loaded: frames before {before.Average():0.0} ms on average " +
+                               $"(worst {before.Max():0.0} ms); right after a drop {(after.Count > 0 ? after.Average() : 0f):0.0} ms on average " +
+                               $"(worst {(after.Count > 0 ? after.Max() : 0f):0.0} ms, of {after.Count} drops); the settlers' updates {aiMs:0} ms in all; " +
+                               $"parts: {Perf.Report()}");
         }
 
         private static IEnumerator Measure(float seconds)

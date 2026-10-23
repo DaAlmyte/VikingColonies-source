@@ -584,6 +584,7 @@ namespace VikingColonies.AI
             }
             if (!sheltered || nearestDoor > DoorRules.RoomReach) roomDoor = null;
             bool doorNearGoal = false;   // only then, or under a roof, is "no door leads there" worth its line
+            float heightOff = float.NaN;   // how far above the way's end the goal is (DoorRules.ExplainNoDoor)
             foreach (Door door in Jobs.WorldScan.Doors())
             {
                 if (door == null) continue;
@@ -635,7 +636,7 @@ namespace VikingColonies.AI
                     if (standOff <= 0f) standOff = DoorRules.StandOff;
                     Vector3 beyond = side == 1 ? Spot(door, -1, DoorRules.StandOff) : Spot(door, 1, DoorRules.StandOff);
                     bool reaches = _ai.WayReaches(beyond, goal);
-                    if (!reaches && float.IsNaN(gapFromHere)) gapFromHere = _ai.WayEndGap(me, goal);
+                    if (!reaches && float.IsNaN(gapFromHere)) gapFromHere = _ai.WayEndGap(me, goal, out heightOff);
                     float gapBeyond = reaches ? 0f : _ai.WayEndGap(beyond, goal);
                     if (DoorRules.LeadsTowards(gapFromHere, gapBeyond, reaches)) return door;
                     why?.Append($"; {Describe(door)}: beyond it the way ends {gapBeyond:0.0} m from it, from here {gapFromHere:0.0} m");
@@ -649,7 +650,7 @@ namespace VikingColonies.AI
                 _skipped.Add(Key(door, goal), Time.time);   // it doesn't stand between him and his goal, from here
                 side = 0;
             }
-            if (why != null && why.Length > 0 && DoorRules.ExplainNoDoor(doorNearGoal, underRoof) && _explained.Add(goalKey)) Log.Info($"{_citizen.CitizenName} can't get right to ({goal.x:0}, {goal.z:0}) and no door leads there{why}");
+            if (why != null && why.Length > 0 && DoorRules.ExplainNoDoor(doorNearGoal, underRoof, gapFromHere, heightOff) && _explained.Add(goalKey)) Log.Info($"{_citizen.CitizenName} can't get right to ({goal.x:0}, {goal.z:0}) and no door leads there{why}");
             return null;
         }
 

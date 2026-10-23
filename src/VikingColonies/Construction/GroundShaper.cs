@@ -7,22 +7,32 @@ namespace VikingColonies.Construction
 {
     /// <summary>
     /// Changes the ground like the game's hoe. The game sends only the name of a ground operation over the network (each
-    /// computer looks its settings up in its own item database), so the mod registers two operations of its own with the
+    /// computer looks its settings up in its own item database), so the mod registers three operations of its own with the
     /// game, on every computer, made from the hoe's level ground: <see cref="LevelName"/> levels a circle to its own
-    /// height (digging or filling) and <see cref="SmoothName"/> blends the ground towards its height (the edge of a
-    /// flattened site). The hoe is found among the game's items, so a modded hoe works too; raising ground costs what the
-    /// hoe's raise ground costs.
+    /// height (digging or filling), <see cref="SmoothName"/> blends the ground towards its height (the edge of a
+    /// flattened site) and <see cref="EarthName"/> paints it as trodden earth, as the hoe's path does, without moving it
+    /// (a building's earth floor: <see cref="EarthFloor"/>). The hoe is found among the game's items, so a modded hoe works
+    /// too; raising ground costs what the hoe's raise ground costs.
     /// </summary>
     internal static class GroundShaper
     {
         public const string LevelName = "vc_ground_level";
         public const string SmoothName = "vc_ground_smooth";
+        public const string EarthName = "vc_ground_earth";
+        /// <summary>
+        /// How far the earth paint reaches round its spot, and how far apart its spots are (a 1.5 m block each, its
+        /// corners within the reach): little past the roof's edge (the review of 2026-10-21: at 1.5 m round spots 2 m
+        /// apart it reached half a metre past it).
+        /// </summary>
+        public const float EarthRadius = 1.1f;
+        public const float EarthSpacing = 1.5f;
         /// <summary>How far the smoothing reaches around its spot.</summary>
         public const float SmoothRadius = 1.5f;
         private const float DefaultStonePerCubicMetre = 1f;
         private static GameObject s_holder;
         private static GameObject s_level;
         private static GameObject s_smooth;
+        private static GameObject s_earth;
         private static bool s_warned;
         private static float s_stoneRate = DefaultStonePerCubicMetre;
         private static string s_stoneItem = "Stone";
@@ -72,6 +82,7 @@ namespace VikingColonies.Construction
             if (s_level == null && !Create(db)) return;
             Add(db, s_level);
             Add(db, s_smooth);
+            Add(db, s_earth);
         }
 
         /// <summary>Levels the ground within <see cref="GroundPlan.LevelRadius"/> to the height of <paramref name="at"/>.</summary>
@@ -79,6 +90,22 @@ namespace VikingColonies.Construction
 
         /// <summary>Blends the ground within <see cref="SmoothRadius"/> towards the height of <paramref name="at"/>.</summary>
         public static void Smooth(Vector3 at) => Apply(s_smooth, at);
+
+        /// <summary>Paints the ground within <see cref="EarthRadius"/> of <paramref name="at"/> as trodden earth (no grass), leaving its height.</summary>
+        public static void Earth(Vector3 at) => Apply(s_earth, at);
+
+        /// <summary>
+        /// Whether this computer changes the ground here itself: it owns the ground's changes there, or nobody has changed
+        /// it yet (the first change makes them this computer's). The game sends a ground operation to the owner of the
+        /// ground's changes by name; an owner without the mod's earth operation (an older version) would drop it.
+        /// </summary>
+        public static bool OwnsGround(Vector3 at)
+        {
+            TerrainComp ground = TerrainComp.FindTerrainCompiler(at);
+            if (ground == null) return true;
+            ZNetView view = ground.GetComponent<ZNetView>();
+            return view != null && view.IsValid() && view.IsOwner();
+        }
 
         /// <summary>Cultivates the ground here as the Cultivator does (the farmer; vc_ui cultivate). False without one in the game.</summary>
         public static bool Cultivate(Vector3 at) => Paint(at, TerrainModifier.PaintType.Cultivate);
@@ -164,8 +191,25 @@ namespace VikingColonies.Construction
                     s.m_smoothPower = 1f;
                     s.m_paintCleared = false;
                 });
+                s_earth = Make(level, EarthName, s =>
+                {
+                    s.m_level = false;
+                    s.m_levelOffset = 0f;
+                    s.m_raise = false;
+                    s.m_smooth = false;
+                    s.m_square = false;
+                    s.m_paintCleared = true;
+                    s.m_paintHeightCheck = false;
+                    s.m_paintType = TerrainModifier.PaintType.Dirt;
+                    s.m_paintRadius = EarthRadius;
+                });
+                // Quiet, and nothing left lying: the hoe's own sound and dust, and the stones its levelling turns up, 30
+                // to 100 times over when a building's earth is painted (the review of 2026-10-21).
+                TerrainOp earth = s_earth.GetComponent<TerrainOp>();
+                earth.m_onPlacedEffect = new EffectList();
+                earth.m_spawnOnPlaced = null;
                 MeasureStone(raise);
-                Log.Info($"Ground shaping: '{LevelName}' and '{SmoothName}' made from the {item.name}'s '{level.name}'; raising ground costs about " +
+                Log.Info($"Ground shaping: '{LevelName}', '{SmoothName}' and '{EarthName}' made from the {item.name}'s '{level.name}'; raising ground costs about " +
                          $"{s_stoneRate:0.00} {s_stoneItem} per cubic metre (from '{raise.name}')");
                 return true;
             }

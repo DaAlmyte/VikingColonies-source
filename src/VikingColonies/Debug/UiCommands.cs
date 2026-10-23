@@ -163,6 +163,32 @@ namespace VikingColonies.DevTools
                     BuildCommand.Print($"vc_ui: Shift+E on the {used.TypeId}: {(took ? "taken" : "not taken")}, its window {(opened.IsOpen ? "open" : "closed")}");
                     break;
                 }
+                case "hammer":
+                {
+                    // vc_ui hammer: the hammer's tabs and where the colony's pieces sit among them (1.4.3, the player's watch of
+                    // 1.4.2: the huts showed under Furniture, while the guide said Misc).
+                    PieceTable table = ObjectDB.instance?.GetItemPrefab("Hammer")?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_buildPieces;
+                    if (table == null)
+                    {
+                        BuildCommand.Print("vc_ui: hammer: no hammer piece table");
+                        return;
+                    }
+                    var categories = HarmonyLib.Traverse.Create(table).Field("m_categories").GetValue() as System.Collections.IList;
+                    var labels = HarmonyLib.Traverse.Create(table).Field("m_categoryLabels").GetValue() as System.Collections.IList;
+                    var tabs = new System.Collections.Generic.List<string>();
+                    for (int i = 0; categories != null && i < categories.Count; i++)
+                        tabs.Add($"{i}: {categories[i]} '{(labels != null && i < labels.Count ? Localization.instance.Localize(labels[i]?.ToString() ?? "") : "?")}'");
+                    BuildCommand.Print($"vc_ui: hammer tabs: {string.Join(", ", tabs.ToArray())}");
+                    foreach (BuildingType type in BuildingTypes.All)
+                    {
+                        Piece piece = ZNetScene.instance.GetPrefab(type.PrefabName)?.GetComponent<Piece>();
+                        if (piece == null) continue;
+                        int index = categories != null ? categories.IndexOf(piece.m_category) : -1;
+                        string label = index >= 0 && labels != null && index < labels.Count ? Localization.instance.Localize(labels[index]?.ToString() ?? "") : "none";
+                        BuildCommand.Print($"vc_ui: hammer: {type.Id} is in category {piece.m_category} ({(int)piece.m_category}), the tab '{label}'");
+                    }
+                    break;
+                }
                 case "hover":
                     float range = args.Length > 1 && float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float r) ? r : 15f;
                     LogHovers(p, range);

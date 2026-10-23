@@ -131,6 +131,66 @@ namespace VikingColonies.Core
         }
 
         /// <summary>
+        /// The ring spots (<see cref="AlarmSpot"/>) a guard tries at the alarm, nearest first: their own place's, then every
+        /// <paramref name="guards"/>-th after it, so two guards never try the same spot (1.4.2's release run: a spot behind a
+        /// hut's wall kept a guard going in and out of its door). The first that stands open is theirs.
+        /// </summary>
+        public static int[] AlarmSpotsToTry(int place, int guards, int tries)
+        {
+            int step = Math.Max(1, guards), first = Math.Max(0, place), n = Math.Max(0, tries);
+            var spots = new int[n];
+            for (int i = 0; i < n; i++) spots[i] = first + i * step;
+            return spots;
+        }
+
+        /// <summary>How often a guard looks at their kept alarm spot again (its review: huts that load after it was chosen).</summary>
+        public const float AlarmRecheckSeconds = 5f;
+
+        /// <summary>
+        /// Whether a spot round the alarm stands open (its review): on the ground, or on an open floor at the alarm's own
+        /// level (a paved yard; a roof above makes the floor read higher), out of the water, within 3 m of the alarm's
+        /// height, clear of the colony's fires (a settler burned in 1.4.0), with room to stand.
+        /// </summary>
+        public static bool AlarmSpotOpen(bool onGround, bool onAlarmsFloor, bool inWater, float heightOff, bool roomToStand, bool clearOfFires) =>
+            (onGround || onAlarmsFloor) && !inWater && Math.Abs(heightOff) <= 3f && roomToStand && clearOfFires;
+
+        /// <summary>
+        /// Of a guard's ring spots in order, the first that is open and one they can walk to (1.4.3's early full run: a spot
+        /// in the open but walled in, an earlier test's roofless hut as a fenced yard would be, kept a guard going in and out
+        /// of a door 20 m off for the whole alarm); else the first open one, <paramref name="reached"/> false (its review: a
+        /// guard inside a hut behind its closed door, or far off on patrol, has a way to none yet); else -1, their plain ring
+        /// spot. The way, the costly part, is asked only of open spots, and only until one is found.
+        /// </summary>
+        public static int ChooseAlarmSpot(int count, Func<int, bool> open, Func<int, bool> walkable, out bool reached)
+        {
+            reached = false;
+            int firstOpen = -1;
+            for (int i = 0; i < count; i++)
+            {
+                if (!open(i)) continue;
+                if (firstOpen < 0) firstOpen = i;
+                if (!walkable(i)) continue;
+                reached = true;
+                return i;
+            }
+            return firstOpen;
+        }
+
+        /// <summary>
+        /// Whether a kept spot is looked at again for a way to it: only one chosen without one. One chosen with a way isn't
+        /// dropped because a guard fighting across a stream, or on a rock, has no way back for a moment (its review).
+        /// </summary>
+        public static bool RecheckWay(bool chosenWithWay) => !chosenWithWay;
+
+        /// <summary>
+        /// Whether a guard keeps the alarm spot they chose: for the same alarm (point, place and guard count), until it has been
+        /// looked at again after <see cref="AlarmRecheckSeconds"/> and found closed (its review: a spot chosen before a hut
+        /// loaded was kept behind its wall for the whole alarm).
+        /// </summary>
+        public static bool KeepAlarmSpot(bool sameAlarm, float sinceChecked, bool stillOpen) =>
+            sameAlarm && (sinceChecked < AlarmRecheckSeconds || stillOpen);
+
+        /// <summary>
         /// At the alarm (review of 1.3): each guard of the colony by his place among them all — the first where it was
         /// sounded, then rings 3 m apart (6 spots on the first, 12 on the second…), each spot about 3 m from the next.
         /// </summary>

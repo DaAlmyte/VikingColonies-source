@@ -21,7 +21,8 @@ namespace VikingColonies.DevTools
         public override string Name => "vc_cam";
         public override string Help => "VikingColonies (test worlds): 'vc_cam <hut> <x> <y> <z> [<x> <y> <z>]' puts the camera at that spot of the nearest " +
                                        "hut of that kind (metres from its chest: x to its right, y up, z towards its door), looking at the second spot " +
-                                       "(default: 1 m above the chest), with the HUD hidden; 'vc_cam follow <settler name|job|jobless|any|talking> [distance 6] [height 2] [angle 30]' " +
+                                       "(default: 1 m above the chest), with the HUD hidden; 'vc_cam at <X> <Z> <x> <y> <z> [<x> <y> <z>]' the same from the ground at X Z of the world, " +
+                                       "facing north (a design vc_stamp put up, which has no chest); 'vc_cam follow <settler name|job|jobless|any|talking> [distance 6] [height 2] [angle 30]' " +
                                        "keeps the camera on the nearest such settler ('talking': whoever's small talk showed last; angle 0 in front of them, 90 to their right, 180 behind), " +
                                        "turning with them; a last word 'hud' (or 'tags') keeps the screen, with name tags and speech; 'vc_cam off' gives the camera back";
         public override bool IsCheat => true;
@@ -55,6 +56,11 @@ namespace VikingColonies.DevTools
             if (args.Length > 0 && args[0].ToLowerInvariant() == "follow")
             {
                 Follow(p, args);
+                return;
+            }
+            if (args.Length > 0 && args[0].ToLowerInvariant() == "at")
+            {
+                At(p, args);
                 return;
             }
             BuildingType type = args.Length > 0 ? DevHelpers.TypeByWord(args[0]) : null;
@@ -93,6 +99,28 @@ namespace VikingColonies.DevTools
                 s_hooked = true;
             }
             if (Hud.instance != null) Hud.instance.m_userHidden = !s_keepHud;
+        }
+
+        /// <summary>
+        /// vc_cam at X Z: the spots are metres from the ground at X Z of the world, facing north (x east, z north): the
+        /// gallery's stamped designs (vc_stamp) stand there with their front to the north and no chest to aim from.
+        /// </summary>
+        private static void At(Player p, string[] args)
+        {
+            float[] n = args.Skip(1).Take(8).Select(a => float.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : float.NaN).ToArray();
+            if (p == null || ZNet.instance == null || !TestWorlds.IsTestWorld(ZNet.instance.GetWorldName()) || n.Any(float.IsNaN) || (n.Length != 5 && n.Length != 8))
+            {
+                BuildCommand.Print("vc_cam: in a test world, 'vc_cam at <X> <Z> <x> <y> <z> [<x> <y> <z>]'");
+                return;
+            }
+            var origin = new Vector3(n[0], 0f, n[1]);
+            origin.y = ZoneSystem.instance.GetGroundHeight(origin);
+            s_at = origin + new Vector3(n[2], n[3], n[4]);
+            s_look = origin + (n.Length == 8 ? new Vector3(n[5], n[6], n[7]) : Vector3.up);
+            s_follow = null;
+            s_following = false;
+            TurnOn();
+            BuildCommand.Print($"vc_cam: the camera at ({n[2]:0.##}, {n[3]:0.##}, {n[4]:0.##}) from the ground at ({n[0]:0.#}, {n[1]:0.#})");
         }
 
         /// <summary>vc_cam follow: the nearest settler of that name or job, logged once (name, job, what they're doing).</summary>

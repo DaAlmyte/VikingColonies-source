@@ -202,11 +202,7 @@ namespace VikingColonies.Buildings
             return false;
         }
 
-        private void OnMessage(long sender, string token)
-        {
-            if (Player.m_localPlayer != null)
-                Player.m_localPlayer.Message(MessageHud.MessageType.Center, Localization.instance.Localize(token));
-        }
+        private void OnMessage(long sender, string token) => Gui.Windows.Reply(Localization.instance.Localize(token));
 
         private void Reply(long sender, string token) => _nview.InvokeRPC(sender, RpcMessage, token);
 

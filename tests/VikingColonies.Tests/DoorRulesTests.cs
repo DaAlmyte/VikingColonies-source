@@ -402,6 +402,29 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void No_door_leading_there_isnt_logged_when_the_way_from_here_already_ends_within_reach()
+        {
+            // 1.4.2's colony watch: 90 of 91 such lines were a lumberjack after logs between huts, "from here 0,0 m":
+            // already as close as the walking map goes, and the log was picked up.
+            Assert.False(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: 0f, heightOff: 0.2f));
+            Assert.False(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: true, gapFromHere: DoorRules.WithinReach, heightOff: 0f));
+            Assert.False(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: true, gapFromHere: 0.1f, heightOff: 1.2f));   // a chest hung on a wall
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: 2f, heightOff: 0f));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: float.NaN, heightOff: 0f));   // not measured
+        }
+
+        [Fact]
+        public void No_door_leading_there_is_still_logged_when_the_way_ends_beside_the_goal_but_behind_a_wall_or_a_floor_away()
+        {
+            // 1.4.3's review: a chest on the inside of a hut's wall, the way from outside ending beside it behind the wall
+            // (a settler's width and the wall away); a goal on the floor above, right over the way's end.
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: 0.6f, heightOff: 0f));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: 0f, heightOff: 2f));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: true, gapFromHere: 0f, heightOff: -2f));
+            Assert.True(DoorRules.ExplainNoDoor(doorNearGoal: true, underRoof: false, gapFromHere: 0f));   // the height not measured
+        }
+
+        [Fact]
         public void A_door_that_did_not_move_is_asked_again_after_a_second_not_every_moment()
         {
             Assert.False(DoorRules.AskAgain(sinceAsked: 0.3f));

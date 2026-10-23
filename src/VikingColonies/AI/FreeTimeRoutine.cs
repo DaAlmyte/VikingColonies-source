@@ -76,7 +76,8 @@ namespace VikingColonies.AI
         {
             if (!Active || partner == null || !partner.Active || partner == this) return;
             StopActivity();
-            StartChat(partner, Time.time);
+            if (!StartChat(partner, Time.time))
+                Log.Info($"{_citizen.CitizenName} won't chat with {partner._citizen.CitizenName}: a wall stands between them wherever they'd meet");
         }
 
         /// <summary>Self-test: he picks this next (when it's possible), at once.</summary>
@@ -165,7 +166,8 @@ namespace VikingColonies.AI
                 .Where(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach && (!wet || f.Roofed)
                             && !_skippedFires.IsBlocked(f.Id, now))
                 .ToList();
-            FreeTimeRoutine partner = FindPartner(me);
+            List<FreeTimeRoutine> partners = FindPartners(me);
+            FreeTimeRoutine partner = partners.FirstOrDefault();
             // Nothing to sit on or by at all (not merely taken, or out in the rain): Hugin says so, once.
             if (!ColonyPlaces.Seats(colony).Any(s => s.Valid && Utils.DistanceXZ(s.Point, _anchor) <= FreeTimeRules.Radius)
                 && !ColonyPlaces.Fires(colony).Any(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach))
@@ -181,7 +183,8 @@ namespace VikingColonies.AI
             _forcedForTest = Leisure.None;
             Begin(pick, now);
             _chooseAt = now + FreeTimeRules.ChoiceSeconds(s_rng.NextDouble());
-            Log.Info($"{_citizen.CitizenName}'s free time: {pick} ({seats.Count} seats, {fires.Count} fires, partner {(partner != null ? partner._citizen.CitizenName : "none")}{(wet ? ", wet" : "")})");
+            List<string> askable = partners.Select(p => p._citizen.CitizenName).ToList();
+            Log.Info($"{_citizen.CitizenName}'s free time: {pick} ({seats.Count} seats, {fires.Count} fires, partners {ChatPairing.Names(askable)}{(wet ? ", wet" : "")})");
             switch (pick)
             {
                 case Leisure.Seat:
@@ -199,8 +202,10 @@ namespace VikingColonies.AI
                     SaveDoing(ActivityWords.Token(Leisure.Fire), "");
                     break;
                 case Leisure.Chat:
-                    if (StartChat(partner, now)) break;
-                    // A wall between them wherever they'd meet: a stroll instead (1.4.2).
+                    // The nearest first; with a wall between them wherever they'd meet, the next (1.4.3), up to three.
+                    if (partners.Any(p => StartChat(p, now))) break;
+                    // A wall between them and every one of them: a stroll instead (1.4.2), said once for them all (1.4.3's review).
+                    Log.Info($"{_citizen.CitizenName} won't chat with {ChatPairing.Names(askable)}: a wall stands between them wherever they'd meet");
                     Begin(Leisure.Stroll, now);
                     _spot = StrollSpot(me);
                     SaveDoing(ActivityWords.Token(Leisure.Stroll), "");
@@ -360,15 +365,18 @@ namespace VikingColonies.AI
 
         // ---- Chats ----
 
-        private FreeTimeRoutine FindPartner(Vector3 me)
+        /// <summary>The settlers free to chat that they'd ask, nearest first (ChatPairing.ToAsk).</summary>
+        private List<FreeTimeRoutine> FindPartners(Vector3 me)
         {
             s_active.RemoveAll(r => r._citizen == null);   // a settler removed while in free time
             var candidates = s_active.Where(r => r != this && r._citizen != null && r._citizen.ColonyId == _citizen.ColonyId)
                 .Select(r => new ChatCandidate(r._citizen.Id, Ground(r._citizen.transform.position),
                     r._partner == null && (r._doing == Leisure.None || r._doing == Leisure.Stroll)))
                 .ToList();
-            string id = ChatPairing.Partner(_citizen.Id, Ground(me), candidates);
-            return id.Length == 0 ? null : s_active.FirstOrDefault(r => r._citizen != null && r._citizen.Id == id);
+            return ChatPairing.ToAsk(_citizen.Id, Ground(me), candidates)
+                .Select(id => s_active.FirstOrDefault(r => r._citizen != null && r._citizen.Id == id))
+                .Where(r => r != null)
+                .ToList();
         }
 
         private static int s_chatWallMask;
@@ -380,10 +388,6 @@ namespace VikingColonies.AI
             return Physics.Linecast(first + Vector3.up * 1.2f, second + Vector3.up * 1.2f, s_chatWallMask, QueryTriggerInteraction.Ignore);
         }
 
-        /// <summary>
-        /// Starts a chat at the first meeting place with no wall between the two (halfway, by him, by the other); false,
-        /// and nothing changed, when every one has a wall between.
-        /// </summary>
         /// <summary>
         /// The first meeting place with no wall between its two spots, both checked at one height
         /// (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall (the life test checks it).
@@ -403,14 +407,14 @@ namespace VikingColonies.AI
             return false;
         }
 
+        /// <summary>
+        /// Starts a chat at the first meeting place with no wall between the two (halfway, by them, by the other); false,
+        /// and nothing changed or logged, when every one has a wall between (the caller says so, once for all it asked).
+        /// </summary>
         private bool StartChat(FreeTimeRoutine partner, float now)
         {
             Vector3 mine = _citizen.transform.position, theirs = partner._citizen.transform.position;
-            if (!ChooseMeeting(mine, theirs, out ChatMeeting chosen))
-            {
-                Log.Info($"{_citizen.CitizenName} won't chat with {partner._citizen.CitizenName}: a wall stands between them wherever they'd meet");
-                return false;
-            }
+            if (!ChooseMeeting(mine, theirs, out ChatMeeting chosen)) return false;
             partner.StopActivity();
             ChatMeeting meeting = chosen;
             string where = Mathf.Abs(chosen.First.X - mine.x) < 0.05f && Mathf.Abs(chosen.First.Z - mine.z) < 0.05f ? "beside " + _citizen.CitizenName

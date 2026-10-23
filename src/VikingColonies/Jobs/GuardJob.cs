@@ -5,6 +5,7 @@ using UnityEngine;
 using VikingColonies.AI;
 using VikingColonies.Buildings;
 using VikingColonies.Citizens;
+using VikingColonies.Colony;
 using VikingColonies.Config;
 using VikingColonies.Construction;
 using VikingColonies.Core;
@@ -60,7 +61,14 @@ namespace VikingColonies.Jobs
         private Dictionary<string, string> _armour = new Dictionary<string, string>();
         private float _gearTimer, _lookTimer, _healTimer;
         private float _placeAt = float.NegativeInfinity;
-        private int _towerPlace, _alarmPlace;
+        private int _towerPlace, _alarmPlace, _alarmGuards;
+        /// <summary>His open spot at the alarm, worked out once for where it was sounded (AlarmPost).</summary>
+        private Vector3 _alarmSpot, _alarmSpotFor = new Vector3(float.NaN, 0f, 0f);
+        private int _alarmSpotPlace = -1, _alarmSpotGuards = -1;
+        private float _alarmSpotCheckedAt;
+        private bool _alarmSpotWithWay;
+        private static int s_alarmChoiceFrame = -1;
+        private static int s_alarmStandMask;
         private Character _target;
         private float _targetHealth, _harmedAt, _giveUpAfter = GuardRules.GiveUpSeconds;
         /// <summary>When an archer's way to the target ended short of bow range (-infinity while it goes on).</summary>
@@ -291,10 +299,10 @@ namespace VikingColonies.Jobs
             if (Alarm(out Vector3 alarmAt))
             {
                 // The alarm (1.3): they gather where it was sounded, each guard of the colony at his own spot round it (review of
-                // 1.3: the first of every tower stood on the same one).
-                GuardPosts.AlarmSpot(_alarmPlace, out float dx, out float dz);
-                return alarmAt + new Vector3(dx, 0f, dz);
+                // 1.3: the first of every tower stood on the same one), the first of his that stands open (1.4.2's release run).
+                return AlarmPost(alarmAt);
             }
+            _alarmSpotFor = new Vector3(float.NaN, 0f, 0f);   // the next alarm chooses afresh (its review: the same point again later)
             Vector3? chosen = _module != null ? _module.PostAt : null;   // where a manager put them (1.3)
             Vector3 post = chosen ?? DefaultPost();
             return post + _tower.transform.right * GuardPosts.Offset(_towerPlace);
@@ -307,15 +315,119 @@ namespace VikingColonies.Jobs
             if (now - _placeAt < PlaceSeconds && now >= _placeAt) return;
             _placeAt = now;
             string tower = _tower.Id, me = Citizen.Id, colony = Citizen.ColonyId;
-            _towerPlace = _alarmPlace = 0;
+            _towerPlace = _alarmPlace = _alarmGuards = 0;
             foreach (Citizen c in Citizen.All)
             {
                 if (c == null) continue;
                 CitizenRecord r = c.Record;
+                bool colonyGuard = r.ColonyId == colony && r.Job == SaveKeys.GuardJob;
+                if (colonyGuard) _alarmGuards++;
                 if (string.CompareOrdinal(r.Id, me) >= 0) continue;
                 if (r.Workplace == tower) _towerPlace++;
-                if (r.ColonyId == colony && r.Job == SaveKeys.GuardJob) _alarmPlace++;
+                if (colonyGuard) _alarmPlace++;
             }
+        }
+
+        /// <summary>
+        /// His spot at the alarm: of the ring spots that are his (GuardPosts.AlarmSpotsToTry), the first that stands open:
+        /// on the ground (not on a roof or a rock), out of the water, not under a roof, with room to stand. 1.4.2's release
+        /// run, 1 in about 10: a spot behind a hut's wall kept a guard going in and out of its door. Worked out once for
+        /// where the alarm was sounded; with none open, his plain ring spot, as before.
+        /// </summary>
+        private Vector3 AlarmPost(Vector3 alarmAt)
+        {
+            bool same = Utils.DistanceXZ(_alarmSpotFor, alarmAt) < 0.1f && _alarmSpotPlace == _alarmPlace && _alarmSpotGuards == _alarmGuards;
+            float since = Time.time - _alarmSpotCheckedAt;
+            bool stillOpen = true;
+            if (same && since >= GuardPosts.AlarmRecheckSeconds)
+            {
+                Vector3 again = _alarmSpot;
+                stillOpen = OpenSpot(ref again, alarmAt, AlarmFires());
+                if (stillOpen && GuardPosts.RecheckWay(_alarmSpotWithWay)) stillOpen = _alarmSpotWithWay = WalksTo(again);
+            }
+            if (GuardPosts.KeepAlarmSpot(same, since, stillOpen))
+            {
+                if (since >= GuardPosts.AlarmRecheckSeconds) _alarmSpotCheckedAt = Time.time;
+                return _alarmSpot;
+            }
+            GuardPosts.AlarmSpot(_alarmPlace, out float px, out float pz);
+            Vector3 ring = alarmAt + new Vector3(px, 0f, pz);
+            // Not chosen while the alarm's ground isn't loaded here: its huts would all read as open (its review).
+            if (ZoneSystem.instance == null || !ZoneSystem.instance.IsZoneLoaded(alarmAt))
+            {
+                _alarmSpotFor = new Vector3(float.NaN, 0f, 0f);
+                return ring;
+            }
+            // One guard chooses a frame: a choice asks the game for up to 8 ways (its review: every guard at once as it sounds).
+            Vector3 before = same ? _alarmSpot : new Vector3(float.NaN, 0f, 0f);
+            if (Time.frameCount == s_alarmChoiceFrame)
+            {
+                _alarmSpotFor = new Vector3(float.NaN, 0f, 0f);
+                return same ? _alarmSpot : ring;
+            }
+            s_alarmChoiceFrame = Time.frameCount;
+            _alarmSpotFor = alarmAt;
+            _alarmSpotPlace = _alarmPlace;
+            _alarmSpotGuards = _alarmGuards;
+            _alarmSpotCheckedAt = Time.time;
+            _alarmSpot = ring;
+            List<FireRing> fires = AlarmFires();
+            int[] spots = GuardPosts.AlarmSpotsToTry(_alarmPlace, _alarmGuards, 8);
+            var at = new Vector3[spots.Length];
+            int chosen = GuardPosts.ChooseAlarmSpot(spots.Length, i =>
+            {
+                GuardPosts.AlarmSpot(spots[i], out float dx, out float dz);
+                at[i] = alarmAt + new Vector3(dx, 0f, dz);
+                return OpenSpot(ref at[i], alarmAt, fires);
+            }, i => WalksTo(at[i]), out bool reached);
+            _alarmSpotWithWay = reached;
+            if (chosen >= 0)
+            {
+                // Said once a spot, not at every look (a guard with no way yet looks again every 5 s).
+                if (!(Utils.DistanceXZ(before, at[chosen]) <= 0.1f) && (spots[chosen] != _alarmPlace || !reached))
+                    Log.Info($"{Citizen.CitizenName}'s spot at the alarm ({ring.x:0.0}, {ring.z:0.0}) isn't open{(reached ? "" : " or has no way to it yet")}; " +
+                             $"they stand at ({at[chosen].x:0.0}, {at[chosen].z:0.0})");
+                _alarmSpot = at[chosen];
+                return _alarmSpot;
+            }
+            if (!(Utils.DistanceXZ(before, ring) <= 0.1f))
+                Log.Info($"{Citizen.CitizenName} finds no open spot round the alarm at ({alarmAt.x:0.0}, {alarmAt.z:0.0}); they go to their ring spot");
+            return _alarmSpot;
+        }
+
+        /// <summary>
+        /// A spot a guard can stand at in the open (GuardPosts.AlarmSpotOpen), its height set to where they'd stand. The game's
+        /// solid height is the highest thing above the spot, so a roof over it reads as neither the ground nor the alarm's floor.
+        /// </summary>
+        private bool OpenSpot(ref Vector3 spot, Vector3 alarmAt, List<FireRing> fires)
+        {
+            if (ZoneSystem.instance == null) return true;
+            float ground = ZoneSystem.instance.GetGroundHeight(spot), solid = ZoneSystem.instance.GetSolidHeight(spot);
+            bool onGround = solid - ground <= 0.3f, onAlarmsFloor = Mathf.Abs(solid - alarmAt.y) <= 0.5f;
+            float standAt = onGround ? ground : solid;
+            if (s_alarmStandMask == 0) s_alarmStandMask = LayerMask.GetMask("piece", "piece_nonsolid", "Default", "static_solid", "Default_small", "vehicle");
+            Vector3 at = new Vector3(spot.x, standAt, spot.z);
+            bool room = !Physics.CheckCapsule(at + Vector3.up * 0.5f, at + Vector3.up * 1.6f, 0.4f, s_alarmStandMask, QueryTriggerInteraction.Ignore);
+            if (!GuardPosts.AlarmSpotOpen(onGround, onAlarmsFloor, ground < ZoneSystem.instance.m_waterLevel, standAt - alarmAt.y, room,
+                    RescueSpot.ClearOfFires(spot.x, spot.z, fires)))
+                return false;
+            spot = at;
+            return true;
+        }
+
+        /// <summary>vc_guardtest: their spot at the alarm had a way to it when they chose it (GuardPosts.ChooseAlarmSpot).</summary>
+        internal bool AlarmSpotHasWayForTest => _alarmSpotWithWay;
+
+        /// <summary>The game's paths go from where the guard stands to the spot (GuardPosts.ChooseAlarmSpot).</summary>
+        private bool WalksTo(Vector3 spot) => Ai == null || Citizen == null || Ai.WayReaches(Citizen.transform.position, spot);
+
+        /// <summary>The colony's fires, as rings a guard keeps out of (FreeSpotNear's rule).</summary>
+        private List<FireRing> AlarmFires()
+        {
+            var fires = new List<FireRing>();
+            foreach (FirePlace fire in ColonyPlaces.Fires(Citizen.ColonyId))
+                if (fire != null && fire.Valid) fires.Add(new FireRing(fire.Position.x, fire.Position.z, fire.Radius));
+            return fires;
         }
 
         /// <summary>

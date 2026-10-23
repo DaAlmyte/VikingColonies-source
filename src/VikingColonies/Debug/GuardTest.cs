@@ -503,8 +503,60 @@ namespace VikingColonies.DevTools
                       $"(past the guards' watch of {watch16:0} m) is answered as a call ({answered}) and killed (took {answeredIn:0} s)",
                     attackerCame && called != null && answered && (attacker == null || attacker.IsDead()) && answeredIn < 60f);
 
-                // 17 (1.3). The alarm: everyone else shelters, the guards gather where it was sounded; All clear ends it.
+                // 17 (1.3). The alarm: everyone else shelters, the guards gather where it was sounded; All clear ends it. Sounded
+                // inside a small roofed shelter on purpose (1.4.2's release run, 1 in about 10: a spot behind a hut's wall kept
+                // a guard going in and out of its door): each guard takes the first of their ring spots that stands open.
                 Vector3 alarmAt = hall.transform.position + right * 6f;
+                alarmAt.y = ZoneSystem.instance.GetGroundHeight(alarmAt);
+                var shelter = new List<GameObject>();
+                GameObject wallPiece = ZNetScene.instance.GetPrefab("woodwall"), roofPiece = ZNetScene.instance.GetPrefab("wood_floor");
+                if (wallPiece != null && roofPiece != null)
+                {
+                    shelter.Add(Object.Instantiate(wallPiece, alarmAt + new Vector3(0f, 1f, 1f), Quaternion.identity));
+                    shelter.Add(Object.Instantiate(wallPiece, alarmAt + new Vector3(0f, 1f, -1f), Quaternion.identity));
+                    shelter.Add(Object.Instantiate(wallPiece, alarmAt + new Vector3(1f, 1f, 0f), Quaternion.Euler(0f, 90f, 0f)));
+                    shelter.Add(Object.Instantiate(wallPiece, alarmAt + new Vector3(-1f, 1f, 0f), Quaternion.Euler(0f, 90f, 0f)));
+                    shelter.Add(Object.Instantiate(roofPiece, alarmAt + new Vector3(0f, 2f, 0f), Quaternion.identity));
+                    // 1.4.3's early full run: a ring spot in the open but walled in (an earlier test's roofless hut there) kept a
+                    // guard going in and out of a door for the whole alarm. A roofless yard round the first ring spot, on purpose.
+                    GuardPosts.AlarmSpot(1, out float yardX, out float yardZ);
+                    Vector3 yard = alarmAt + new Vector3(yardX, 0f, yardZ);
+                    yard.y = ZoneSystem.instance.GetGroundHeight(yard);
+                    // Nobody standing there is shut in by its walls (its review).
+                    foreach (Citizen inYard in Citizen.All.Where(c => c != null && Utils.DistanceXZ(c.transform.position, yard) < 2f).ToList())
+                    {
+                        Vector3 outside = yard + (yard - alarmAt).normalized * 3f;
+                        outside.y = ZoneSystem.instance.GetGroundHeight(outside);
+                        inYard.transform.position = outside;
+                    }
+                    shelter.Add(Object.Instantiate(wallPiece, yard + new Vector3(0f, 1f, 1f), Quaternion.identity));
+                    shelter.Add(Object.Instantiate(wallPiece, yard + new Vector3(0f, 1f, -1f), Quaternion.identity));
+                    shelter.Add(Object.Instantiate(wallPiece, yard + new Vector3(1f, 1f, 0f), Quaternion.Euler(0f, 90f, 0f)));
+                    shelter.Add(Object.Instantiate(wallPiece, yard + new Vector3(-1f, 1f, 0f), Quaternion.Euler(0f, 90f, 0f)));
+                }
+                spawned.AddRange(shelter);   // removed at the end however the test goes (its review), as the test's other pieces
+                // The colony's earth painted first (1.4.3's full run, 2026-10-22: the tower's earth was painted by the minute's
+                // check as the alarm sounded, the walking map round it was remade, and a guard had "no way" to their spot).
+                foreach (ColonyBuilding b in ColonyBuilding.All.Where(b => b != null && b.IsValid && b.ColonyId == colony).ToList())
+                {
+                    ConstructionModule site = b.GetComponent<ConstructionModule>();
+                    if (site != null && !site.EarthPaintedForTest) site.PaintEarthNow();
+                }
+                // The game rebuilds its paths round new pieces some seconds later: the alarm sounds once it has (its review), so a
+                // guard's first choice already knows the yard is walled in.
+                yield return new WaitForSeconds(12f);
+                // A building's piece over the spot (the game's own cover test counts a tree's branches as a roof too: the review
+                // fix's run had a spot in the open under a tree; and 1.4.3's early full run read the shelter as no roof); and what
+                // is above it, for a miss to explain itself.
+                int pieceMask = LayerMask.GetMask("piece"), aboveMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small");
+                bool UnderRoof(Vector3 at) => Physics.Raycast(at + Vector3.up * 0.5f, Vector3.up, 30f, pieceMask, QueryTriggerInteraction.Ignore);
+                string Above(Vector3 at) => Physics.Raycast(at + Vector3.up * 0.5f, Vector3.up, out RaycastHit over, 30f, aboveMask, QueryTriggerInteraction.Ignore)
+                    ? $"{Utils.GetPrefabName(over.collider.transform.root.gameObject)} {over.point.y - at.y:0.0} m above" : "open sky";
+                bool alarmUnderRoof = UnderRoof(alarmAt);
+                // Their spot had a way to it when they chose it: not one inside the walled-in yard. (1.4.3's full runs of
+                // 2026-10-22: asked again from where a guard stopped, 2 m off by the shelter's wall, the game's path test
+                // started inside the walled-in yard and found no way, though they had walked there.)
+                bool WalksTo(Citizen g) => JobOf(g) != null && JobOf(g).AlarmSpotHasWayForTest;
                 townHall.RequestAlarm(true, alarmAt);
                 for (float t = 0f; !townHall.AlarmOn && t < 5f; t += 0.5f) yield return new WaitForSeconds(0.5f);
                 Citizen settler = Citizen.All.FirstOrDefault(c => c != null && c.ColonyId == colony && !guards.Contains(c));
@@ -513,12 +565,23 @@ namespace VikingColonies.DevTools
                 {
                     yield return new WaitForSeconds(1f);
                     sheltering = settler != null && (settler.Status ?? "").StartsWith("$vc_status_sheltering");
-                    gathered = guards.All(g => JobOf(g) != null && Utils.DistanceXZ(JobOf(g).PostSpot, alarmAt) <= 6.5f && AtPost(g));
+                    gathered = guards.All(g => JobOf(g) != null && Utils.DistanceXZ(JobOf(g).PostSpot, alarmAt) <= 9.5f && AtPost(g)
+                        && !UnderRoof(JobOf(g).PostSpot)   // its spot in the open: the first draft passed with a spot inside, a guard by its wall
+                        && WalksTo(g));                    // and one they can get to: by the yard's wall is within "at post" too
                 }
+                string spots = string.Join(", ", guards.Where(g => JobOf(g) != null).Select(g =>
+                {
+                    Vector3 p = JobOf(g).PostSpot;
+                    return $"{g.CitizenName} {Utils.DistanceXZ(p, alarmAt):0.0} m off{(UnderRoof(p) ? " under a roof" : "")} ({Above(p)}), {Utils.DistanceXZ(g.transform.position, p):0.0} m from it" +
+                           (WalksTo(g) ? "" : ", no way there");
+                }).ToArray());
                 townHall.RequestAlarm(false, alarmAt);
                 for (float t = 0f; townHall.AlarmOn && t < 5f; t += 0.5f) yield return new WaitForSeconds(0.5f);
-                Check($"The alarm: {settler?.CitizenName} shelters ({sheltering}, '{Localization.instance.Localize(settler?.Status ?? "")}'), the guards gather where it " +
-                      $"was sounded ({gathered}), and All clear ends it ({!townHall.AlarmOn})", sheltering && gathered && !townHall.AlarmOn);
+                foreach (GameObject piece in shelter)
+                    if (piece != null) ZNetScene.instance.Destroy(piece);
+                Check($"The alarm, sounded inside a roofed shelter (under a roof {alarmUnderRoof}): {settler?.CitizenName} shelters ({sheltering}, " +
+                      $"'{Localization.instance.Localize(settler?.Status ?? "")}'), the guards gather at open spots round it ({gathered}: {spots}), " +
+                      $"and All clear ends it ({!townHall.AlarmOn})", sheltering && gathered && !townHall.AlarmOn && alarmUnderRoof);
 
                 // 18 (1.3). A ballista in his patrol, below half, is loaded from what the chests can spare.
                 GameObject ballistaPrefab = ZNetScene.instance.GetPrefab("piece_turret");

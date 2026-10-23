@@ -29,6 +29,8 @@ namespace VikingColonies.Core
         public const string TakeAway = "vc_takeaway";
         public const string PlanPrev = "vc_plan_prev";
         public const string OrderPrev = "vc_order_prev";
+        /// <summary>The level whose earth under the roof was painted (EarthFloor): painted again when it differs.</summary>
+        public const string EarthLevel = "vc_earth_level";
 
         // The Town Hall.
         public const string Founded = "vc_founded";

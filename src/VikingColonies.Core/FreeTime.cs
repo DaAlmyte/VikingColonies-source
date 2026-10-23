@@ -180,19 +180,36 @@ namespace VikingColonies.Core
     public static class ChatPairing
     {
         /// <summary>The nearest free settler within <see cref="FreeTimeRules.ChatRange"/>, or "".</summary>
-        public static string Partner(string me, GroundPoint at, System.Collections.Generic.IEnumerable<ChatCandidate> others)
+        public static string Partner(string me, GroundPoint at, System.Collections.Generic.IEnumerable<ChatCandidate> others) =>
+            Partners(me, at, others).FirstOrDefault() ?? "";
+
+        /// <summary>
+        /// The free settlers within <see cref="FreeTimeRules.ChatRange"/>, nearest first: when a wall stands between the
+        /// asker and the first wherever they'd meet, the next is asked (1.4.2's review, done in 1.4.3).
+        /// </summary>
+        public static List<string> Partners(string me, GroundPoint at, System.Collections.Generic.IEnumerable<ChatCandidate> others) =>
+            (others ?? new ChatCandidate[0])
+                .Where(c => c.Free && c.Id != me && c.Id.Length > 0 && ColonyRules.Distance(at, c.At) <= FreeTimeRules.ChatRange)
+                .OrderBy(c => ColonyRules.Distance(at, c.At))
+                .Select(c => c.Id)
+                .ToList();
+
+        /// <summary>How many are asked, nearest first, before a stroll alone (1.4.3).</summary>
+        public const int Tries = 3;
+
+        /// <summary>The ones asked to chat: the first <see cref="Tries"/> of <see cref="Partners"/>.</summary>
+        public static List<string> ToAsk(string me, GroundPoint at, System.Collections.Generic.IEnumerable<ChatCandidate> others) =>
+            Partners(me, at, others).Take(Tries).ToList();
+
+        /// <summary>
+        /// "Astrid", "Astrid or Bjorn", "Astrid, Bjorn or Arne", or "nobody": the ones asked, in one log line (1.4.3's review:
+        /// a line per try made three lines of one choice).
+        /// </summary>
+        public static string Names(IList<string> names)
         {
-            string best = "";
-            float bestDistance = float.MaxValue;
-            foreach (ChatCandidate c in others)
-            {
-                if (!c.Free || c.Id == me || c.Id.Length == 0) continue;
-                float d = ColonyRules.Distance(at, c.At);
-                if (d > FreeTimeRules.ChatRange || d >= bestDistance) continue;
-                best = c.Id;
-                bestDistance = d;
-            }
-            return best;
+            if (names == null || names.Count == 0) return "nobody";
+            if (names.Count == 1) return names[0];
+            return string.Join(", ", names.Take(names.Count - 1)) + " or " + names[names.Count - 1];
         }
 
         /// <summary>Only one of the two asks: the one whose id comes first.</summary>

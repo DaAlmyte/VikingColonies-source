@@ -173,7 +173,10 @@ namespace VikingColonies.Citizens
         [HarmonyPatch]
         private static class HoverLineHook
         {
+            // After every other mod's hover change, so "Here lies …" stays on top (1.4.3's compatibility run: with one of
+            // the newly added mods, the cairn's first line was just "Cairn").
             [HarmonyPatch(typeof(Container), nameof(Container.GetHoverText)), HarmonyPostfix]
+            [HarmonyPriority(Priority.Last), HarmonyAfter(Gui.BuildingInteractPatches.MyLittleUI)]
             private static void HoverLine(Container __instance, ref string __result)
             {
                 SettlerCairn cairn = __instance.GetComponent<SettlerCairn>();

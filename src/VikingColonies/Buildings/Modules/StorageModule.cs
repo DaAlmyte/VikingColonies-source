@@ -119,14 +119,15 @@ namespace VikingColonies.Buildings
         /// Takes one item (e.g. a seed) out of storage into the load. Only what the chest can spare, unless it is for the
         /// building's own use (its worker, the Town Hall feeding newcomers): false when nothing is spare.
         /// </summary>
-        public bool TryTakeItem(string prefabName, CarryLoad into, bool ownUse = false)
+        /// <param name="toBuildWith">For the builder: anything a piece is built from, even what doesn't stack (StockRules.MayTake).</param>
+        public bool TryTakeItem(string prefabName, CarryLoad into, bool ownUse = false, bool toBuildWith = false)
         {
             if (!ownUse && Spare(prefabName) <= 0) return false;   // on the copy here first: no hand-over for nothing (0.24)
             if (Claim() != Access.Ready) return false;
             if (!ownUse && Spare(prefabName) <= 0) return false;   // again on the latest contents
             Inventory inventory = _container.GetInventory();
             ItemDrop.ItemData item = inventory.GetItem(prefabName, -1, true);
-            if (item == null || !StockRules.Carried(item.m_shared.m_maxStackSize) || !inventory.RemoveItem(item, 1)) return false;
+            if (item == null || !StockRules.MayTake(item.m_shared.m_maxStackSize, toBuildWith) || !inventory.RemoveItem(item, 1)) return false;
             into.Add(prefabName, 1);
             return true;
         }
@@ -144,8 +145,11 @@ namespace VikingColonies.Buildings
         /// <summary>The building's Keep in stock list (nothing for a chest without one).</summary>
         public StockList Keep => _stock != null ? _stock.List : null;
 
-        /// <summary>How many of an item may be taken: all for the building's own use, else what's beyond its kept amount.</summary>
-        public int Spare(string item, bool ownUse = false) => StockRules.Spare(Contents(), ownUse ? null : Keep, item, IsFood, ownUse);
+        /// <summary>What its worker works with, kept back from everyone else (a Farm's seeds, 1.4.3); null for none.</summary>
+        public IReadOnlyDictionary<string, int> Working => GetComponent<FieldsModule>()?.WorkingStock();
+
+        /// <summary>How many of an item may be taken: all for the building's own use, else what's beyond its kept amount and working stock.</summary>
+        public int Spare(string item, bool ownUse = false) => StockRules.Spare(Contents(), ownUse ? null : Keep, item, IsFood, ownUse, Working);
 
         /// <summary>What the chest can spare, by item (items with none spare left out).</summary>
         public Dictionary<string, int> SpareContents(bool ownUse = false)
@@ -153,10 +157,11 @@ namespace VikingColonies.Buildings
             Dictionary<string, int> contents = Contents();
             if (ownUse) return contents;
             StockList keep = Keep;
+            IReadOnlyDictionary<string, int> working = Working;
             var spare = new Dictionary<string, int>();
             foreach (KeyValuePair<string, int> item in contents)
             {
-                int n = StockRules.Spare(contents, keep, item.Key, IsFood, false);
+                int n = StockRules.Spare(contents, keep, item.Key, IsFood, false, working);
                 if (n > 0) spare[item.Key] = n;
             }
             return spare;

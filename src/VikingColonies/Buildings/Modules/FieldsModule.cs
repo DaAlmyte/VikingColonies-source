@@ -4,6 +4,7 @@ using UnityEngine;
 using VikingColonies.Colony;
 using VikingColonies.Construction;
 using VikingColonies.Core;
+using VikingColonies.Jobs;
 
 namespace VikingColonies.Buildings
 {
@@ -41,6 +42,27 @@ namespace VikingColonies.Buildings
         }
 
         public void RequestSetAutoAssign(bool on) => _nview.InvokeRPC(RpcSetAuto, on);
+
+        private Dictionary<string, int> _working;
+        private float _workingAt = float.NegativeInfinity;
+        private const float WorkingSeconds = 2f;
+
+        /// <summary>
+        /// The seeds its fields plant, kept back from meals, fires, the builder and carrying (WorkingStock.OfFarm; 1.4.3: the
+        /// player's watch of 1.4.2 saw settlers eat the carrots in a Farm's chest). Worked out at most every 2 s.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> WorkingStock()
+        {
+            if (_working != null && Time.time - _workingAt < WorkingSeconds) return _working;
+            List<CropInfo> ticked = CropList.For(_building).Where(l => l.Ticked).Select(l => l.Crop).ToList();
+            _working = Core.WorkingStock.OfFarm(Fields().Select(m =>
+            {
+                CropInfo own = m.Crop.Length > 0 ? CropList.Crops.FirstOrDefault(c => c.Piece == m.Crop) : null;
+                return new FieldSeeds(m.Size * m.Size - 1, own != null ? new[] { own } : (IEnumerable<CropInfo>)ticked);   // its marker in the middle
+            }));
+            _workingAt = Time.time;
+            return _working;
+        }
 
         private void Set(long sender, string key, bool on)
         {

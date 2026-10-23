@@ -21,6 +21,21 @@ namespace VikingColonies.Tests
             Assert.Equal("Chest\n[<b>Ctrl + E</b>] Rename", HoverLines.WithoutKeyLine(hover, "Rename", "Shift"));
         }
 
+        // 1.4.2's review (deferred minors, done in 1.4.3): our Shift+E skipped the game's own "not while attacking or
+        // dodging", and took the key for another mod's object under a hut, which the game would have used first.
+        [Fact]
+        public void Shift_E_opens_a_colony_window_only_on_the_hut_itself_and_not_mid_attack_or_dodge()
+        {
+            Assert.True(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: true, onBuilding: true, nearestIsBuilding: true, attacking: false, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: true, onBuilding: true, nearestIsBuilding: false, attacking: false, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: true, onBuilding: true, nearestIsBuilding: true, attacking: true, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: true, onBuilding: true, nearestIsBuilding: true, attacking: false, dodging: true));
+            Assert.False(ShiftE.OpensWindow(alt: false, hold: false, localPlayer: true, onBuilding: true, nearestIsBuilding: true, attacking: false, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: true, localPlayer: true, onBuilding: true, nearestIsBuilding: true, attacking: false, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: false, onBuilding: true, nearestIsBuilding: true, attacking: false, dodging: false));
+            Assert.False(ShiftE.OpensWindow(alt: true, hold: false, localPlayer: true, onBuilding: false, nearestIsBuilding: false, attacking: false, dodging: false));
+        }
+
         [Fact]
         public void A_name_with_the_word_in_it_is_no_key_line_and_stays()
         {
@@ -33,6 +48,17 @@ namespace VikingColonies.Tests
             Assert.Equal("Chest\n[E] Open", HoverLines.WithoutKeyLine("Chest\n[E] Open", "Rename"));
             Assert.Equal("", HoverLines.WithoutKeyLine(null, "Rename"));
             Assert.Equal("Chest", HoverLines.WithoutKeyLine("Chest", ""));
+        }
+
+        // 1.4.3, the player's watch of 1.4.2: Hire with no jobless settler put "No jobless settlers. A newcomer comes when
+        // ..." across the middle of the screen, too long to read. A reply goes to the open window's message line, else to
+        // the corner where the game lists messages, never the middle.
+        [Fact]
+        public void A_reply_goes_to_the_open_window_else_the_corner()
+        {
+            Assert.Equal(ReplyPlace.HutWindow, Replies.Place(hutWindowOpen: true, hallWindowOpen: false));
+            Assert.Equal(ReplyPlace.HallWindow, Replies.Place(hutWindowOpen: false, hallWindowOpen: true));
+            Assert.Equal(ReplyPlace.Corner, Replies.Place(hutWindowOpen: false, hallWindowOpen: false));
         }
     }
 }

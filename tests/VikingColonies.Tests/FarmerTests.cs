@@ -218,5 +218,50 @@ namespace VikingColonies.Tests
             Assert.Equal(3600f, PlotRetry.Seconds(9));
             Assert.Equal(600f, PlotRetry.Seconds(0));
         }
+
+        // 1.4.3, the player's watch of 1.4.2: the farmer said "Needs a field" with a field of 24 plots joined to its Farm. A
+        // Farm with fields but no free ground says so, and the log says where its plots went.
+        [Fact]
+        public void A_farm_with_fields_but_no_free_ground_says_so_not_needs_a_field()
+        {
+            Assert.Equal("$vc_status_needs $vc_a_field", FieldWords.NoFieldStatus(fields: 0));
+            Assert.Equal("$vc_status_field_no_ground", FieldWords.NoFieldStatus(fields: 1));
+            var tally = new PlotTally { Fields = 1, Plots = 24, Building = 20, Water = 1, Slope = 1, Blocked = 2 };
+            Assert.Equal(0, tally.Usable);
+            Assert.Equal("1 field, 24 plots, none free: 20 by a building, 1 in water, 1 off the marker's height, 2 with something on them",
+                FieldWords.Tally(tally));
+        }
+
+        // 1.4.3, the player's watch of 1.4.2: a field in the Farm's own fenced yard had all 24 plots left out (the yard is
+        // part of the Farm's site), and the farmer said "Needs a field". A finished Farm's own yard is farmland; inside its
+        // walls is not; while it's built or upgraded its whole site stays out; other buildings' sites stay out.
+        [Fact]
+        public void A_finished_farms_own_yard_is_farmland_inside_its_walls_and_other_sites_are_not()
+        {
+            Assert.False(FieldPlots.LeftOut(onSiteMargin: true, insideWalls: false, ownFarm: true, siteBusy: false));   // its yard
+            Assert.True(FieldPlots.LeftOut(onSiteMargin: true, insideWalls: true, ownFarm: true, siteBusy: false));     // its floor
+            Assert.True(FieldPlots.LeftOut(onSiteMargin: true, insideWalls: false, ownFarm: true, siteBusy: true));     // being upgraded
+            Assert.True(FieldPlots.LeftOut(onSiteMargin: true, insideWalls: false, ownFarm: false, siteBusy: false));   // the Longhouse's site
+            Assert.False(FieldPlots.LeftOut(onSiteMargin: false, insideWalls: false, ownFarm: false, siteBusy: false));
+        }
+
+        // 1.4.3's review: a repair (a raid broke a fence piece) took the yard field away until it was done. Only building or
+        // upgrading the Farm keeps its yard out.
+        [Fact]
+        public void Only_building_or_upgrading_the_farm_keeps_its_yard_out_not_a_repair()
+        {
+            Assert.True(FieldPlots.SiteBusy(OrderKind.Build, done: false));
+            Assert.True(FieldPlots.SiteBusy(OrderKind.Upgrade, done: false));
+            Assert.False(FieldPlots.SiteBusy(OrderKind.Repair, done: false));
+            Assert.False(FieldPlots.SiteBusy(OrderKind.Upgrade, done: true));
+        }
+
+        // 1.4.3's review: Hugin's "put a Field marker" tip showed to a Farm that had a field, only no free ground for it.
+        [Fact]
+        public void Hugins_field_tip_is_for_a_farm_with_no_field()
+        {
+            Assert.True(FieldWords.ShowsFieldTip(fields: 0));
+            Assert.False(FieldWords.ShowsFieldTip(fields: 1));
+        }
     }
 }

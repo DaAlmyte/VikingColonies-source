@@ -910,13 +910,9 @@ namespace VikingColonies.Buildings
             return "$vc_bring_back_done";
         }
 
-        /// <summary>On the asker's computer: how it went, in the Town Hall window (or the middle of the screen).</summary>
-        private void RPC_BringBackResult(long sender, string token, string name)
-        {
-            string text = SafeText.Format(Localization.instance.Localize(token), name);   // the token is the sender's
-            if (Gui.Windows.TownHall.IsOpen) Gui.Windows.TownHall.ShowMessage(text);
-            else if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, text);
-        }
+        /// <summary>On the asker's computer: how it went, in the open window (or the game's message corner).</summary>
+        private void RPC_BringBackResult(long sender, string token, string name) =>
+            Gui.Windows.Reply(SafeText.Format(Localization.instance.Localize(token), name));   // the token is the sender's
 
         /// <summary>
         /// Test command: takes a settler off the roster (a load test's settler, removed again). With no id, every one

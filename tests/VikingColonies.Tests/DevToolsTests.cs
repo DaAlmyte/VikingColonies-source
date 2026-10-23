@@ -105,6 +105,39 @@ namespace VikingColonies.Tests
             Assert.Empty(ShotFile.Oldest(names, 30));
         }
 
+        [Fact]
+        public void Shot_file_keeps_every_picture_of_the_last_day()
+        {
+            // 2026-10-21: a 260-picture run kept them all ('vc_shot keep 300'); the next game's first picture, back at 60,
+            // took the rest away before they were looked at.
+            var now = new System.DateTime(2026, 10, 21, 7, 10, 0);
+            var names = new[] { "20261021-053000-a.png", "20261021-062000-b.png", "20261020-070000-c.png", "20261019-120000-d.png" };
+            Assert.Equal(new[] { "20261019-120000-d.png", "20261020-070000-c.png" }, ShotFile.Oldest(names, 1, now));
+            Assert.Empty(ShotFile.Oldest(new[] { "20261021-053000-a.png", "20261021-062000-b.png" }, 0, now));
+            Assert.Equal(new[] { "odd.png" }, ShotFile.Oldest(new[] { "odd.png", "20261021-062000-b.png" }, 0, now));   // no time in its name
+        }
+
+        [Fact]
+        public void Shot_file_never_keeps_more_than_the_most_however_new()
+        {
+            // The review of 2026-10-21: the day's rule had lifted the 500 (about 1.5 GB) cap.
+            var now = new System.DateTime(2026, 10, 21, 12, 0, 0);
+            var names = Enumerable.Range(0, ShotFile.MaxKeep + 100).Select(i => now.AddSeconds(-i).ToString("yyyyMMdd-HHmmss") + ".png").ToList();
+            List<string> gone = ShotFile.Oldest(names, 299, now);
+            Assert.Equal(100, gone.Count);
+            Assert.All(gone, n => Assert.True(string.CompareOrdinal(n, names[ShotFile.MaxKeep - 1]) < 0));
+        }
+
+        [Fact]
+        public void Shot_file_keeps_more_for_a_long_picture_run_but_never_fewer_than_60()
+        {
+            // The hut review (2026-10-21) takes 185 pictures: with 60 kept, its first huts' were gone before the end.
+            Assert.Equal(60, ShotFile.DefaultKeep);
+            Assert.Equal(300, ShotFile.ClampKeep(300));
+            Assert.Equal(ShotFile.DefaultKeep, ShotFile.ClampKeep(10));
+            Assert.Equal(ShotFile.MaxKeep, ShotFile.ClampKeep(100000));
+        }
+
         // ---- vc_speed ----
 
         [Fact]

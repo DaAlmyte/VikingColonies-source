@@ -137,20 +137,28 @@ namespace VikingColonies.DevTools
     /// <summary>vc_shot (0.24.1): a screenshot from inside the game, so a test looks without taking over the player's screen.</summary>
     internal sealed class ShotCommand : ConsoleCommand
     {
-        public const int Keep = 60;   // a six-hut showcase takes 31 (2026-10-18: its first picture was gone)
+        /// <summary>How many pictures are kept: 60, or more for this game after 'vc_shot keep' (a long picture run).</summary>
+        private static int s_keep = ShotFile.DefaultKeep;
 
         public override string Name => "vc_shot";
-        public override string Help => "VikingColonies (test worlds): 'vc_shot [label]' saves a screenshot into BepInEx/VikingColonies/shots (the newest 60 are kept)";
+        public override string Help => "VikingColonies (test worlds): 'vc_shot [label]' saves a screenshot into BepInEx/VikingColonies/shots (the newest 60 are kept, and every one of the last day); " +
+                                       "'vc_shot keep <count>' keeps more until the game closes (a long picture run; at most 500)";
         public override bool IsCheat => true;
 
         public static string Folder => Path.Combine(Paths.BepInExRootPath, "VikingColonies", "shots");
 
         public override void Run(string[] args)
         {
+            if (args != null && args.Length == 2 && args[0].ToLowerInvariant() == "keep" && int.TryParse(args[1], out int keep))
+            {
+                s_keep = ShotFile.ClampKeep(keep);
+                BuildCommand.Print($"vc_shot: the newest {s_keep} pictures are kept until the game closes");
+                return;
+            }
             try
             {
                 Directory.CreateDirectory(Folder);
-                foreach (string old in ShotFile.Oldest(Directory.GetFiles(Folder, "*.png").Select(Path.GetFileName), Keep - 1))
+                foreach (string old in ShotFile.Oldest(Directory.GetFiles(Folder, "*.png").Select(Path.GetFileName), s_keep - 1, DateTime.Now))
                     File.Delete(Path.Combine(Folder, old));
                 string path = Path.Combine(Folder, ShotFile.Name(DateTime.Now, args != null && args.Length > 0 ? string.Join("-", args) : null));
                 ScreenCapture.CaptureScreenshot(path);   // written at the end of the frame

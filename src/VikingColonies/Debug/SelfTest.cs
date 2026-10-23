@@ -69,13 +69,20 @@ namespace VikingColonies.DevTools
             Patches hoverHooks = Harmony.GetPatchInfo(AccessTools.Method(typeof(Container), nameof(Container.GetHoverText)));
             Patch ourUse = useHooks?.Prefixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
             Patch ourHover = hoverHooks?.Postfixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
+            // Every hover line of ours goes last, the cairn's "Here lies …" too (1.4.3's compatibility run).
+            List<Patch> ourHovers = (hoverHooks?.Postfixes ?? new List<Patch>().AsReadOnly()).Where(h => h.owner == Plugin.PluginGuid).ToList();
             string others = string.Join(", ", (useHooks?.Prefixes ?? new List<Patch>().AsReadOnly()).Concat(hoverHooks?.Postfixes ?? new List<Patch>().AsReadOnly())
                 .Where(h => h.owner != Plugin.PluginGuid).Select(h => $"{h.owner} {h.priority}").ToArray());
-            Check($"On a chest our Shift+E hook goes first and our hover line last (ours: Shift+E {ourUse?.priority}, hover {ourHover?.priority}; " +
+            Check($"On a chest our Shift+E hook goes first and our hover lines last (ours: Shift+E {ourUse?.priority}, hover {string.Join("/", ourHovers.Select(h => h.priority.ToString()).ToArray())}; " +
                   $"others there: {(others.Length > 0 ? others : "none")})",
-                ourUse != null && ourHover != null && ourUse.priority == Priority.First && ourHover.priority == Priority.Last
+                ourUse != null && ourHover != null && ourUse.priority == Priority.First && ourHovers.All(h => h.priority == Priority.Last)
                 && useHooks.Prefixes.All(h => h.owner == Plugin.PluginGuid || h.priority <= ourUse.priority)
-                && hoverHooks.Postfixes.All(h => h.owner == Plugin.PluginGuid || h.priority >= ourHover.priority));
+                && hoverHooks.Postfixes.All(h => h.owner == Plugin.PluginGuid || h.priority >= ourHover.priority)
+                // A tie at the lowest priority is broken only by HarmonyAfter (its review: MyLittleUI's hook at 0 is the one that
+                // ran after the cairn's line): every hover hook of ours names MyLittleUI, and any other mod's hook there.
+                && ourHovers.All(h => h.after != null && h.after.Contains(Gui.BuildingInteractPatches.MyLittleUI))
+                && hoverHooks.Postfixes.Where(o => o.owner != Plugin.PluginGuid && o.priority <= Priority.Last)
+                    .All(o => ourHovers.All(h => h.after != null && h.after.Contains(o.owner))));
             Patches playerHooks = Harmony.GetPatchInfo(AccessTools.Method(typeof(Player), "Interact", new[] { typeof(GameObject), typeof(bool), typeof(bool) }));
             Patch ourPlayerUse = playerHooks?.Prefixes.FirstOrDefault(h => h.owner == Plugin.PluginGuid);
             string playerOthers = string.Join(", ", (playerHooks?.Prefixes ?? new List<Patch>().AsReadOnly())
@@ -328,6 +335,11 @@ namespace VikingColonies.DevTools
                 Vector3 outside = hutDoor.transform.position + outward.normalized * 6f;
                 DevHelpers.ClearMonsters(origin, 60f);   // a settler fleeing a monster stops his walks
                 DevHelpers.ClearLogs(origin, 40f);   // a log rolled into a doorway would block it (the test's own birch)
+                // The earth under its roof painted first (1.4.3's compatibility run, 2026-10-22: painted by the minute's repair
+                // check in the middle of this walk, the walking map there was being remade and he went round the hut).
+                if (!site.EarthPaintedForTest) site.PaintEarthNow();
+                for (float waited = 0f; !site.EarthPaintedForTest && waited < 10f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(5f);
                 walker.TestWalk(outside, 65f);
                 for (float waited = 0f; !walker.TestWalkDone && waited < 60f; waited += 0.5f)
                     yield return new WaitForSeconds(0.5f);
@@ -670,7 +682,7 @@ namespace VikingColonies.DevTools
             }
             CheckDoorways("Longhouse", longhouseSite);
             // The game's paths learn about a new building's floors a moment after it goes up.
-            for (float waited = 0f; residence != null && UnreachableBeds(residence).Count > 0 && waited < 15f; waited += 1f) yield return new WaitForSeconds(1f);
+            for (float waited = 0f; residence != null && UnreachableBeds(residence).Count > 0 && waited < WalkingMapSeconds; waited += 1f) yield return new WaitForSeconds(1f);
             CheckBedsReachable(residence);
             Check($"A Longhouse built at level 1 has 2 beds, and its colony's settlers get homes there ({beds} beds, {homed} of {settlersHere} settlers at home)",
                 beds == 2 && homed == Mathf.Min(beds, settlersHere) && homed > 0);
@@ -771,7 +783,7 @@ namespace VikingColonies.DevTools
                 }
                 // The bigger Longhouse, after going up a level. Seen: checked the moment it stood, before the game's paths knew
                 // its new floors, every bed was "3 m short".
-                for (float waited = 0f; residence != null && UnreachableBeds(residence).Count > 0 && waited < 15f; waited += 1f) yield return new WaitForSeconds(1f);
+                for (float waited = 0f; residence != null && UnreachableBeds(residence).Count > 0 && waited < WalkingMapSeconds; waited += 1f) yield return new WaitForSeconds(1f);
                 CheckBedsReachable(residence);
                 ColonyNeeds room = hallModule.Needs();
                 int sizeBefore = ColonySize();
@@ -1212,7 +1224,10 @@ namespace VikingColonies.DevTools
                       $"{hurtBefore * 100f:0}% whole, then {(hurt != null ? hurt.GetHealthPercentage() * 100f : 0f):0}%; '{Localization.instance.Localize(builder.Status)}')",
                     hurt != null && hurtBefore < 0.75f && hurt.GetHealthPercentage() >= 0.99f);
 
-                // The topmost piece goes (nothing rests on it); the builder gets what it takes in his hut's chest.
+                // The topmost piece goes (nothing rests on it); the builder gets what it takes in his hut's chest. No monster by
+                // the hut meanwhile: repairs wait for one to go (1.4.3's compatibility run: a Neck spawned by the Farm 4 s before).
+                float monsterReach = RepairRules.MonsterRange + 10f;
+                DevHelpers.ClearMonsters(farm.transform.position, monsterReach);
                 WearNTear top = wears.LastOrDefault(w => w != null && w != hurt);
                 string topPrefab = top != null ? Utils.GetPrefabName(top.gameObject) : "";
                 Vector3 topAt = top != null ? top.transform.position : Vector3.zero;
@@ -1237,7 +1252,10 @@ namespace VikingColonies.DevTools
                     return near.Any(p => p != null && Utils.GetPrefabName(p.gameObject) == topPrefab && Vector3.Distance(p.transform.position, topAt) < 0.1f);
                 }
                 for (float waited = 0f; !(PutBack() && farmSite.Order?.State == BuildState.Done) && waited < 120f; waited += 1f)
+                {
+                    if (Mathf.Repeat(waited, 5f) < 0.01f) DevHelpers.ClearMonsters(farm.transform.position, monsterReach);
                     yield return new WaitForSeconds(1f);
+                }
                 Check($"The builder puts the piece back and the repair is done (back: {PutBack()}, order {farmSite.Order?.State}; " +
                       $"'{Localization.instance.Localize(builder.Status)}')",
                     PutBack() && farmSite.Order?.State == BuildState.Done);
@@ -1251,6 +1269,7 @@ namespace VikingColonies.DevTools
                 bool hammered = byHammer != null;   // gone once removed: Unity counts it as null then
                 if (hammered) byHammer.Remove();
                 yield return new WaitForSeconds(2f);
+                DevHelpers.ClearMonsters(farm.transform.position, monsterReach);
                 farmSite.CheckForRepair();
                 Check($"A piece taken away with a hammer is left out, not put back ({topPrefab}; order {farmSite.Order?.State}, " +
                       $"{farmSite.Order?.SkippedCount} left out)",
@@ -1500,6 +1519,12 @@ namespace VikingColonies.DevTools
             WearNTear wear = prefab != null ? prefab.GetComponent<WearNTear>() : null;
             return wear != null && !wear.m_noSupportWear;
         }
+
+        /// <summary>
+        /// How long a walk check waits for the game's walking map to take in new floors (15 s until 1.4.3's compatibility run
+        /// of 2026-10-22: with 15 other mods the game was slower, and a level-2 Longhouse's bed was still "1,6 m short").
+        /// </summary>
+        private const float WalkingMapSeconds = 30f;
 
         /// <summary>Every bed's sleeping spot can be walked to from inside the Longhouse's door. Seen: at level 2 none could.</summary>
         private static void CheckBedsReachable(ResidenceModule residence)

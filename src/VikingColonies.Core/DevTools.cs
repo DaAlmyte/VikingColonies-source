@@ -126,6 +126,16 @@ namespace VikingColonies.Core
     public static class ShotFile
     {
         public const int MaxLabel = 40;
+        /// <summary>How many pictures are kept (a six-hut showcase takes 31; 2026-10-18: its first picture was gone).</summary>
+        public const int DefaultKeep = 60;
+        /// <summary>The most 'vc_shot keep' allows: about 1.5 GB of pictures.</summary>
+        public const int MaxKeep = 500;
+
+        /// <summary>
+        /// vc_shot keep: a long picture run keeps more (the hut review, 2026-10-21: 185 pictures, its first huts' gone before
+        /// its end), never fewer than the usual 60.
+        /// </summary>
+        public static int ClampKeep(int keep) => Math.Max(DefaultKeep, Math.Min(MaxKeep, keep));
 
         public static string Name(DateTime at, string label)
         {
@@ -146,12 +156,28 @@ namespace VikingColonies.Core
             return at.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture) + (tag.Length > 0 ? "-" + tag : "") + ".png";
         }
 
-        /// <summary>The names beyond the newest <paramref name="keep"/> (names start with the time, so they sort by it).</summary>
-        public static List<string> Oldest(IEnumerable<string> names, int keep)
+        /// <summary>A picture taken within this many hours is never taken away, however many there are.</summary>
+        public const double KeepHours = 24;
+
+        /// <summary>
+        /// The names beyond the newest <paramref name="keep"/> (names start with the time, so they sort by it); given
+        /// <paramref name="now"/>, not those taken within <see cref="KeepHours"/> (2026-10-21: a 260-picture run's
+        /// pictures, kept with 'vc_shot keep', went at the next game's first picture, back at 60, before they were seen).
+        /// </summary>
+        public static List<string> Oldest(IEnumerable<string> names, int keep, DateTime? now = null)
         {
             List<string> sorted = (names ?? Enumerable.Empty<string>()).OrderBy(n => n, StringComparer.Ordinal).ToList();
-            return sorted.Take(Math.Max(0, sorted.Count - Math.Max(0, keep))).ToList();
+            List<string> beyond = sorted.Take(Math.Max(0, sorted.Count - Math.Max(0, keep))).ToList();
+            if (now == null) return beyond;
+            DateTime since = now.Value.AddHours(-KeepHours);
+            // Never more than MaxKeep however new (the review of 2026-10-21: the day's rule had lifted the cap).
+            List<string> overCap = sorted.Take(Math.Max(0, sorted.Count - MaxKeep)).ToList();
+            return beyond.Where(n => overCap.Contains(n) || !TakenAt(n, out DateTime at) || at < since).ToList();
         }
+
+        private static bool TakenAt(string name, out DateTime at) =>
+            DateTime.TryParseExact(name != null && name.Length >= 15 ? name.Substring(0, 15) : "", "yyyyMMdd-HHmmss",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out at);
     }
 
     /// <summary>vc_findflat: whether a spot suits a test colony, and where to look for one.</summary>

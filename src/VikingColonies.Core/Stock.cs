@@ -136,18 +136,37 @@ namespace VikingColonies.Core
         public static bool Carried(int maxStack) => maxStack > 1;
 
         /// <summary>
+        /// Whether a settler takes this kind of item from a chest: what stacks (<see cref="Carried"/>) for carrying runs,
+        /// meals and fuel; anything a piece is built from, for the builder (1.4.3's upgrade test: a Dvergr lantern is built
+        /// from a Lantern, which doesn't stack, and the builder fetched "0 of 1 Lantern" for ever: no hut whose level 4 needs
+        /// one got there, since 1.4.1).
+        /// </summary>
+        public static bool MayTake(int maxStack, bool toBuildWith) => toBuildWith || Carried(maxStack);
+
+        /// <summary>How long a builder who took none of what he went for waits before planning again (not a spin, 1.4.3).</summary>
+        public static float FetchPause(int taken) => taken == 0 ? 5f : 0f;
+
+        /// <summary>
         /// How many of an item may be taken from a chest. The building's own use (its worker, the Town Hall feeding
         /// newcomers) takes everything; anyone else leaves the kept amount. Named food entries are kept first and Food (any)
         /// on top of them: with 10 Raspberries and 10 food of any kind kept, 15 Raspberries and 8 Mushrooms spare 3 of each.
+        /// What the building's worker works with (<paramref name="working"/>, <see cref="WorkingStock"/>) is left too, the
+        /// larger of it and the kept amount holding (1.4.3: settlers ate a Farm's seed carrots).
         /// </summary>
-        public static int Spare(IReadOnlyDictionary<string, int> contents, StockList keep, string item, Func<string, bool> isFood, bool ownUse)
+        public static int Spare(IReadOnlyDictionary<string, int> contents, StockList keep, string item, Func<string, bool> isFood, bool ownUse,
+                                IReadOnlyDictionary<string, int> working = null)
         {
             int held = Held(contents, item);
-            if (ownUse || keep == null) return held;
-            int spare = held - keep.Kept(item);
-            int anyFood = keep.Kept(StockList.AnyFood);
-            if (anyFood > 0 && isFood != null && isFood(item))
-                spare = Math.Min(spare, FoodBeyondNamed(contents, keep, isFood) - anyFood);
+            if (ownUse) return held;
+            int spare = held;
+            if (keep != null)
+            {
+                spare = held - keep.Kept(item);
+                int anyFood = keep.Kept(StockList.AnyFood);
+                if (anyFood > 0 && isFood != null && isFood(item))
+                    spare = Math.Min(spare, FoodBeyondNamed(contents, keep, isFood) - anyFood);
+            }
+            if (working != null && item != null && working.TryGetValue(item, out int works)) spare = Math.Min(spare, held - works);
             return Math.Max(0, spare);
         }
 
@@ -273,6 +292,45 @@ namespace VikingColonies.Core
         public GroundPoint At;
         public bool IsTownHall;
         public bool HasRoom;
+    }
+
+    /// <summary>A field as its seeds count: its plots, and the crops it may plant (its own, or the Farm's ticked list).</summary>
+    public sealed class FieldSeeds
+    {
+        public FieldSeeds(int plots, IEnumerable<CropInfo> crops)
+        {
+            Plots = Math.Max(0, plots);
+            Crops = (crops ?? new CropInfo[0]).Where(c => c != null && !string.IsNullOrEmpty(c.Seed)).ToList();
+        }
+
+        public int Plots { get; }
+        public IReadOnlyList<CropInfo> Crops { get; }
+    }
+
+    /// <summary>
+    /// What a worker's hut holds for its own work, by item: not spare for meals, fires, the builder or anyone else (the
+    /// storehouse design's working stock, needed in 1.4.3: the player's watch of 1.4.2 saw settlers eat the carrots in a
+    /// Farm's chest, its seed for seed carrots).
+    /// </summary>
+    public static class WorkingStock
+    {
+        /// <summary>
+        /// A Farm's: each crop's seed, one per plot of the fields that plant it (times the seeds a plant takes); a field of
+        /// mixed crops shares its plots among them, rounded up. A bush is planted once and regrows: none kept for it (1.4.3's
+        /// review: a field of PlantEverything's raspberry bushes kept 5 Raspberries a plot for good).
+        /// </summary>
+        public static Dictionary<string, int> OfFarm(IEnumerable<FieldSeeds> fields)
+        {
+            var working = new Dictionary<string, int>();
+            foreach (FieldSeeds field in fields ?? new FieldSeeds[0])
+            {
+                if (field == null || field.Plots == 0 || field.Crops.Count == 0) continue;
+                int each = (field.Plots + field.Crops.Count - 1) / field.Crops.Count;
+                foreach (CropInfo crop in field.Crops.Where(c => !c.IsBush))
+                    working[crop.Seed] = (working.TryGetValue(crop.Seed, out int n) ? n : 0) + each * crop.SeedCount;
+            }
+            return working;
+        }
     }
 
     /// <summary>

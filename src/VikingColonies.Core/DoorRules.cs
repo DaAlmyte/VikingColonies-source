@@ -366,7 +366,21 @@ namespace VikingColonies.Core
         /// the settler is under a roof (inside, the door is the way out). Out in the open with only doors by the settler,
         /// it's routine: a log just off the walking map, the door of their own hut nearby (1.4.1's colony watch, 119 of 123).
         /// </summary>
-        public static bool ExplainNoDoor(bool doorNearGoal, bool underRoof) => doorNearGoal || underRoof;
+        /// <param name="gapFromHere">How far from the goal, flat, the way from where the settler stands ends (NaN: not
+        /// measured). Within <see cref="WithinReach"/> and <see cref="ReachHeight"/> it's no news: the way goes right up to
+        /// the goal (1.4.2's colony watch, 90 of 91: a lumberjack after logs between huts, "from here 0,0 m").</param>
+        /// <param name="heightOff">How far above (+) or below the way's end the goal is (NaN: not measured).</param>
+        public static bool ExplainNoDoor(bool doorNearGoal, bool underRoof, float gapFromHere = float.NaN, float heightOff = float.NaN) =>
+            (doorNearGoal || underRoof) && !(gapFromHere <= WithinReach && Math.Abs(heightOff) <= ReachHeight);
+
+        /// <summary>
+        /// A way from here ending this close to the goal, flat, goes right up to it (ExplainNoDoor). Behind a wall it ends
+        /// further off, a settler's width and the wall away (1.4.3's review: a chest on the inside of a hut's wall).
+        /// </summary>
+        public const float WithinReach = 0.3f;
+
+        /// <summary>And this close in height: a chest hung on a wall is in reach, the floor above (2 m up) isn't.</summary>
+        public const float ReachHeight = 1.5f;
 
         /// <summary>
         /// Through the door he gets to his goal: beyond it the way goes all the way there, or at least ends

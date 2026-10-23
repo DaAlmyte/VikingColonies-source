@@ -41,12 +41,13 @@ namespace VikingColonies.AI
                 GroundPoint at = Ground(b.transform.position);
                 Dictionary<string, int> contents = b.Storage.Contents();
                 StockList keep = b.Stock.List;
+                IReadOnlyDictionary<string, int> working = b.Storage.Working;   // once a building, not once an item (its review)
                 foreach (KeepEntry missing in StockRules.Short(contents, keep, StorageModule.IsFood))
                     if ((missing.Item == StockList.AnyFood || StorageModule.Carried(missing.Item)) && !_skippedRuns.IsBlocked(StockRuns.ClaimKey(b.Id, missing.Item), now))
                         needs.Add(new StockNeed { BuildingId = b.Id, At = at, Item = missing.Item, Missing = missing.Amount });
                 foreach (KeyValuePair<string, int> item in contents)
                 {
-                    int spare = StorageModule.Carried(item.Key) ? StockRules.Spare(contents, keep, item.Key, StorageModule.IsFood, false) : 0;
+                    int spare = StorageModule.Carried(item.Key) ? StockRules.Spare(contents, keep, item.Key, StorageModule.IsFood, false, working) : 0;
                     if (spare > 0) sources.Add(new StockSource { BuildingId = b.Id, At = at, Item = item.Key, Spare = spare });
                 }
             }

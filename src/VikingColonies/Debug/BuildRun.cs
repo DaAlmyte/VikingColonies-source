@@ -35,6 +35,11 @@ namespace VikingColonies.DevTools
                 BuildCommand.Print("vc_buildrun: test worlds only");
                 return;
             }
+            if (args != null && args.Length > 0 && args[0] == "clear")
+            {
+                BuildCommand.Print("vc_buildrun: " + BuildRun.Clear());
+                return;
+            }
             if (args != null && args.Length > 0 && args[0] == "stop")
             {
                 BuildRun.Stop = true;
@@ -57,8 +62,34 @@ namespace VikingColonies.DevTools
         /// <summary>Game seconds one level may take before the run gives up on it (40 game minutes).</summary>
         private const double LevelTimeout = 2400.0;
         private const float Spacing = 26f;
+        /// <summary>How far in front of the camp the layout's middle lies (between the camp and the row of huts).</summary>
+        private const float LayoutMiddle = 24f;
+        /// <summary>
+        /// The ground the run needs to itself round the layout's middle: the layout reaches 90 m, and a hut placed within a
+        /// colony's area joins it, even one whose Town Hall is gone (1.4.3's second build-through: the first try's leftover hut
+        /// took in the new Watchtower and Builder's Hut, and no builder came to them).
+        /// </summary>
+        private const float OwnGround = 150f;
 
         public static bool Running, Stop;
+        /// <summary>The middle of the last run's colony (null when none started: a refused run clears nothing).</summary>
+        private static Vector3? s_lastMiddle;
+
+        /// <summary>
+        /// vc_buildrun clear: the last run's colony goes (everything of a colony within 120 m of its middle; the run started
+        /// only with no other colony within 150 m). Its review: a radius wipe in the scenario also took what a refused run
+        /// had found in its way.
+        /// </summary>
+        public static string Clear()
+        {
+            if (Running) return "still running ('vc_buildrun stop' first)";
+            if (!s_lastMiddle.HasValue) return "no run's colony to clear";
+            Vector3 at = s_lastMiddle.Value;
+            s_lastMiddle = null;
+            return $"cleared the run's colony at ({at.x:0}, {at.z:0}): {DevHelpers.WipeColonies(at, ClearRadius)}";
+        }
+
+        private const float ClearRadius = 120f;
 
         private sealed class Subject
         {
@@ -81,10 +112,41 @@ namespace VikingColonies.DevTools
             Stop = false;
             Log.Event($"vc_buildrun: starting ({string.Join(", ", names)})");
             if (!player.InGodMode()) player.SetGodMode(true);
-            Vector3 origin = player.transform.position, forward = player.transform.forward, right = player.transform.right;
+            Vector3 forward = player.transform.forward, right = player.transform.right;
             forward.y = right.y = 0f;
             forward.Normalize();
             right.Normalize();
+            // The whole layout inside the land the game keeps running round the player: they stand in the middle of their zone,
+            // the layout's middle on them (1.4.3's build-through: from their zone's edge, the row's end hut lay 12 m inside that
+            // land's edge; its three builders stepped past it and stood there frozen, as the game's own creatures do, and every
+            // hut's level 2 waited 40 game minutes for them).
+            Vector3 middle = ZoneSystem.GetZonePos(ZoneSystem.GetZone(player.transform.position));
+            middle.y = ZoneSystem.instance.GetGroundHeight(middle) + 0.5f;   // a teleport with no floor under it goes back (its review)
+            for (int tries = 0; !player.TeleportTo(middle, player.transform.rotation, distantTeleport: false) && tries < 20; tries++)
+                yield return new WaitForSecondsRealtime(0.5f);
+            for (float waited = 0f; player.IsTeleporting() && waited < 30f; waited += 0.5f) yield return new WaitForSecondsRealtime(0.5f);
+            yield return new WaitForSecondsRealtime(1f);
+            if (Utils.DistanceXZ(player.transform.position, middle) > 2f)
+            {
+                Log.Event($"vc_buildrun: FAIL the player didn't get to the middle of their zone at ({middle.x:0}, {middle.z:0}) " +
+                          $"(standing at ({player.transform.position.x:0}, {player.transform.position.z:0}))");
+                Log.Event("vc_buildrun: 0 of 0 reached level 5, 0 gave up");
+                Running = false;
+                yield break;
+            }
+            Vector3 origin = middle - forward * LayoutMiddle;
+            origin.y = player.transform.position.y;
+            Log.Event($"vc_buildrun: the player stands in the middle of their zone at ({middle.x:0}, {middle.z:0}); the camp goes up {LayoutMiddle:0} m behind them");
+            string others = OthersNear(middle, OwnGround);
+            if (others.Length > 0)
+            {
+                Log.Event($"vc_buildrun: FAIL the ground isn't the run's own: {others} within {OwnGround:0} m of ({middle.x:0}, {middle.z:0}); " +
+                          "clear them (vc_world wipe) or start somewhere else");
+                Log.Event("vc_buildrun: 0 of 0 reached level 5, 0 gave up");
+                Running = false;
+                yield break;
+            }
+            s_lastMiddle = middle;
             Quaternion facing = Quaternion.LookRotation(forward);
             long me = player.GetPlayerID();
             int startingWas = ColonyConfig.StartingCitizens.Value;
@@ -217,18 +279,26 @@ namespace VikingColonies.DevTools
                 if (GameNow - s.StartedGame > LevelTimeout)
                 {
                     s.Failed = true;
+                    int frozen = Citizen.All.Count(c => c != null && c.ColonyId == s.Building.ColonyId && c.Record.Job == Jobs.JobDefinitions.BuilderId &&
+                                                        ZNetScene.instance.OutsideActiveArea(c.transform.position));
                     string row = $"{s.Name} level {s.Level}: GAVE UP after {LevelTimeout / 60:0} game minutes: {order.State}, {order.DoneCount} of {order.Total} up, " +
-                                 $"{order.SkippedCount} skipped, needs '{order.Needs}', blocked '{order.Blocked}'";
+                                 $"{order.SkippedCount} skipped, needs '{order.Needs}', blocked '{order.Blocked}', {frozen} builders outside the land the game runs";
                     s.Rows.Add(row);
                     Log.Event("vc_buildrun: " + row);
                 }
                 return;
             }
-            if (built >= s.Level && (order == null || order.State == BuildState.Done))
+            // The camp grows with the hall on its own: its next level may be ordered the moment this one is done, before a
+            // tick sees it done (1.4.3's build-through: camp level 3 was ordered at once, the run never counted level 2,
+            // never put out level 3's materials, and the builders sat idle).
+            bool campMovedOn = s.Name == "camp" && order != null && order.State != BuildState.Done && order.TargetLevel > s.Level;
+            if (built >= s.Level && (order == null || order.State == BuildState.Done || campMovedOn))
             {
-                List<string> weak = site.StandReport(out int total, out int standing);
+                int total = 0, standing = 0;
+                List<string> weak = campMovedOn ? new List<string>() : site.StandReport(out total, out standing);
                 string row = $"{s.Name} level {s.Level}: {(GameNow - s.StartedGame) / 60.0:0.0} game min, {Time.realtimeSinceStartup - s.StartedReal:0} s; " +
-                             $"{standing} of {total} pieces stand, {order?.SkippedCount ?? 0} skipped";
+                             (campMovedOn ? "its next level began at once (its pieces are counted with that one)"
+                                          : $"{standing} of {total} pieces stand, {order?.SkippedCount ?? 0} skipped");
                 s.Rows.Add(row);
                 Log.Event("vc_buildrun: " + row);
                 foreach (string line in weak.Where(l => l.StartsWith("missing")).Take(6)) Log.Event($"vc_buildrun: {s.Name} level {s.Level}: {line}");
@@ -277,6 +347,20 @@ namespace VikingColonies.DevTools
                 parts.Add($"{item}: {(at.Count > 0 ? string.Join(", ", at) : "none anywhere")}");
             }
             return string.Join("; ", parts);
+        }
+
+        /// <summary>Other colonies' buildings, settlers and builder's pieces (a gallery's too) near a spot; "" when none.</summary>
+        private static string OthersNear(Vector3 centre, float radius)
+        {
+            // Buildings and settlers from the world's saved objects, loaded or not (its review: settlers load only within the
+            // zones round the player, about 96 m, so one 100-150 m off went unseen); pieces as loaded (a hut stands by them).
+            List<Vector3> colonyThings = FindFlatCommand.ColonySpotsInWorld().Where(s => Utils.DistanceXZ(s, centre) <= radius).ToList();
+            var near = new List<Piece>();
+            Piece.GetAllPiecesInRadius(centre, radius, near);
+            int pieces = near.Count(p => p != null && (PiecePlacer.SiteOf(p.gameObject).Length > 0 || BuildCommand.IsCostChestPiece(p)));
+            if (colonyThings.Count + pieces == 0) return "";
+            string nearestNote = colonyThings.Count > 0 ? $" (the nearest {colonyThings.Min(s => Utils.DistanceXZ(s, centre)):0} m off)" : "";
+            return $"{colonyThings.Count} colony buildings and settlers, {pieces} builder's pieces{nearestNote}";
         }
 
         /// <summary>Puts up to <paramref name="amount"/> of an item into the inventory; returns how many didn't fit.</summary>

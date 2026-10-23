@@ -229,7 +229,13 @@ namespace VikingColonies.Gui
         }
 
         /// <summary>How a recall went (the settler's computer tells the asker).</summary>
-        internal void ShowMessage(string text) => _message.text = text;
+        /// <summary>A reply, on whichever tab is open (1.4.3's review: only the Citizens tab showed it).</summary>
+        internal void ShowMessage(string text)
+        {
+            _message.text = text;
+            _stock?.ShowMessage(text);
+            _hall?.ShowMessage(text);
+        }
 
         private void Show(Tab tab)
         {

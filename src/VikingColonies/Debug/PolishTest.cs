@@ -108,9 +108,15 @@ namespace VikingColonies.DevTools
                     // Not inside a rock, a tree or a floor (the game's walking map out there may not be built yet to ask).
                     bool walkable = newcomer != null && !Physics.CheckCapsule(start + Vector3.up * 0.6f, start + Vector3.up * 1.6f, 0.3f,
                         LayerMask.GetMask("piece", "static_solid", "Default"), QueryTriggerInteraction.Ignore);
+                    // What stood in the way, for a miss to explain itself (1.4.3's second full run: "standing free False", once).
+                    string inTheWay = newcomer == null || walkable ? "" : ", in the way: " + string.Join(", ",
+                        Physics.OverlapCapsule(start + Vector3.up * 0.6f, start + Vector3.up * 1.6f, 0.3f,
+                                LayerMask.GetMask("piece", "static_solid", "Default"), QueryTriggerInteraction.Ignore)
+                            .Select(c => $"{Utils.GetPrefabName(c.transform.root.gameObject)} ({LayerMask.LayerToName(c.gameObject.layer)})")
+                            .Distinct().ToArray());
                     float fromHall = newcomer != null ? Utils.DistanceXZ(start, hall.transform.position) : 0f;
                     Check($"A newcomer appears where you aren't looking, on walkable ground ({(newcomer != null ? newcomer.CitizenName : "none")}: " +
-                          $"{fromHall:0} m from the hall, {off:0} degrees off your view, hidden {hidden}, seen by the game's rule {seenByRule}, standing free {walkable}; " +
+                          $"{fromHall:0} m from the hall, {off:0} degrees off your view, hidden {hidden}, seen by the game's rule {seenByRule}, standing free {walkable}{inTheWay}; " +
                           $"chosen in view: {TownHallModule.LastEdgeSeen}, usable out of view then: {TownHallModule.LastUnseenUsable})",
                         newcomer != null && walkable
                         && (fromHall < 15f || off > 70f || hidden || !seenByRule || TownHallModule.LastEdgeSeen && TownHallModule.LastUnseenUsable == 0));   // in view only when nothing out of view would do

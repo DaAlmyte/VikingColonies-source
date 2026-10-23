@@ -290,6 +290,8 @@ namespace VikingColonies.Construction
                 }
                 string pieceSite = PiecePlacer.SiteOf(root);
                 if (pieceSite.Length > 0 && pieceSite == thisSite) return;   // the builder's own work
+                Colony.FieldMarker field = root.GetComponent<Colony.FieldMarker>();
+                if (SiteRules.OwnField(field != null, field != null ? field.FarmId : "", thisSite)) return;   // the Farm's own field (1.4.3's review)
                 if (matchesPlan != null && matchesPlan(piece)) return;      // exactly part of the plan
                 if (SiteRules.IsLeftover(pieceSite, thisSite, ColonyBuilding.FindById(pieceSite) != null))
                     clear.Add(new SiteThing(root, ClearKind.Leftover, 0, null, piece));
@@ -311,7 +313,7 @@ namespace VikingColonies.Construction
             TreeLog log = root.GetComponent<TreeLog>();
             if (log != null)
             {
-                if (inside || Touches(site, hit.bounds)) clear.Add(new SiteThing(root, ClearKind.Log, log.m_minToolTier, null, null));
+                if (SiteRules.InTheWay(ClearKind.Log, inside, Touches(site, hit.bounds))) clear.Add(new SiteThing(root, ClearKind.Log, log.m_minToolTier, null, null));
                 return;
             }
             Destructible destructible = root.GetComponent<Destructible>();
@@ -322,11 +324,19 @@ namespace VikingColonies.Construction
                 RockFound(root, hit, null, destructible.m_minToolTier, site, thisSite, matchesPlan, clear, blockers, heldRocks);
                 return;
             }
+            // A stump (or the game's small tree) half on the site is in the way too (SiteRules.InTheWay).
+            if (destructible != null && destructible.GetDestructibleType() == DestructibleType.Tree)
+            {
+                // Reaching into the building itself, not only its 0.5 m margin: one grazing the margin, too tough for the
+                // builder's axe, would hold the site (1.4.3's review).
+                if (SiteRules.InTheWay(ClearKind.Stump, inside, Touches(site.Grow(-SiteSurvey.SiteMargin), hit.bounds)))
+                    clear.Add(new SiteThing(root, ClearKind.Stump, destructible.m_minToolTier, null, null));
+                return;
+            }
             if (!inside) return;
             if (destructible != null)
             {
-                if (destructible.GetDestructibleType() == DestructibleType.Tree) clear.Add(new SiteThing(root, ClearKind.Stump, destructible.m_minToolTier, null, null));
-                else clear.Add(new SiteThing(root, ClearKind.Plant, 0, null, null));
+                clear.Add(new SiteThing(root, ClearKind.Plant, 0, null, null));
                 return;
             }
             if (root.GetComponent<Pickable>() != null || root.GetComponent<Plant>() != null) clear.Add(new SiteThing(root, ClearKind.Plant, 0, null, null));

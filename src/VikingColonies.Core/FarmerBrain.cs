@@ -59,6 +59,30 @@ namespace VikingColonies.Core
         }
     }
 
+    /// <summary>Where a Farm's field plots went when its farmer looked: how many, and why each left out was.</summary>
+    public sealed class PlotTally
+    {
+        public int Fields, Plots, Building, Water, Slope, Blocked;
+
+        public int Usable => Plots - Building - Water - Slope - Blocked;
+    }
+
+    /// <summary>
+    /// The farmer's words with no plot to work (1.4.3, the player's watch of 1.4.2: "Needs a field" with a field of 24 plots
+    /// joined to the Farm): no field yet, or fields with no free ground, and the log's reasons.
+    /// </summary>
+    public static class FieldWords
+    {
+        public static string NoFieldStatus(int fields) => fields > 0 ? "$vc_status_field_no_ground" : "$vc_status_needs $vc_a_field";
+
+        /// <summary>Hugin's "put a Field marker" tip: only for a Farm with no field (1.4.3's review).</summary>
+        public static bool ShowsFieldTip(int fields) => fields == 0;
+
+        public static string Tally(PlotTally t) =>
+            $"{t.Fields} field{(t.Fields == 1 ? "" : "s")}, {t.Plots} plots, {(t.Usable > 0 ? t.Usable + " free" : "none free")}: " +
+            $"{t.Building} by a building, {t.Water} in water, {t.Slope} off the marker's height, {t.Blocked} with something on them";
+    }
+
     /// <summary>
     /// How many seeds the farmer takes from the Farm's chest in one visit (worker polish, 0.20: watching a colony, he walked to
     /// the chest for every plot): enough for every plot waiting for that crop, whole plots only (a bush takes its price),
@@ -94,6 +118,18 @@ namespace VikingColonies.Core
         /// <summary>A crop standing this near a plot is on it (his; the plant's growing replaces the planted piece).</summary>
         public const float OnPlotTolerance = 0.4f;
         public const float Spacing = 1.25f;
+
+        /// <summary>
+        /// Whether a field's plot by a building is left out: on a building's site (its outline and margin), unless it's the
+        /// field's own Farm, finished, and the plot is outside its walls: a Farm's yard is farmland (1.4.3, the player's watch
+        /// of 1.4.2: a field in the Farm's fenced yard had all its plots left out). While the Farm is built or upgraded, its
+        /// whole site stays out for the builder.
+        /// </summary>
+        public static bool LeftOut(bool onSiteMargin, bool insideWalls, bool ownFarm, bool siteBusy) =>
+            ownFarm && !siteBusy ? insideWalls : onSiteMargin;
+
+        /// <summary>The Farm is being built or upgraded (not repaired: a fence piece a raid broke keeps the yard, 1.4.3's review).</summary>
+        public static bool SiteBusy(OrderKind kind, bool done) => !done && (kind == OrderKind.Build || kind == OrderKind.Upgrade);
 
         private static double Flat(Vec3 a, Vec3 b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z));
 

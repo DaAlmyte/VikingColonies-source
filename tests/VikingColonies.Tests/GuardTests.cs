@@ -558,6 +558,80 @@ namespace VikingColonies.Tests
             Assert.False(GuardRules.OutOfBowReach(wayEnded: true, gap: 20f, shootRange: 25f, endedFor: 60f));    // in range: shoots
         }
 
+        // 1.4.2's release run (1 in about 10): the alarm's ring of spots, round where it was sounded (mostly inside the Town
+        // Hall), took no notice of buildings: a guard's spot behind a hut's wall kept them going in and out of its door. Each
+        // guard tries their own ring spots in turn, never one another guard tries, and takes the first that stands open.
+        [Fact]
+        public void Each_guard_tries_their_own_alarm_spots_never_another_guards()
+        {
+            Assert.Equal(new[] { 1, 4, 7, 10 }, GuardPosts.AlarmSpotsToTry(place: 1, guards: 3, tries: 4));
+            Assert.Equal(new[] { 0, 1, 2 }, GuardPosts.AlarmSpotsToTry(place: 0, guards: 1, tries: 3));
+            Assert.Equal(new[] { 0, 1 }, GuardPosts.AlarmSpotsToTry(place: 0, guards: 0, tries: 2));   // none counted yet: as one
+            var taken = new System.Collections.Generic.HashSet<int>();
+            for (int place = 0; place < 3; place++)
+                foreach (int spot in GuardPosts.AlarmSpotsToTry(place, 3, 6))
+                    Assert.True(taken.Add(spot), $"spot {spot} tried by two guards");
+        }
+
+        // Its review: a spot by the camp's fire is no place to stand (a settler burned in 1.4.0), and a paved yard at the
+        // alarm's level is as good as the ground; a floor at another height (a roof above, a hut's floor) is not.
+        [Fact]
+        public void An_alarm_spot_is_open_on_the_ground_or_the_alarms_floor_clear_of_fires_and_water()
+        {
+            Assert.True(GuardPosts.AlarmSpotOpen(onGround: true, onAlarmsFloor: false, inWater: false, heightOff: 1f, roomToStand: true, clearOfFires: true));
+            Assert.True(GuardPosts.AlarmSpotOpen(onGround: false, onAlarmsFloor: true, inWater: false, heightOff: 0f, roomToStand: true, clearOfFires: true));
+            Assert.False(GuardPosts.AlarmSpotOpen(onGround: false, onAlarmsFloor: false, inWater: false, heightOff: 0f, roomToStand: true, clearOfFires: true));   // a roof or a rock
+            Assert.False(GuardPosts.AlarmSpotOpen(onGround: true, onAlarmsFloor: false, inWater: false, heightOff: 0f, roomToStand: true, clearOfFires: false));   // the fire
+            Assert.False(GuardPosts.AlarmSpotOpen(onGround: true, onAlarmsFloor: false, inWater: true, heightOff: 0f, roomToStand: true, clearOfFires: true));
+            Assert.False(GuardPosts.AlarmSpotOpen(onGround: true, onAlarmsFloor: false, inWater: false, heightOff: 3.5f, roomToStand: true, clearOfFires: true));
+            Assert.False(GuardPosts.AlarmSpotOpen(onGround: true, onAlarmsFloor: false, inWater: false, heightOff: 0f, roomToStand: false, clearOfFires: true));
+        }
+
+        // 1.4.3's early full run: a spot in the open but walled in (an earlier test's roofless hut beside the alarm, as a
+        // fenced yard would be) kept a guard going in and out of a door 20 m off for the whole alarm. The first spot that is
+        // open and one they can walk to; else the first open one (a guard inside a hut, behind its closed door, or far off on
+        // patrol, has a way to none yet: its review); else none (their plain ring spot).
+        [Fact]
+        public void A_guard_takes_the_first_open_spot_they_can_walk_to_else_the_first_open_one()
+        {
+            bool[] open = { false, true, true, true }, walk = { true, false, true, true };
+            Assert.Equal(2, GuardPosts.ChooseAlarmSpot(4, i => open[i], i => walk[i], out bool reached));
+            Assert.True(reached);
+            Assert.Equal(1, GuardPosts.ChooseAlarmSpot(4, i => open[i], i => false, out reached));
+            Assert.False(reached);
+            Assert.Equal(-1, GuardPosts.ChooseAlarmSpot(4, i => false, i => true, out reached));
+            Assert.False(reached);
+        }
+
+        [Fact]
+        public void The_way_is_looked_for_only_to_open_spots_and_only_until_one_is_found()
+        {
+            var asked = new List<int>();
+            bool[] open = { false, true, true, true };
+            GuardPosts.ChooseAlarmSpot(4, i => open[i], i => { asked.Add(i); return i == 2; }, out bool reached);
+            Assert.Equal(new[] { 1, 2 }, asked);   // not the closed spot 0, and nothing after the first found
+        }
+
+        // Its review: a spot chosen with a way to it isn't dropped because a guard fighting across a stream has no way back
+        // for a moment; one chosen without a way is looked at again for one.
+        [Fact]
+        public void A_kept_spot_is_looked_at_for_a_way_only_when_it_was_chosen_without_one()
+        {
+            Assert.False(GuardPosts.RecheckWay(chosenWithWay: true));
+            Assert.True(GuardPosts.RecheckWay(chosenWithWay: false));
+        }
+
+        // Its review: a spot chosen before the colony's huts had loaded (a player joining mid-alarm) stood behind a wall for
+        // the whole alarm. A kept spot is looked at again every few seconds, and given up once it has closed.
+        [Fact]
+        public void A_kept_alarm_spot_is_looked_at_again_and_given_up_once_it_closes()
+        {
+            Assert.True(GuardPosts.KeepAlarmSpot(sameAlarm: true, sinceChecked: 1f, stillOpen: false));   // not looked at yet: kept
+            Assert.True(GuardPosts.KeepAlarmSpot(sameAlarm: true, sinceChecked: GuardPosts.AlarmRecheckSeconds, stillOpen: true));
+            Assert.False(GuardPosts.KeepAlarmSpot(sameAlarm: true, sinceChecked: GuardPosts.AlarmRecheckSeconds, stillOpen: false));
+            Assert.False(GuardPosts.KeepAlarmSpot(sameAlarm: false, sinceChecked: 0f, stillOpen: true));   // another alarm, place or count
+        }
+
         [Fact]
         public void A_hut_lists_all_its_workers()
         {

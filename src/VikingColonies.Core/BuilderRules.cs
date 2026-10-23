@@ -128,6 +128,21 @@ namespace VikingColonies.Core
         public static bool ClearsInFrontOfDoor(ClearKind kind) => kind != ClearKind.Item && kind != ClearKind.Leftover;
 
         /// <summary>
+        /// Whether something found by a site is in the builder's way: anything whose middle is on the site; a stump, a log or a
+        /// rock as soon as any of it reaches in (1.4.3, the player's watch of 1.4.2: a world stump half on the Builder's Hut's
+        /// site was built round).
+        /// </summary>
+        public static bool InTheWay(ClearKind kind, bool middleOnSite, bool reachesIn) =>
+            middleOnSite || reachesIn && (kind == ClearKind.Stump || kind == ClearKind.Log || kind == ClearKind.Rock);
+
+        /// <summary>
+        /// A field marker of this very Farm (its yard is farmland since 1.4.3): not in the way of its site's check, so the
+        /// Farm's upgrade isn't red for its own field's sign (1.4.3's review). A planned piece still never lands on it.
+        /// </summary>
+        public static bool OwnField(bool isFieldMarker, string fieldsFarm, string thisSite) =>
+            isFieldMarker && !string.IsNullOrEmpty(thisSite) && fieldsFarm == thisSite;
+
+        /// <summary>
         /// Whether a piece standing where the builder wants to put one blocks it. His own hut's chest, pieces he put up
         /// for this hut and pieces that are exactly part of the plan are fine; anything else (a player's own building,
         /// another hut's building) is in the way — he never builds into another building.

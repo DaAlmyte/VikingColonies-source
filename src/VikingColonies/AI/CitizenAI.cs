@@ -1541,11 +1541,17 @@ namespace VikingColonies.AI
         }
 
         /// <summary>How far short of <paramref name="to"/> the game's way from <paramref name="from"/> ends; MaxValue when there is no way.</summary>
-        internal float WayEndGap(Vector3 from, Vector3 to)
+        internal float WayEndGap(Vector3 from, Vector3 to) => WayEndGap(from, to, out _);
+
+        /// <summary>WayEndGap, and how far above (+) or below the way's end <paramref name="to"/> is (NaN when there is no way).</summary>
+        internal float WayEndGap(Vector3 from, Vector3 to, out float heightOff)
         {
+            heightOff = float.NaN;
             Pathfinding paths = Pathfinding.instance;
             if (paths == null || !paths.GetPath(from, to, s_way, m_pathAgentType, false, true, false) || s_way.Count == 0) return float.MaxValue;
-            return Utils.DistanceXZ(s_way[s_way.Count - 1], to);
+            Vector3 end = s_way[s_way.Count - 1];
+            heightOff = to.y - end.y;
+            return Utils.DistanceXZ(end, to);
         }
 
         /// <summary>The next walk asks for a fresh path (the game keeps a path for up to 5 s for the same goal).</summary>

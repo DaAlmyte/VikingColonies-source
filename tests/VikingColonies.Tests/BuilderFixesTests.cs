@@ -263,5 +263,30 @@ namespace VikingColonies.Tests
             Assert.Equal("builder_hut_5", BlueprintNames.FileName("builder_hut", 9));
             Assert.Equal("builder_hut", BlueprintNames.FileName("builder_hut", 0));
         }
+
+        // 1.4.3, the player's watch of 1.4.2: a world stump stood half on the Builder's Hut's site and was built round. A
+        // stump, like a log or a rock, is in the way when any of it reaches into the site, not only when its middle does.
+        [Fact]
+        public void A_stump_a_log_or_a_rock_reaching_into_the_site_is_cleared_a_plant_or_an_item_only_when_on_it()
+        {
+            Assert.True(SiteRules.InTheWay(ClearKind.Stump, middleOnSite: false, reachesIn: true));
+            Assert.True(SiteRules.InTheWay(ClearKind.Log, middleOnSite: false, reachesIn: true));
+            Assert.True(SiteRules.InTheWay(ClearKind.Rock, middleOnSite: false, reachesIn: true));
+            Assert.False(SiteRules.InTheWay(ClearKind.Plant, middleOnSite: false, reachesIn: true));
+            Assert.False(SiteRules.InTheWay(ClearKind.Item, middleOnSite: false, reachesIn: true));
+            Assert.True(SiteRules.InTheWay(ClearKind.Plant, middleOnSite: true, reachesIn: true));
+            Assert.False(SiteRules.InTheWay(ClearKind.Stump, middleOnSite: false, reachesIn: false));
+        }
+
+        // 1.4.3's review: a field marker in the Farm's own yard (farmland since 1.4.3) made the Farm's upgrade red, "a
+        // building in the way". Its own field's sign isn't in its way.
+        [Fact]
+        public void A_farms_own_field_sign_isnt_in_the_way_of_its_upgrade()
+        {
+            Assert.True(SiteRules.OwnField(isFieldMarker: true, fieldsFarm: "farm1", thisSite: "farm1"));
+            Assert.False(SiteRules.OwnField(isFieldMarker: true, fieldsFarm: "farm2", thisSite: "farm1"));
+            Assert.False(SiteRules.OwnField(isFieldMarker: false, fieldsFarm: "farm1", thisSite: "farm1"));
+            Assert.False(SiteRules.OwnField(isFieldMarker: true, fieldsFarm: "", thisSite: ""));
+        }
     }
 }

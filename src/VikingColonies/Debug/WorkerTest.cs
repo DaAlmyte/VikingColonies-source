@@ -125,6 +125,18 @@ namespace VikingColonies.DevTools
                       $"size {(marker != null ? marker.Size : 0)}, crop '{(marker != null ? marker.Crop : "")}', carrots planted on it: {CarrotOnField()})",
                     joined && marker.Size == 3 && marker.Crop == "sapling_carrot" && CarrotOnField());
 
+                // 12 (1.4.3, the player's watch of 1.4.2: settlers ate a Farm's seed carrots). The Farm keeps the seeds its field
+                // plants, one per plot; only what's beyond them is spare.
+                yield return new WaitForSeconds(2.5f);   // worked out at most every 2 s
+                IReadOnlyDictionary<string, int> working = farm.Storage.Working;
+                int keeps = working != null && working.TryGetValue("CarrotSeeds", out int kept) ? kept : 0;
+                int seedsBefore = farm.Storage.Contents().TryGetValue("CarrotSeeds", out int sb) ? sb : 0;
+                int spareSeeds = farm.Storage.Spare("CarrotSeeds");
+                int seedsAfter = farm.Storage.Contents().TryGetValue("CarrotSeeds", out int sa) ? sa : 0;
+                int fieldPlots = marker != null ? marker.PlotPositions().Count : -1;
+                Check($"The Farm keeps the seeds its field plants, one per plot ({keeps} CarrotSeeds kept for {fieldPlots} plots; {seedsAfter} in its chest, " +
+                      $"{spareSeeds} spare)", keeps == fieldPlots && (spareSeeds == Mathf.Max(0, seedsBefore - keeps) || spareSeeds == Mathf.Max(0, seedsAfter - keeps)));
+
                 // 4. A second field with a level-1 Farm stays without one; the Fields tab says so.
                 Vector3 secondAt = farm.transform.position - right * 14f;
                 secondAt.y = ZoneSystem.instance.GetGroundHeight(secondAt);
@@ -178,6 +190,49 @@ namespace VikingColonies.DevTools
                           $"by itself: {fields.AutoAssign})", marker.FarmId.Length == 0);
                 }
                 else Check("A field taken from its Farm (no marker)", false);
+
+                // 11 (1.4.3, the player's watch of 1.4.2: a field in the Farm's fenced yard had all its plots left out, and its
+                // farmer said "Needs a field"). A field on the finished Farm's own site, outside its walls, is worked.
+                if (site != null && site.SiteFootprint != null && site.RoomFootprint != null)
+                {
+                    Vector3 yard = farm.transform.position;
+                    int best = -1;
+                    for (float dx = -10f; dx <= 10f; dx += 0.5f)
+                        for (float dz = -10f; dz <= 10f; dz += 0.5f)
+                        {
+                            Vector3 c = farm.transform.position + new Vector3(dx, 0f, dz);
+                            int inYard = 0;
+                            for (int i = -1; i <= 1; i++)
+                                for (int j = -1; j <= 1; j++)
+                                {
+                                    Vec3 plot = CoreVectors.V(c + new Vector3(i * FieldPlots.Spacing, 0f, j * FieldPlots.Spacing));
+                                    if (site.SiteFootprint.Contains(plot) && !site.RoomFootprint.Contains(plot)) inYard++;
+                                }
+                            if (inYard > best)
+                            {
+                                best = inYard;
+                                yard = c;
+                            }
+                        }
+                    yard.y = ZoneSystem.instance.GetGroundHeight(yard);
+                    GameObject yardGo = markerPrefab != null ? Object.Instantiate(markerPrefab, yard, Quaternion.identity) : null;
+                    if (yardGo != null) markers.Add(yardGo);
+                    FieldMarker yardField = yardGo != null ? yardGo.GetComponent<FieldMarker>() : null;
+                    for (float t = 0f; yardField != null && yardField.FarmId != farm.Id && t < 15f; t += 0.5f) yield return new WaitForSeconds(0.5f);
+                    // The farmer looks at its plots again: every 8 s while it has nothing to do (watch143's first run checked after 4).
+                    for (float t = 0f; (farmer.Status ?? "").Contains("vc_a_field") && t < 20f; t += 0.5f) yield return new WaitForSeconds(0.5f);
+                    int yardPlots = FarmerJob.RulesOf(farm, out PlotTally yardTally).Count;
+                    Check($"A field in the finished Farm's own yard (on its site, outside its walls) is worked ({best} of 9 spots in the yard; joined " +
+                          $"{yardField != null && yardField.FarmId == farm.Id}; {yardPlots} plots: {FieldWords.Tally(yardTally)}; " +
+                          $"'{Localization.instance.Localize(farmer.Status ?? "")}')",
+                        yardField != null && yardField.FarmId == farm.Id && best >= 3 && yardPlots > 0 && !(farmer.Status ?? "").Contains("vc_a_field"));
+                    if (yardGo != null)
+                    {
+                        markers.Remove(yardGo);
+                        Remove(yardGo);
+                    }
+                }
+                else Check("A field in the Farm's own yard (no site footprint)", false);
 
                 // 10 (final review of 0.20). A marker placed by one who may not manage the colony doesn't join it.
                 Vector3 strangerAt = farm.transform.position - forward * 16f;

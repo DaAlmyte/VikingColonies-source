@@ -25,9 +25,13 @@ namespace VikingColonies.Gui
             [HarmonyPriority(Priority.First), HarmonyBefore(MyLittleUI)]
             private static bool Interact(Player __instance, UnityEngine.GameObject go, bool hold, bool alt)
             {
-                if (!alt || hold || go == null || __instance != Player.m_localPlayer) return true;
+                if (go == null) return true;
                 ColonyBuilding building = go.GetComponentInParent<ColonyBuilding>();
-                if (building == null) return true;
+                // The game uses the nearest interactable above what you look at: the building's own chest, or another mod's object.
+                UnityEngine.Component nearest = go.GetComponentInParent<Interactable>() as UnityEngine.Component;
+                if (!Core.ShiftE.OpensWindow(alt, hold, __instance == Player.m_localPlayer, building != null,
+                        building != null && nearest != null && nearest.gameObject == building.gameObject, __instance.InAttack(), __instance.InDodge()))
+                    return true;
                 if (building.IsTownHall) Windows.TownHall.Open(building);
                 else Windows.Hut.Open(building);
                 return false;

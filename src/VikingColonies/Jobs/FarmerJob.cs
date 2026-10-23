@@ -64,6 +64,8 @@ namespace VikingColonies.Jobs
         private bool _emptyCultivated;
         private int _plotsLevel = -1;
         private float _plotsAt = float.NegativeInfinity;
+        private PlotTally _tally = new PlotTally();
+        private string _noGroundSaid = "";
         private Pickable _ripe;
         private int _plantPlot = -1, _cultivatePlot = -1;
         /// <summary>Cultivated empty plots he may plant now, by index (for how many seeds to take at once).</summary>
@@ -99,8 +101,12 @@ namespace VikingColonies.Jobs
         /// works only its fields, MineColonies' way (0.20.1). A spot belongs to one field only, and counts when it is on dry
         /// ground near its marker's height, off buildings, rocks and trees.
         /// </summary>
-        public static List<PlotRule> RulesOf(ColonyBuilding farm)
+        public static List<PlotRule> RulesOf(ColonyBuilding farm) => RulesOf(farm, out _);
+
+        /// <summary>As <see cref="RulesOf(ColonyBuilding)"/>, with where its fields' plots went (the farmer's words with none, 1.4.3).</summary>
+        public static List<PlotRule> RulesOf(ColonyBuilding farm, out PlotTally tally)
         {
+            tally = new PlotTally();
             var fields = new List<PlotRule>();
             if (farm == null) return fields;
             FieldsModule module = farm.GetComponent<FieldsModule>();
@@ -109,12 +115,34 @@ namespace VikingColonies.Jobs
                 float water = ZoneSystem.instance.m_waterLevel;
                 foreach (FieldMarker marker in module.Fields())
                 {
+                    tally.Fields++;
                     float markerY = marker.transform.position.y;
                     foreach (Vector3 at in marker.PlotPositions())
                     {
-                        if (at.y < water + 0.3f || Mathf.Abs(at.y - markerY) > 3f) continue;
-                        if (ConstructionModule.All.Any(s => s != null && s.SiteFootprint != null && s.SiteFootprint.Grow(1f).Contains(CoreVectors.V(at)))) continue;
-                        if (Blocked(at)) continue;
+                        tally.Plots++;
+                        if (at.y < water + 0.3f)
+                        {
+                            tally.Water++;
+                            continue;
+                        }
+                        if (Mathf.Abs(at.y - markerY) > 3f)
+                        {
+                            tally.Slope++;
+                            continue;
+                        }
+                        Vec3 spot = CoreVectors.V(at);
+                        if (ConstructionModule.All.Any(s => s != null && s.SiteFootprint != null && FieldPlots.LeftOut(
+                                s.SiteFootprint.Grow(1f).Contains(spot), s.RoomFootprint != null && s.RoomFootprint.Contains(spot),
+                                s.Building == farm, s.Order != null && FieldPlots.SiteBusy(s.Order.Kind, s.Order.State == BuildState.Done))))
+                        {
+                            tally.Building++;
+                            continue;
+                        }
+                        if (Blocked(at))
+                        {
+                            tally.Blocked++;
+                            continue;
+                        }
                         fields.Add(new PlotRule { At = CoreVectors.V(at), Crop = marker.Crop, FieldId = marker.Id });
                     }
                 }
@@ -246,8 +274,8 @@ namespace VikingColonies.Jobs
                     break;
                 case FarmerAction.WaitNoField:
                     // A Farm works only its fields (0.20.1): Hugin says how to mark one, once.
-                    Citizen.Status = "$vc_status_needs $vc_a_field";
-                    Gui.HuginTips.ShowNear(hut.transform.position, Gui.HuginTips.Field);
+                    Citizen.Status = FieldWords.NoFieldStatus(_tally.Fields);   // fields but no free ground say so (1.4.3)
+                    if (FieldWords.ShowsFieldTip(_tally.Fields)) Gui.HuginTips.ShowNear(hut.transform.position, Gui.HuginTips.Field);
                     Ai.FreeTime(hut.transform.position);
                     break;
             }
@@ -294,7 +322,12 @@ namespace VikingColonies.Jobs
             string signature = FieldsSignature(hut);
             if (_plotsLevel != hut.Level || Time.time - _plotsAt > PlotsRefreshSeconds || signature != _plotsSignature)
             {
-                List<PlotRule> rules = RulesOf(hut);
+                List<PlotRule> rules = RulesOf(hut, out _tally);
+                // Fields with no free ground: said once a change, with where the plots went (1.4.3, the player's watch).
+                string why = _tally.Fields > 0 && rules.Count == 0 ? FieldWords.Tally(_tally) : "";
+                if (why.Length > 0 && why != _noGroundSaid)
+                    Log.Info($"{Citizen.CitizenName}'s Farm has fields but no free ground to work: {why}");
+                _noGroundSaid = why;
                 _plots = rules.Select(r => CoreVectors.U(r.At)).ToList();
                 _plotIndex = new PlotIndex(rules.Select(r => r.At).ToList(), FieldPlots.OnPlotTolerance);
                 _plotCrops = rules.Select(r => r.Crop ?? "").ToList();
