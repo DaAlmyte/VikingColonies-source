@@ -599,7 +599,13 @@ namespace VikingColonies.DevTools
                     if (ammoName.Length > 0) hall.GetComponent<Container>().GetInventory().AddItem(ObjectDB.instance.GetItemPrefab(ammoName), 20);
                 }
                 int loadedWas = GuardJob.LoadedForTest;
-                for (float t = 0f; ballista != null && ballista.GetAmmo() == 0 && t < 75f; t += 1f) yield return new WaitForSeconds(1f);
+                // Monsters kept away meanwhile: a guard rightly fights before a chore (1.4.3's full run, 2026-10-22: a Neck by
+                // the water drew the loading guard off, and the ballista stayed empty for the whole wait).
+                for (float t = 0f; ballista != null && ballista.GetAmmo() == 0 && t < 75f; t += 1f)
+                {
+                    DevHelpers.ClearMonsters(origin, 90f);
+                    yield return new WaitForSeconds(1f);
+                }
                 int inHall = ammoName.Length > 0 ? hall.GetComponent<Container>().GetInventory().CountItems(ObjectDB.instance.GetItemPrefab(ammoName).GetComponent<ItemDrop>().m_itemData.m_shared.m_name) : -1;
                 Check($"A ballista in his patrol is loaded from the Town Hall's chest ('{ammoName}': {(ballista != null ? ballista.GetAmmo() : -1)} in it, " +
                       $"{inHall} left of 20 in the chest, {GuardJob.LoadedForTest - loadedWas} put in)",

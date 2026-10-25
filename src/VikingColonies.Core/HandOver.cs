@@ -52,11 +52,52 @@ namespace VikingColonies.Core
             amounts != null && amounts.TryGetValue(item, out int n) ? n : 0;
     }
 
+    /// <summary>What a storehouse's take-down does with what its chests inside still hold (1.5, part 3).</summary>
+    public enum StoreTakeDown
+    {
+        /// <summary>Empty: taken down at once.</summary>
+        Now,
+        /// <summary>Its couriers carry it away first, then it is taken down.</summary>
+        CouriersEmptyIt,
+        /// <summary>No courier, or only gear left (couriers carry only what stacks): the player empties it.</summary>
+        EmptyItYourself,
+    }
+
+    /// <summary>A storehouse emptied by its couriers for its take-down: what comes next (1.5, part 3's review).</summary>
+    public enum ClosingStep
+    {
+        /// <summary>Goods still inside, or a repair under way: it stays closed.</summary>
+        Wait,
+        /// <summary>Empty, its building finished: the take-down order is made.</summary>
+        TakeDown,
+        /// <summary>Taken down already, or another order came: the store opens again.</summary>
+        Reopen,
+    }
+
     /// <summary>Take down (0.23): which buildings the player may have taken down.</summary>
     public static class TakeDownRules
     {
-        /// <summary>A hut, not the Town Hall, whose building is finished (no open order).</summary>
-        public static bool MayTakeDown(bool isTownHall, bool hasOrder, bool orderDone) => !isTownHall && (!hasOrder || orderDone);
+        /// <summary>
+        /// A closing storehouse, every few seconds (part 3): taken down once it is empty and finished; a repair (a piece fell
+        /// while it emptied) is waited for, not taken as the take-down called off (its review: the store reopened silently).
+        /// </summary>
+        public static ClosingStep WhileClosing(bool storeEmpty, bool orderDone, bool repairing, bool takingDown)
+        {
+            if (takingDown) return ClosingStep.Reopen;
+            if (!orderDone) return repairing ? ClosingStep.Wait : ClosingStep.Reopen;
+            return storeEmpty ? ClosingStep.TakeDown : ClosingStep.Wait;
+        }
+
+        /// <summary>A storehouse's take-down (part 3): at once when empty; else emptied by its couriers if they can.</summary>
+        public static StoreTakeDown ForStore(bool storeEmpty, bool hasCourier, bool onlyGearLeft) =>
+            storeEmpty ? StoreTakeDown.Now : hasCourier && !onlyGearLeft ? StoreTakeDown.CouriersEmptyIt : StoreTakeDown.EmptyItYourself;
+
+        /// <summary>
+        /// A hut, not the Town Hall, whose building is finished (no open order); a storehouse only once the chests standing
+        /// inside it are empty (1.5: only its own chest's things move by themselves).
+        /// </summary>
+        public static bool MayTakeDown(bool isTownHall, bool hasOrder, bool orderDone, bool storeEmpty = true) =>
+            !isTownHall && (!hasOrder || orderDone) && storeEmpty;
 
         /// <summary>
         /// An old piece an upgrade drops stays standing (counted as taken) when it is a bed a player sleeps in: their spawn
@@ -64,5 +105,12 @@ namespace VikingColonies.Core
         /// of a new piece, it is reported as in the way, for the player to move.
         /// </summary>
         public static bool LeaveStanding(bool isBed, long bedOwner) => isBed && bedOwner != 0L;
+
+        /// <summary>
+        /// An upgrade's old piece where a new one goes is taken down, unless it stays: a player's bed (their spawn point), or
+        /// one already counted taken (left standing so). Then it is in the way, for the player to move, like another
+        /// building's piece (the review round of 2026-10-23: "taken down" again and again, the upgrade never finished).
+        /// </summary>
+        public static bool OldPieceBlocks(bool isPlayersBed, bool countedTaken) => isPlayersBed || countedTaken;
     }
 }

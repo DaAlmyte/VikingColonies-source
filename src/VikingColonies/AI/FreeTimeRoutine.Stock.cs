@@ -31,6 +31,7 @@ namespace VikingColonies.AI
         {
             if (!ColonyConfig.CarryToStock.Value) return null;
             string colony = _citizen.ColonyId;
+            if (!CourierRules.FreeTimeCarries(HasCourier(colony))) return null;   // the storehouse's couriers carry it (1.5)
             var needs = new List<StockNeed>();
             var sources = new List<StockSource>();
             var chests = new Dictionary<string, StorageModule>();
@@ -45,11 +46,22 @@ namespace VikingColonies.AI
                 foreach (KeepEntry missing in StockRules.Short(contents, keep, StorageModule.IsFood))
                     if ((missing.Item == StockList.AnyFood || StorageModule.Carried(missing.Item)) && !_skippedRuns.IsBlocked(StockRuns.ClaimKey(b.Id, missing.Item), now))
                         needs.Add(new StockNeed { BuildingId = b.Id, At = at, Item = missing.Item, Missing = missing.Amount });
+                // What it spares: its own chest beyond what it keeps, and a storehouse's other chests whole (1.5: its Keep
+                // in stock counts in its own chest, as every hut's).
+                var spares = new Dictionary<string, int>();
                 foreach (KeyValuePair<string, int> item in contents)
                 {
                     int spare = StorageModule.Carried(item.Key) ? StockRules.Spare(contents, keep, item.Key, StorageModule.IsFood, false, working) : 0;
-                    if (spare > 0) sources.Add(new StockSource { BuildingId = b.Id, At = at, Item = item.Key, Spare = spare });
+                    if (spare > 0) spares[item.Key] = spare;
                 }
+                foreach (StorageModule store in b.Stores)
+                {
+                    if (store == b.Storage) continue;
+                    foreach (KeyValuePair<string, int> item in store.Contents())
+                        if (StorageModule.Carried(item.Key)) spares[item.Key] = (spares.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
+                }
+                foreach (KeyValuePair<string, int> spare in spares)
+                    sources.Add(new StockSource { BuildingId = b.Id, At = at, Item = spare.Key, Spare = spare.Value });
             }
             if (needs.Count == 0) return null;
             // For food of any kind, the plainest first (as newcomers are fed).
@@ -58,6 +70,20 @@ namespace VikingColonies.AI
             // Only to a chest with room for it (review of 0.21: a full Town Hall got nothing, run after run).
             return StockRuns.Choose(needs, sources, Ground(me), key => FreeTimeClaims.TakenByOther(key, me, _citizen.Id), StorageModule.IsFood,
                 (building, item) => chests.TryGetValue(building, out StorageModule chest) && chest.CanTake(item));
+        }
+
+        /// <summary>The colony's storehouse has a courier hired (1.5): then free time is for resting, chatting and the fire.</summary>
+        internal static bool HasCourier(string colony)
+        {
+            if (string.IsNullOrEmpty(colony)) return false;
+            foreach (ColonyBuilding b in ColonyBuilding.All)
+            {
+                if (b == null || !b.IsValid || !b.IsStorehouse || b.ColonyId != colony) continue;
+                WorkerModule worker = b.GetComponent<WorkerModule>();
+                if (worker != null && worker.Workers(out List<Citizens.Citizen> loaded, out List<RosterEntry> elsewhere) && loaded.Count + elsewhere.Count > 0)
+                    return true;
+            }
+            return false;
         }
 
         private void StartCarrying(StockRun run)
@@ -95,9 +121,21 @@ namespace VikingColonies.AI
                 if (!_ai.GoTo(from.transform.position, 2.5f)) return;
                 _ai.Idle();
                 _ai.Face(from.transform.position);
-                if (from.Storage.Claim() != StorageModule.Access.Ready) return;   // its owner is handing it over: he waits (TooLongOnTheWay)
-                // Counted again item by item: what's spare may have changed on the way, and the kept amount stays.
-                while (_stock.Count(_run.Item) < _run.Amount && from.Storage.TryTakeItem(_run.Item, _stock)) { }
+                // A storehouse: chest by chest (1.5). Counted again item by item: what's spare may have changed on the way, and
+                // the kept amount stays.
+                bool waiting = false;
+                foreach (StorageModule store in from.Stores)
+                {
+                    if (_stock.Count(_run.Item) >= _run.Amount) break;
+                    if (store.Spare(_run.Item) <= 0) continue;
+                    if (store.Claim() != StorageModule.Access.Ready)
+                    {
+                        waiting = true;   // its owner is handing it over
+                        continue;
+                    }
+                    while (_stock.Count(_run.Item) < _run.Amount && store.TryTakeItem(_run.Item, _stock)) { }
+                }
+                if (waiting && _stock.Count(_run.Item) == 0) return;   // he waits for it (TooLongOnTheWay)
                 _citizen.SaveCarry();
                 if (_stock.Count(_run.Item) == 0)
                 {

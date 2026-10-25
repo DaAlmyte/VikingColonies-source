@@ -68,7 +68,7 @@ namespace VikingColonies.DevTools
             string world = ColonyConfig.AutoStartWorld.Value.Trim(), character = ColonyConfig.AutoStartCharacter.Value.Trim();
             if (!TestWorlds.IsTestWorld(world))
             {
-                Log.Warn($"Auto-start: '{world}' isn't a test world (its name must contain 'test'); not started");
+                Log.Warn($"Auto-start: '{world}' isn't a test world (its name must start with {TestWorlds.NameStart}); not started");
                 yield break;
             }
             yield return new WaitForSecondsRealtime(1.5f);

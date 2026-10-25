@@ -33,6 +33,7 @@ namespace VikingColonies.Core
         public float Crafting, CraftingXp;
         /// <summary>The guard's skill (1.1), and its practice; written only when set.</summary>
         public float Fighting, FightingXp;
+        public float Hauling, HaulingXp;   // a courier's (1.5)
         /// <summary>A guard's tally of monsters killed (1.3); written only when set.</summary>
         public int Kills;
         public int LastMealDay = Meals.NeverAte;   // the day he last ate
@@ -137,6 +138,7 @@ namespace VikingColonies.Core
             if (Farming > 0f || FarmingXp > 0f) fields.Add(Pair("farming", RecordCodec.FormatFloats(new[] { Farming, FarmingXp })));
             if (Crafting > 0f || CraftingXp > 0f) fields.Add(Pair("crafting", RecordCodec.FormatFloats(new[] { Crafting, CraftingXp })));
             if (Fighting > 0f || FightingXp > 0f) fields.Add(Pair("fighting", RecordCodec.FormatFloats(new[] { Fighting, FightingXp })));
+            if (Hauling > 0f || HaulingXp > 0f) fields.Add(Pair("hauling", RecordCodec.FormatFloats(new[] { Hauling, HaulingXp })));
             if (Kills > 0) fields.Add(Pair("kills", RecordCodec.FormatInt(Kills)));
             return RecordCodec.Encode(fields);
         }
@@ -149,6 +151,7 @@ namespace VikingColonies.Core
             float[] farming = RecordCodec.ParseFloats(RecordCodec.Get(f, "farming"), 2) ?? new[] { 0f, 0f };
             float[] crafting = RecordCodec.ParseFloats(RecordCodec.Get(f, "crafting"), 2) ?? new[] { 0f, 0f };
             float[] fighting = RecordCodec.ParseFloats(RecordCodec.Get(f, "fighting"), 2) ?? new[] { 0f, 0f };
+            float[] hauling = RecordCodec.ParseFloats(RecordCodec.Get(f, "hauling"), 2) ?? new[] { 0f, 0f };
             return new CitizenRecord
             {
                 Id = RecordCodec.Get(f, "id"),
@@ -171,8 +174,7 @@ namespace VikingColonies.Core
                 Hungry = RecordCodec.Get(f, "hungry") == "1",
                 Home = RecordCodec.Get(f, "home"),
                 HomePos = RecordCodec.ParseFloats(RecordCodec.Get(f, "homepos"), 3),
-                HallLostAt = double.TryParse(RecordCodec.Get(f, "halllost"), System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out double lost) ? lost : ColonyGrace.NotLost,
+                HallLostAt = RecordCodec.TryParseFinite(RecordCodec.Get(f, "halllost"), out double lost) ? lost : ColonyGrace.NotLost,
                 Life = System.Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "life"), 0)),
                 Calling = RecordCodec.Get(f, "calling"),
                 Trait = RecordCodec.Get(f, "trait"),
@@ -192,6 +194,8 @@ namespace VikingColonies.Core
                 CraftingXp = crafting[1],
                 Fighting = fighting[0],
                 FightingXp = fighting[1],
+                Hauling = hauling[0],
+                HaulingXp = hauling[1],
                 Kills = System.Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "kills"), 0)),
             };
         }
@@ -205,6 +209,7 @@ namespace VikingColonies.Core
                 case WorkSkill.Farming: return Farming;
                 case WorkSkill.Crafting: return Crafting;
                 case WorkSkill.Fighting: return Fighting;
+                case WorkSkill.Hauling: return Hauling;
                 default: return 0f;
             }
         }
@@ -218,6 +223,7 @@ namespace VikingColonies.Core
                 case WorkSkill.Farming: return SettlerSkill.Raise(ref Farming, ref FarmingXp, amount);
                 case WorkSkill.Crafting: return SettlerSkill.Raise(ref Crafting, ref CraftingXp, amount);
                 case WorkSkill.Fighting: return SettlerSkill.Raise(ref Fighting, ref FightingXp, amount);
+                case WorkSkill.Hauling: return SettlerSkill.Raise(ref Hauling, ref HaulingXp, amount);
                 default: return false;
             }
         }

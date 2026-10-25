@@ -333,9 +333,9 @@ namespace VikingColonies.DevTools
     internal sealed class WalkCommand : ConsoleCommand
     {
         public override string Name => "vc_walk";
-        public override string Help => "VikingColonies (test worlds): 'vc_walk <settler> in|out' walks him into the hut he'd sleep in (to his floor spot) or 5 m out " +
+        public override string Help => "VikingColonies (test worlds): 'vc_walk <settler> in|out' walks them into the hut they'd sleep in (to their floor spot) or 5 m out " +
                                        "of its door; 'vc_walk all in|out' every settler within 60 m; 'vc_walk <settler> <x> <z>' to a point; " +
-                                       "for a minute, then he goes back to what he was doing";
+                                       "for a minute, then they go back to what they were doing";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -385,7 +385,7 @@ namespace VikingColonies.DevTools
                 Door door = hut != null ? DevHelpers.DoorOf(hut.GetComponent<ConstructionModule>()) : null;
                 if (door == null)
                 {
-                    BuildCommand.Print("vc_walk: his colony has no finished hut with a door");
+                    BuildCommand.Print("vc_walk: their colony has no finished hut with a door");
                     return;
                 }
                 Vector3 chest = hut.transform.position, outward = door.transform.position - chest;
@@ -687,7 +687,7 @@ namespace VikingColonies.DevTools
             BuildingType type = args != null && args.Length > 0 ? DevHelpers.TypeByWord(args[0]) : null;
             if (p == null || type == null)
             {
-                BuildCommand.Print("vc_place: say what: townhall, builder, lumberjack, longhouse or forager, and optionally its turn in degrees and where (x z, or ~dx ~dz)");
+                BuildCommand.Print("vc_place: say what: townhall, builder, lumberjack, longhouse, forager, farm, watchtower or storehouse, and optionally its turn in degrees and where (x z, or ~dx ~dz); 'anyway' at the end places a storehouse past its colony rules (the gallery's five)");
                 return;
             }
             float turn = args.Length > 1 && float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float t) ? t : 0f;
@@ -696,7 +696,8 @@ namespace VikingColonies.DevTools
             Vector3 at = p.transform.position + forward.normalized * (type.Id == BuildingTypes.TownHallId ? 8f : 10f);
             if (args.Length > 3 && Coordinate(args[2], p.transform.position.x, out float x) && Coordinate(args[3], p.transform.position.z, out float z))
                 at = new Vector3(x, 0f, z);
-            at.y = ZoneSystem.instance.GetGroundHeight(at);
+            float raise = PlacementOffset.StartFor(type.PrefabName);   // as the hammer starts it (the Storehouse 0.75 m up, 1.5)
+            at.y = ZoneSystem.instance.GetGroundHeight(at) + raise;
             Quaternion rotation = Quaternion.Euler(0f, turn, 0f);
             string site = "";
             if (type.Id != BuildingTypes.TownHallId)   // as with the hammer, only huts get the site check
@@ -708,7 +709,11 @@ namespace VikingColonies.DevTools
                     return;
                 }
                 site = $" — site {verdict.Colour}: {DevHelpers.Plain(SiteText.Describe(verdict, 0f))}";
-                if (verdict.Colour == SiteColour.Red)
+                // 'anyway' (tests): a storehouse past its colony rules only, one per colony and a Builder's Hut first (the
+                // gallery shows five in one colony); never past the ground or anything else in the way.
+                bool anyway = args.Any(a => a.Equals("anyway", System.StringComparison.OrdinalIgnoreCase));
+                bool colonyRuleOnly = verdict.Red == RedReason.OnlyOneStorehouse || verdict.Red == RedReason.NeedsBuilderHut;
+                if (verdict.Colour == SiteColour.Red && !(anyway && colonyRuleOnly))
                 {
                     BuildCommand.Print($"vc_place: not placed{site}");
                     return;
@@ -716,7 +721,7 @@ namespace VikingColonies.DevTools
                 if (ColonyAreas.ColonyAt(at) == null)
                     site += " (outside every colony's area: it won't join a colony)";
             }
-            ColonyBuilding placed = DevHelpers.Place(type.PrefabName, at, rotation, p.GetPlayerID());
+            ColonyBuilding placed = DevHelpers.Place(type.PrefabName, at, rotation, p.GetPlayerID(), raise);
             BuildCommand.Print(placed == null
                 ? $"vc_place: the {type.Id} couldn't be placed"
                 : string.Format(CultureInfo.InvariantCulture, "vc_place: placed a {0} at ({1:0.0}, {2:0.0}, {3:0.0}) turned {4:0}{5}",
@@ -901,7 +906,7 @@ namespace VikingColonies.DevTools
         public override string Name => "vc_world";
         public override string Help => "VikingColonies (test worlds): 'vc_world' shows the test settings; 'vc_world peace|raids|build|safe on|off': " +
                                        "peace = monsters leave everyone alone unless attacked, raids = raids happen, build = every piece unlocked and free, " +
-                                       "safe = no skill loss and equipped items kept on death; 'vc_world clear' removes the monsters within 60 m (not settlers); 'vc_world tidy' wipes every test colony left in the world (not the one at (960, 530)); 'vc_world wipe [radius]' removes test colonies near you " +
+                                       "safe = no skill loss and equipped items kept on death; 'vc_world clear' removes the monsters within 60 m (not settlers); 'vc_world rocks [radius]' removes the rocks a test left in the flat test world; 'vc_world tidy' wipes every test colony left in the world (not the one at (960, 530)); 'vc_world wipe [radius]' removes test colonies near you " +
                                        "(their buildings, the builder's pieces, settlers and cairns; default 60 m)";
         public override bool IsCheat => true;
 
@@ -928,6 +933,34 @@ namespace VikingColonies.DevTools
                 BuildCommand.Print($"vc_world: wiped within {radius:0} m: {DevHelpers.WipeColonies(wiper.transform.position, radius)}");
                 return;
             }
+            if (setting == "rocks")
+            {
+                // The flat test world has no rocks of its own: any there is a test's (vc_creativetest's boulder), and later
+                // runs' sites ran into them (the 1.5.0 build-through: a hut gave up on one that needs a black-metal pickaxe).
+                Player rocker = Player.m_localPlayer;
+                if (rocker == null) return;
+                if (!TestWorlds.IsFlatTestWorld(ZNet.instance.GetWorldName()))
+                {
+                    BuildCommand.Print($"vc_world rocks: only in the flat test world ({TestWorlds.FlatTestWorldName}), which has no rocks of its own");
+                    return;
+                }
+                float reach = float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float rr) ? Mathf.Clamp(rr, 5f, 300f) : 150f;
+                int rocks = 0;
+                var found = new List<GameObject>();
+                found.AddRange(Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None).Where(m => m != null).Select(m => m.gameObject));
+                found.AddRange(Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None).Where(m => m != null).Select(m => m.gameObject));
+                foreach (GameObject rock in found.Distinct())
+                {
+                    if (Utils.DistanceXZ(rock.transform.position, rocker.transform.position) > reach) continue;
+                    ZNetView view = rock.GetComponent<ZNetView>();
+                    if (view == null || !view.IsValid()) continue;
+                    view.ClaimOwnership();
+                    ZNetScene.instance.Destroy(rock);
+                    rocks++;
+                }
+                BuildCommand.Print($"vc_world: {rocks} rocks within {reach:0} m removed (the flat test world has none of its own)");
+                return;
+            }
             if (setting == "clear")   // the game's killenemies would kill the settlers too
             {
                 Player player = Player.m_localPlayer;
@@ -944,7 +977,7 @@ namespace VikingColonies.DevTools
                 }
                 if (!TestWorlds.IsTestWorld(ZNet.instance.GetWorldName()))
                 {
-                    BuildCommand.Print($"vc_world: only in a test world (its name must contain 'test'); this is {ZNet.instance.GetWorldName()}");
+                    BuildCommand.Print($"vc_world: only in a test world (its name must start with {TestWorlds.NameStart}); this is {ZNet.instance.GetWorldName()}");
                     return;
                 }
                 bool on = value == "on";

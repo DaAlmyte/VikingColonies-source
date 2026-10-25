@@ -293,7 +293,8 @@ namespace VikingColonies.Construction
                 Colony.FieldMarker field = root.GetComponent<Colony.FieldMarker>();
                 if (SiteRules.OwnField(field != null, field != null ? field.FarmId : "", thisSite)) return;   // the Farm's own field (1.4.3's review)
                 if (matchesPlan != null && matchesPlan(piece)) return;      // exactly part of the plan
-                if (SiteRules.IsLeftover(pieceSite, thisSite, ColonyBuilding.FindById(pieceSite) != null))
+                // A leftover is cleared, but a player's spawn bed is theirs to move: in the way (the review round of 2026-10-23).
+                if (SiteRules.IsLeftover(pieceSite, thisSite, ColonyBuilding.FindById(pieceSite) != null) && !PiecePlacer.IsPlayersBed(piece))
                     clear.Add(new SiteThing(root, ClearKind.Leftover, 0, null, piece));
                 else blockers.Add(piece);
                 return;
@@ -380,9 +381,10 @@ namespace VikingColonies.Construction
 
         /// <summary>
         /// Adds every reason a hut can't stand here, apart from the ground's (the survey adds those): below the water
-        /// line, a no-build place, someone else's ward, outside the colony area, or another unfinished hut's site.
+        /// line, a no-build place, someone else's ward, outside the colony area, or another unfinished hut's site; for a
+        /// storehouse being placed (1.5), a second one in the colony or no Builder's Hut to build it.
         /// </summary>
-        public static void CheckPlace(SiteFindings findings, Footprint site, Vector3 chest, ConstructionModule self)
+        public static void CheckPlace(SiteFindings findings, Footprint site, Vector3 chest, ConstructionModule self, BuildingType type = null)
         {
             if (chest.y < ZoneSystem.instance.m_waterLevel) findings.AddRed(RedReason.Water);
             var points = new List<Vector3> { U(site.Centre) };
@@ -395,6 +397,14 @@ namespace VikingColonies.Construction
             ColonyBuilding colony = ColonyFor(chest);
             List<AreaCircle> area = colony != null ? ColonyAreas.CirclesOf(colony.ColonyId) : null;
             if (colony == null || points.Any(p => !ColonyArea.Contains(area, ColonyAreas.Ground(p)))) findings.AddRed(RedReason.OutsideColony);
+            // Placing only (its review): a colony that ended up with two (two players at once) still upgrades them.
+            if (colony != null && self == null && type != null && type.Id == BuildingTypes.StorehouseId)
+            {
+                string colonyId = colony.ColonyId;
+                int others = ColonyBuilding.All.Count(b => b != null && b.IsValid && b.IsStorehouse && b.ColonyId == colonyId);
+                bool builderHut = ColonyBuilding.All.Any(b => b != null && b.IsValid && b.TypeId == BuildingTypes.BuilderHutId && b.ColonyId == colonyId);
+                findings.AddRed(StorehouseRules.PlaceRed(others, builderHut));
+            }
             foreach (ConstructionModule other in ConstructionModule.All)
             {
                 if (other == null || other == self || !other.IsValid) continue;

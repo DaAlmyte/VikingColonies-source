@@ -59,6 +59,17 @@ namespace VikingColonies.Core
         public static string FormatFloats(float[] values) =>
             values == null ? "" : string.Join(",", values.Select(v => v.ToString("R", CultureInfo.InvariantCulture)));
 
+        /// <summary>
+        /// A saved number that is a real, finite one: "NaN" and "Infinity" are refused (the review round of 2026-10-23: a piece
+        /// placed at NaN, the ground levelled towards infinity, a skill levelling up on every hit).
+        /// </summary>
+        public static bool TryParseFinite(string text, out float value) =>
+            float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !float.IsNaN(value) && !float.IsInfinity(value);
+
+        /// <summary>As the float one, for a double.</summary>
+        public static bool TryParseFinite(string text, out double value) =>
+            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !double.IsNaN(value) && !double.IsInfinity(value);
+
         /// <returns>The numbers, or null when the text is empty, malformed or has the wrong count.</returns>
         public static float[] ParseFloats(string text, int count)
         {
@@ -67,7 +78,7 @@ namespace VikingColonies.Core
             if (parts.Length != count) return null;
             var values = new float[count];
             for (int i = 0; i < count; i++)
-                if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i])) return null;
+                if (!TryParseFinite(parts[i], out values[i])) return null;
             return values;
         }
 

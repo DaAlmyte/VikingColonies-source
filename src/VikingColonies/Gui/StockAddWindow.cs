@@ -29,7 +29,8 @@ namespace VikingColonies.Gui
             var items = new HashSet<string>(list.Entries.Select(e => e.Item).Where(i => i != StockList.AnyFood));
             foreach (ColonyBuilding b in ColonyBuilding.All)
                 if (b != null && b.IsValid && b.Storage != null && building.ColonyId.Length > 0 && b.ColonyId == building.ColonyId)
-                    items.UnionWith(b.Storage.Contents().Keys.Where(StorageModule.Carried));   // only what settlers carry: a sword would lose its quality
+                    foreach (StorageModule store in b.Stores)   // a storehouse: its whole store (1.5)
+                        items.UnionWith(store.Contents().Keys.Where(StorageModule.Carried));   // only what settlers carry: a sword would lose its quality
             var rows = new List<TickRow> { Row(StockList.AnyFood, list, mayManage, full) };
             rows.AddRange(items.Select(i => Row(i, list, mayManage, full)).OrderBy(r => r.Text, System.StringComparer.CurrentCultureIgnoreCase));
             return rows;

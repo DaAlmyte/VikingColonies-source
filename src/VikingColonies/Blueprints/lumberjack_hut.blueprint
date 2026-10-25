@@ -10,8 +10,9 @@ wood_floor;Building;0;-0.0969;4.4;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;0.4;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;2.4;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;4.4;0;0;0;1;"";1;1;1
-piece_workbench_ext1;Building;6;-0.1298;7.8;0;0.707107;0;0.707107;"";1;1;1
+piece_workbench_ext1;Building;3.9;-0.1298;6.2;0;0.707107;0;0.707107;"";1;1;1
 wood_wall_quarter;Building;-0.5;0;5.4;0;0;0;1;"";1;1;1
+piece_workbench;Building;2.25;-0.025;2.4;0;0.707107;0;-0.707107;"";1;1;1
 wood_wall_quarter;Building;2.5;0;5.4;0;0;0;1;"";1;1;1
 piece_groundtorch_wood;Building;-0.75;0.5222;6;0;0;0;1;"";1;1;1
 wood_pole2;Building;-1;1;-0.6;0;0;0;1;"";1;1;1

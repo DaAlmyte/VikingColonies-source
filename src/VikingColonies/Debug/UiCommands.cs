@@ -367,7 +367,7 @@ namespace VikingColonies.DevTools
                 Vector3 at = bush.transform.position;
                 Heightmap ground = Heightmap.FindHeightmap(at);
                 Piece piece = bush.GetComponent<Piece>();
-                BuildCommand.Print($"vc_ui: {Utils.GetPrefabName(bush.gameObject)} at ({at.x:0.0}, {at.z:0.0}): his {Jobs.ForagerJob.IsHis(bush, new System.Collections.Generic.HashSet<string>())} (on the list, ticked or not) " +
+                BuildCommand.Print($"vc_ui: {Utils.GetPrefabName(bush.gameObject)} at ({at.x:0.0}, {at.z:0.0}): the forager's {Jobs.ForagerJob.IsHis(bush, new System.Collections.Generic.HashSet<string>())} (on the list, ticked or not) " +
                                    $"(grows back {bush.m_respawnTimeMinutes > 0f}, ready {bush.CanBePicked()}, on cultivated ground {ground != null && ground.IsCultivated(at)}, " +
                                    $"placed by a player {piece != null && piece.GetCreator() != 0L})");
             }
@@ -557,7 +557,7 @@ namespace VikingColonies.DevTools
                 if (!inside) outside++;
                 count++;
                 BuildCommand.Print($"vc_ui: {c.CitizenName} {Localization.instance.Localize(c.Status)} in the {(hut != null ? hut.TypeId + " " + hut.Id.Substring(0, 8) : "(no hut)")}: " +
-                                   $"{(inside ? "inside" : "NOT inside")} (within its walls {withinWalls}, a wall between him and the chest {wall}, " +
+                                   $"{(inside ? "inside" : "NOT inside")} (within its walls {withinWalls}, a wall between them and the chest {wall}, " +
                                    $"{(hut != null ? Utils.DistanceXZ(c.transform.position, ai.RefugeChestForTest) : -1f):0.0} m from the chest)");
             }
             BuildCommand.Print($"vc_ui: {count} settlers indoors within {range:0} m, {outside} of them not inside");

@@ -133,8 +133,11 @@ namespace VikingColonies.Buildings
 
         private string Saved(string key) => _nview != null && _nview.IsValid() ? _nview.GetZDO().GetString(key, "") : "";
 
-        /// <summary>How many it employs: one, but a Watchtower's guards by its level (1.2).</summary>
-        public int Capacity => _building != null && _building.TypeId == BuildingTypes.WatchtowerId ? GuardLevels.Guards(_building.Level) : 1;
+        /// <summary>How many it employs: one, but a Watchtower's guards (1.2) and a storehouse's couriers (1.5) by its level.</summary>
+        public int Capacity => _building == null ? 1
+            : _building.TypeId == BuildingTypes.WatchtowerId ? GuardLevels.Guards(_building.Level)
+            : _building.IsStorehouse ? CourierRules.Couriers(_building.Level)
+            : 1;
 
         /// <summary>
         /// Everyone working here: those loaded here (by name) and the roster's others; false when that isn't known (the

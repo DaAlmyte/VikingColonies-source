@@ -111,7 +111,7 @@ namespace VikingColonies.Core
             var numbers = new float[7];
             for (int i = 0; i < 7; i++)
             {
-                if (!float.TryParse(parts[i + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[i]))
+                if (!RecordCodec.TryParseFinite(parts[i + 2], out numbers[i]))
                 {
                     why = $"'{parts[i + 2]}' is not a number";
                     return false;
@@ -121,9 +121,9 @@ namespace VikingColonies.Core
             if (info == "null") info = "";
             Vec3 scale = new Vec3(1f, 1f, 1f);
             if (parts.Length > 12
-                && float.TryParse(parts[10], NumberStyles.Float, CultureInfo.InvariantCulture, out float sx)
-                && float.TryParse(parts[11], NumberStyles.Float, CultureInfo.InvariantCulture, out float sy)
-                && float.TryParse(parts[12], NumberStyles.Float, CultureInfo.InvariantCulture, out float sz))
+                && RecordCodec.TryParseFinite(parts[10], out float sx)
+                && RecordCodec.TryParseFinite(parts[11], out float sy)
+                && RecordCodec.TryParseFinite(parts[12], out float sz))
                 scale = new Vec3(sx, sy, sz);
             piece = new BlueprintPiece(name, parts[1], new Vec3(numbers[0], numbers[1], numbers[2]),
                 new Quat(numbers[3], numbers[4], numbers[5], numbers[6]).Normalized, scale, info);

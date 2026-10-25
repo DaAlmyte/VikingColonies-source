@@ -43,7 +43,7 @@ namespace VikingColonies.DevTools
             if (blueprint == null || !BlueprintPlan.TryPlace(blueprint, type.PrefabName, CoreVectors.V(at), CoreVectors.Q(rotation), out List<PlannedPiece> plan, out _))
                 return null;
             SiteFindings findings = SiteSurvey.Look(plan, at, rotation, null, null, p => false, GroundShaper.StonePerCubicMetre,
-                new List<SiteThing>(), new List<Piece>());
+                new List<SiteThing>(), new List<Piece>(), type: type);
             Log.Info($"Site check for a {type.Id} at {at}: clear [{string.Join(", ", findings.Clear.Select(c => c.Value + " " + c.Key))}], " +
                      $"dig {findings.Dig}, raise {findings.Raise}, {findings.Stone} stone, red [{string.Join(", ", findings.Red)}]" +
                      (findings.Unbreakable.Count > 0 ? $", nothing breaks [{string.Join("; ", findings.Unbreakable)}]" : ""));
@@ -54,11 +54,11 @@ namespace VikingColonies.DevTools
         /// Puts a building down on the ground, as the hammer would (it gets its build order); <paramref name="creator"/> is
         /// the player who "built" it, 0 for none.
         /// </summary>
-        public static ColonyBuilding Place(string prefabName, Vector3 position, Quaternion rotation, long creator = 0L)
+        public static ColonyBuilding Place(string prefabName, Vector3 position, Quaternion rotation, long creator = 0L, float raise = 0f)
         {
             GameObject prefab = ZNetScene.instance.GetPrefab(prefabName);
             if (prefab == null) return null;
-            position.y = ZoneSystem.instance.GetGroundHeight(position);   // on the ground, so it doesn't collapse for lack of support
+            position.y = ZoneSystem.instance.GetGroundHeight(position) + raise;   // on the ground (raised as placing starts it: the Storehouse, 1.5)
             GameObject go = Object.Instantiate(prefab, position, rotation);
             Piece piece = go.GetComponent<Piece>();
             if (piece != null && creator != 0L) piece.SetCreator(creator, default(Splatform.PlatformUserID));
@@ -92,6 +92,21 @@ namespace VikingColonies.DevTools
             for (int layer = 0; layer < layers; layer++)
                 blocks.Add(Object.Instantiate(prefab, new Vector3(outside.x, ground + 0.5f + layer, outside.z), door.transform.rotation));
             return blocks;
+        }
+
+        private static readonly HarmonyLib.AccessTools.FieldRef<ZNetScene, Dictionary<ZDO, ZNetView>> s_instances =
+            HarmonyLib.AccessTools.FieldRefAccess<ZNetScene, Dictionary<ZDO, ZNetView>>("m_instances");
+
+        /// <summary>
+        /// The object goes as when its area unloads (its saved data kept) and the game makes it anew in the next frames, as
+        /// when the area loads again (the review round of 2026-10-23: a job kept the old hut object).
+        /// </summary>
+        public static void UnloadAndReload(ZNetView view)
+        {
+            if (view == null || !view.IsValid() || ZNetScene.instance == null) return;
+            s_instances(ZNetScene.instance).Remove(view.GetZDO());
+            view.ResetZDO();
+            Object.Destroy(view.gameObject);
         }
 
         /// <summary>Puts a copy of a world object (a tree, a rock) on the ground here; null when the game has no such prefab.</summary>
@@ -160,14 +175,14 @@ namespace VikingColonies.DevTools
         /// colonies that would spoil the next run). Returns what was removed.
         /// </summary>
         /// <summary>
-        /// Test worlds only (their name contains "test"): says so and returns true when this isn't one. Every test command
+        /// Test worlds only (their name starts with VCTest): says so and returns true when this isn't one. Every test command
         /// that changes the world checks it (review of 0.20.1: vc_world wipe didn't, and the scenarios run it).
         /// </summary>
         public static bool RefuseOutsideTestWorld(string command)
         {
             string world = ZNet.instance != null ? ZNet.instance.GetWorldName() : "";
             if (TestWorlds.IsTestWorld(world)) return false;
-            BuildCommand.Print($"{command}: only in a test world (its name must contain 'test'); this is {world}");
+            BuildCommand.Print($"{command}: only in a test world (its name must start with {TestWorlds.NameStart}); this is {world}");
             return true;
         }
 

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using VikingColonies.Core;
@@ -101,12 +102,16 @@ namespace VikingColonies.Tests
             Assert.False(RepairRules.MayRebuild(settingOn: true, raid: false, monstersNear: true));
         }
 
-        [Fact]
+        [Fact]   // the review round of 2026-10-23: an upgrade's row read "Lumberjack's Hut, (level 2)"
         public void A_work_orders_row_names_a_repair()
         {
             Assert.Equal("$vc_order_new", OrderWords.KindToken(OrderKind.Build));
-            Assert.Equal("$vc_level_short", OrderWords.KindToken(OrderKind.Upgrade));
+            Assert.Equal("$vc_order_level", OrderWords.KindToken(OrderKind.Upgrade));
             Assert.Equal("$vc_order_repair", OrderWords.KindToken(OrderKind.Repair));
+            DirectoryInfo? dir = new DirectoryInfo(System.AppContext.BaseDirectory);
+            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "VikingColonies.slnx"))) dir = dir.Parent;
+            string words = File.ReadAllText(Path.Combine(dir!.FullName, "src", "VikingColonies", "Config", "Translations.cs"));
+            Assert.Contains("{ \"vc_order_level\", \"level {0}\" }", words);   // after a comma: no brackets
         }
 
         [Fact]
@@ -202,6 +207,41 @@ namespace VikingColonies.Tests
             var pieces = new[] { new Vec3(10, 0, 0), new Vec3(3, 0, 4), new Vec3(-2, 0, 0) };
             Assert.Equal(2, RepairRules.Nearest(pieces, new Vec3(0, 0, 0)));
             Assert.Equal(-1, RepairRules.Nearest(new Vec3[0], new Vec3(0, 0, 0)));
+        }
+
+        // 1.5.0, repair's small polish (review 9): the worst-damaged building first, finished before the next.
+        private static readonly List<Vec3> s_mendSpots = new List<Vec3> { new Vec3(2, 0, 0), new Vec3(3, 0, 0), new Vec3(40, 0, 0) };
+        private static readonly List<string> s_mendSites = new List<string> { "A", "A", "B" };
+
+        [Fact]
+        public void The_worst_damaged_building_is_mended_first()
+        {
+            var health = new List<float> { 0.7f, 0.6f, 0.2f };
+            Assert.Equal(2, RepairRules.MendNext(s_mendSpots, health, s_mendSites, new Vec3(0, 0, 0), current: ""));
+        }
+
+        [Fact]
+        public void A_building_being_mended_is_finished_before_the_next()
+        {
+            var health = new List<float> { 0.7f, 0.6f, 0.1f };
+            Assert.Equal(0, RepairRules.MendNext(s_mendSpots, health, s_mendSites, new Vec3(0, 0, 0), current: "A"));
+            Assert.Equal(-1, RepairRules.MendNext(new List<Vec3>(), new List<float>(), new List<string>(), new Vec3(0, 0, 0), current: "A"));
+        }
+
+        [Fact]   // its review: rain wears uncovered wood down to half, below the mending line: only real damage counts
+        public void Only_a_piece_mended_from_below_half_counts_for_the_saga()
+        {
+            Assert.False(RepairRules.CountsForSaga(0.6f));
+            Assert.False(RepairRules.CountsForSaga(0.5f));   // the rain's floor
+            Assert.True(RepairRules.CountsForSaga(0.2f));
+        }
+
+        [Fact]
+        public void Big_repairs_go_in_the_saga_the_daily_wear_doesnt()
+        {
+            Assert.False(RepairRules.SagaWorthy(9));
+            Assert.True(RepairRules.SagaWorthy(10));
+            Assert.True(SagaLog.IsKnownKind("mended"));
         }
     }
 }

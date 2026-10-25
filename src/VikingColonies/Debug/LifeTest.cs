@@ -371,7 +371,8 @@ namespace VikingColonies.DevTools
                     Check($"The fire's hover says the colony keeps it burning from its chests (1.4.2: '{fireHover.Replace("\n", " / ")}')",
                         HiddenRules.FireLine(fire).Length > 0 && fireHover.Contains(HiddenRules.FireLine(fire)));
                 }
-                else Check("A settler keeps the fire fed (no fire, Town Hall chest or jobless settler to test with)", false);
+                else Check($"A settler keeps the fire fed (nothing to test with: the fire {(fire == null ? (ReferenceEquals(fire, null) ? "never made" : "gone") : "there")}, " +
+                           $"the Town Hall's chest {(hall.Storage != null ? "there" : "missing")}, {idle.Count} jobless of {settlers.Count(c => c != null)})", false);
 
                 // 8. Breakfast at the table: his meal is due, raspberries in the Town Hall; he eats there, on the bench by it.
                 Citizen eater = idle.Count > 1 ? idle[1] : idle.FirstOrDefault();
@@ -514,7 +515,8 @@ namespace VikingColonies.DevTools
                 }
                 for (float t = 0f; t < 60f && !gatherers.All(AtTheFire); t += 0.5f) yield return new WaitForSeconds(0.5f);
                 Check($"In the evening the settlers gather round the burning fire ({gatherers.Count(AtTheFire)} of {gatherers.Count} there; " +
-                      $"at a fire: {gatherers.Count > 0 && Routine(gatherers[0]).EveningAtFire}; '{(gatherers.Count > 0 ? gatherers[0].GetComponent<Character>().GetHoverText().Replace("\n", " / ") : "")}')",
+                      $"at a fire: {gatherers.Count > 0 && Routine(gatherers[0]).EveningAtFire}; '{(gatherers.Count > 0 ? gatherers[0].GetComponent<Character>().GetHoverText().Replace("\n", " / ") : "")}'; " +
+                      $"the test's fire {(fire == null ? "gone" : fire.IsBurning() ? "burning" : "out")})",
                     gatherers.Count > 0 && gatherers.All(AtTheFire));
 
                 // 10. Night: nobody stays out by the fire; the one with a home lies in his bed.

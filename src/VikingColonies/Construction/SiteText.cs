@@ -91,6 +91,8 @@ namespace VikingColonies.Construction
                 case RedReason.Unbreakable: return "$vc_site_red_unbreakable";
                 case RedReason.TooSteep: return "$vc_site_red_steep";
                 case RedReason.TooHigh: return "$vc_site_red_high";
+                case RedReason.OnlyOneStorehouse: return "$vc_site_red_one_storehouse";
+                case RedReason.NeedsBuilderHut: return "$vc_site_red_needs_builder";
                 default: return "$vc_site_red_float";
             }
         }

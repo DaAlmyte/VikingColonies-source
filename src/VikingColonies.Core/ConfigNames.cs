@@ -19,9 +19,14 @@ namespace VikingColonies.Core
         public const string BuilderSection = "Builder";
         public const string PlacingSection = "Placing";
         public const string DeveloperSection = "Developer";
+        public const string CreativeSection = "Creative";
         public const string StorageSection = "Storage";
         public const string MessagesSection = "Messages";
         public const string WatchtowerSection = "Watchtower";
+        public const string StorehouseSection = "Storehouse";   // 1.5
+        public const string CourierSection = "Courier";         // 1.5
+        public const string Carry = "Carry";
+        public const string CarryPerLevel = "CarryPerLevel";
         public const string GuardsSection = "Guards";
 
         public const string WoodCost = "WoodCost";
@@ -37,6 +42,9 @@ namespace VikingColonies.Core
         public const string SecondsPerPiece = "SecondsPerPiece";
         public const string RaiseKey = "RaiseKey";
         public const string LowerKey = "LowerKey";
+        public const string CreativeMode = "CreativeMode";
+        public const string CreativeLevelUpKey = "LevelUpKey";
+        public const string CreativeLevelDownKey = "LevelDownKey";
         public const string CommandFile = "CommandFile";
         public const string RadiusPerLevel = "RadiusPerLevel";
         public const string RowsPerLevel = "RowsPerLevel";
@@ -47,6 +55,7 @@ namespace VikingColonies.Core
         public const string DeathMessage = "DeathMessage";
         public const string SettlersGoIndoorsAtNight = "SettlersGoIndoorsAtNight";
         public const string SettlersShelterInRaids = "SettlersShelterInRaids";
+        public const string SettlersFightBack = "SettlersFightBack";   // 1.5.0
         public const string TownHallGraceDays = "TownHallGraceDays";
         public const string SettlersEat = "SettlersEat";
         public const string HungryWorkSpeed = "HungryWorkSpeed";
@@ -90,12 +99,14 @@ namespace VikingColonies.Core
             WoodCost, StoneCost, StartingCitizens, ColonyRadius, WorkRadius, CarryCapacity, Replant, ReplantNeedsCultivator, LearningRate,
             Reach, SecondsPerPiece, PlacingSection, RaiseKey, LowerKey, DeveloperSection, CommandFile,
             SkipIntro, AutoStartCharacter, AutoStartWorld, StorageSection, RadiusPerLevel, RowsPerLevel,
-            MessagesSection, SettlersSafeFromTrees, DeathMessage, SettlersGoIndoorsAtNight, SettlersShelterInRaids,
+            MessagesSection, SettlersSafeFromTrees, DeathMessage, SettlersGoIndoorsAtNight, SettlersShelterInRaids, SettlersFightBack,
             TownHallGraceDays, LonghouseSection, SettlersEat, HungryWorkSpeed, NewcomersPerDay, NewcomerFood, MaxSettlers,
             ForagerHutSection, ForagerSection, VerboseLog, HuginTips, AskForFeedback, WordsAboveHeads, FarmSection, FarmerSection,
             RebuildMissingPieces, FreeTime, SmallTalk, EveningGathering, SleepInBeds, TendFires, CarryToStock, LeaveTreesNearBuildings, NewcomersWalkIn, CallingBonus,
             Mood, FieldSection, WatchtowerSection, GuardsSection, MaxReach, Enabled, ChaseBeyondPatrol, RetreatHealth, HelpRadius, LoadBallistas, StopsSpawns,
             Levels, SettlersAtLevel1, SettlersPerLevel, Level2Cost, Level3Cost, Level4Cost, Level5Cost, BeatenBossesCount,
+            CreativeSection, CreativeMode, CreativeLevelUpKey, CreativeLevelDownKey, StorehouseSection,
+            CourierSection, Carry, CarryPerLevel,
         };
     }
 }

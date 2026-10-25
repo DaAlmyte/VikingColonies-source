@@ -22,6 +22,18 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void The_creative_settings_have_names_in_the_list()
+        {
+            Assert.Contains("Creative", ConfigNames.All);
+            Assert.Contains("Storehouse", ConfigNames.All);   // 1.5
+            Assert.Contains("Courier", ConfigNames.All);
+            Assert.Contains("CarryPerLevel", ConfigNames.All);
+            Assert.Contains("CreativeMode", ConfigNames.All);
+            Assert.Contains("LevelUpKey", ConfigNames.All);
+            Assert.Contains("LevelDownKey", ConfigNames.All);
+        }
+
+        [Fact]
         public void The_death_settings_have_names_in_the_list()
         {
             Assert.Contains(ConfigNames.MessagesSection, ConfigNames.All);

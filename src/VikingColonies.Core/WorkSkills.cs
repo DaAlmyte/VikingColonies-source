@@ -5,15 +5,15 @@ using System.Globalization;
 namespace VikingColonies.Core
 {
     /// <summary>The skill a worker learns at his job (the game's own skill names).</summary>
-    public enum WorkSkill { None, Woodcutting, Farming, Crafting, Fighting }
+    public enum WorkSkill { None, Woodcutting, Farming, Crafting, Fighting, Hauling }
 
     /// <summary>
     /// Skills for every worker (worker polish part 3, 0.22; MineColonies: skills make them faster): the lumberjack learns
-    /// Woodcutting, the farmer and the forager Farming, the builder Crafting, the guard Fighting (1.1).
+    /// Woodcutting, the farmer and the forager Farming, the builder Crafting, the guard Fighting (1.1), the courier Hauling (1.5).
     /// </summary>
     public static class WorkSkills
     {
-        private static readonly WorkSkill[] s_shown = { WorkSkill.Woodcutting, WorkSkill.Farming, WorkSkill.Crafting, WorkSkill.Fighting };
+        private static readonly WorkSkill[] s_shown = { WorkSkill.Woodcutting, WorkSkill.Farming, WorkSkill.Crafting, WorkSkill.Fighting, WorkSkill.Hauling };
 
         public static WorkSkill ForJob(string jobId)
         {
@@ -24,6 +24,7 @@ namespace VikingColonies.Core
                 case SaveKeys.ForagerJob: return WorkSkill.Farming;
                 case SaveKeys.BuilderJob: return WorkSkill.Crafting;
                 case SaveKeys.GuardJob: return WorkSkill.Fighting;
+                case SaveKeys.CourierJob: return WorkSkill.Hauling;   // 1.5
                 default: return WorkSkill.None;
             }
         }

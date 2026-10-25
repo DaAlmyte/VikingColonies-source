@@ -60,5 +60,20 @@ namespace VikingColonies.Tests
             Assert.False(round.GoingRound("chest1"));
             Assert.Equal(ChestStep.GoRound, round.AtReach("chest2", wallBetween: true));
         }
+    
+        [Fact]   // the review round's bug hunt (the 1.5.0 build-through's log): an idle builder putting leftovers back looked for a
+                 // site every 5 s, each look forgot the chest he couldn't get round to, and he circled his hut for an hour
+        public void A_look_for_a_site_that_finds_none_keeps_what_he_learned()
+        {
+            var round = new ChestRound();
+            round.Failed("hut");
+            round.Relook(heldSite: false, newSite: false);
+            Assert.Equal(ChestStep.Take, round.AtReach("hut", wallBetween: true));      // from where he can, not round again
+            round.Relook(heldSite: false, newSite: true);
+            Assert.Equal(ChestStep.GoRound, round.AtReach("hut", wallBetween: true));   // a new site: looked at afresh
+            round.WentRound("hut");
+            round.Relook(heldSite: true, newSite: false);
+            Assert.False(round.GoingRound("hut"));                                       // he left a site: afresh too
+        }
     }
 }

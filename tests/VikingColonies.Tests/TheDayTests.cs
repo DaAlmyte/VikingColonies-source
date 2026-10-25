@@ -137,6 +137,20 @@ namespace VikingColonies.Tests
             Assert.Equal("hut", Breakfast.Chest(chests.Where(c => c.Id != "hall"), me));
             Assert.Equal("", Breakfast.Chest(chests.Where(c => c.Id == "empty"), me));
         }
+
+        [Fact]   // the storehouse (1.5): meals come from it first
+        public void Breakfast_comes_from_the_storehouse_first_when_it_has_food()
+        {
+            var me = new GroundPoint(0, 0);
+            var chests = new[]
+            {
+                new BreakfastChest("hall", new GroundPoint(0, 5), townHall: true, hasFood: true),
+                new BreakfastChest("store", new GroundPoint(30, 0), townHall: false, hasFood: true, storehouse: true),
+            };
+            Assert.Equal("store", Breakfast.Chest(chests, me));
+            chests[1] = new BreakfastChest("store", new GroundPoint(30, 0), townHall: false, hasFood: false, storehouse: true);
+            Assert.Equal("hall", Breakfast.Chest(chests, me));
+        }
     }
 
     public class EveningAndFireLeisureTests

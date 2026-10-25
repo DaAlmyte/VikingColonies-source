@@ -30,7 +30,7 @@ namespace VikingColonies.Citizens
             if (_timer > 0f) return;
             _timer = CheckSeconds;
             CitizenRecord r = citizen.Record;
-            if (!ColonyConfig.SettlersEat.Value || !r.HasColony || EnvMan.instance == null || ZNet.instance == null) return;
+            if (!Colony.Creative.SettlersEat(r.ColonyId) || !r.HasColony || EnvMan.instance == null || ZNet.instance == null) return;
             int today = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds());
             if (Meals.FirstDay(r.LastMealDay))
             {
@@ -52,18 +52,21 @@ namespace VikingColonies.Citizens
             var stock = new Dictionary<string, int>();   // all the colony's food
             var spare = new Dictionary<string, int>();   // what buildings don't keep (0.21)
             var where = new Dictionary<string, List<StorageModule>>();
-            foreach (ColonyBuilding store in ColonyBuilding.All
+            // The storehouse's store first (1.5), then the Town Hall's chest, then the nearest.
+            foreach (ColonyBuilding building in ColonyBuilding.All
                          .Where(b => b != null && b.IsValid && b.ColonyId == r.ColonyId && b.Storage != null)
-                         .OrderByDescending(b => b.IsTownHall).ThenBy(b => Vector3.Distance(b.transform.position, citizen.transform.position)))
+                         .OrderBy(b => StorehouseRules.Rank(false, b.IsStorehouse, b.IsTownHall))
+                         .ThenBy(b => Vector3.Distance(b.transform.position, citizen.transform.position)))
+            foreach (StorageModule store in building.Stores)
             {
-                foreach (KeyValuePair<string, int> item in store.Storage.Contents())
+                foreach (KeyValuePair<string, int> item in store.Contents())
                 {
                     if (FoodItems.Value(item.Key) <= 0f) continue;
                     stock[item.Key] = (stock.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
                     if (!where.TryGetValue(item.Key, out List<StorageModule> chests)) where[item.Key] = chests = new List<StorageModule>();
-                    chests.Add(store.Storage);
+                    chests.Add(store);
                 }
-                foreach (KeyValuePair<string, int> item in store.Storage.SpareContents())
+                foreach (KeyValuePair<string, int> item in store.SpareContents())
                     if (FoodItems.Value(item.Key) > 0f) spare[item.Key] = (spare.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
             }
             // Kept food is left alone, unless there is nothing else in the colony: then he eats it rather than go hungry.

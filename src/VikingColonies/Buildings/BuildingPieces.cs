@@ -28,6 +28,8 @@ namespace VikingColonies.Buildings
                 ColonyConfig.FarmWoodCost, null);
             CustomPiece watchtower = Register(BuildingTypes.Watchtower, "piece_chest_wood", "$vc_hut_watchtower_desc", 6, 3,
                 ColonyConfig.WatchtowerWoodCost, null);
+            CustomPiece storehouse = Register(BuildingTypes.Storehouse, "piece_chest_wood", "$vc_hut_storehouse_desc", 6, 3,
+                ColonyConfig.StorehouseWoodCost, null);
             // A cost changed in the settings, or the server's arriving when a player joins it, is what the hammer asks for
             // at once (v1 review: it took the costs read at start-up until the game was restarted).
             SynchronizationManager.OnConfigurationSynchronized += (sender, e) => ApplyCosts();
@@ -42,6 +44,7 @@ namespace VikingColonies.Buildings
             if (foragerHut != null) foragerHut.Piece.m_craftingStation = hallStation;
             if (farm != null) farm.Piece.m_craftingStation = hallStation;
             if (watchtower != null) watchtower.Piece.m_craftingStation = hallStation;
+            if (storehouse != null) storehouse.Piece.m_craftingStation = hallStation;
             RegisterFieldMarker(hallStation);
         }
 
@@ -185,6 +188,11 @@ namespace VikingColonies.Buildings
             if (!string.IsNullOrEmpty(type.JobId)) prefab.AddComponent<WorkerModule>();
             if (type.Id == BuildingTypes.LonghouseId) prefab.AddComponent<ResidenceModule>();
             if (type.Id == BuildingTypes.FarmId) prefab.AddComponent<FieldsModule>();
+            if (type.Id == BuildingTypes.StorehouseId)
+            {
+                prefab.AddComponent<StorehouseModule>();   // its store (1.5)
+                prefab.AddComponent<CourierDispatch>();    // its couriers' plan (1.5)
+            }
             if (type.Id == BuildingTypes.WatchtowerId)
             {
                 // The colony's own station, so the game lets huts be placed by the tower; its range is set per tower (1.1).

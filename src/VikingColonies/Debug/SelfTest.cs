@@ -1224,6 +1224,44 @@ namespace VikingColonies.DevTools
                       $"{hurtBefore * 100f:0}% whole, then {(hurt != null ? hurt.GetHealthPercentage() * 100f : 0f):0}%; '{Localization.instance.Localize(builder.Status)}')",
                     hurt != null && hurtBefore < 0.75f && hurt.GetHealthPercentage() >= 0.99f);
 
+                // 1.5.0, repair's polish (review 9): the worst-damaged building first, though another is nearer, and a big repair
+                // (10 pieces or more) told in the Saga. Ten of the Farm's pieces at 20%; one of his own hut's, nearer him, at 70%.
+                void Hurt(WearNTear w, float share)
+                {
+                    ZNetView view = w.GetComponent<ZNetView>();
+                    if (!view.IsOwner()) view.ClaimOwnership();
+                    view.GetZDO().Set(ZDOVars.s_health, w.m_health * share);
+                    view.InvokeRPC(ZNetView.Everybody, "RPC_HealthChanged", w.m_health * share);
+                }
+                builder.RequestRecallToHut();
+                // A whole look later (its review): he is off the Farm he just mended, so the Farm wins by being the worst.
+                yield return new WaitForSeconds(RepairRules.LookSeconds + 1f);
+                List<WearNTear> farmHurt = wears.Where(w => w != null && w != hurt).Take(10).ToList();
+                var ownPieces = new List<Piece>();
+                Piece.GetAllPiecesInRadius(builderHut.transform.position, 15f, ownPieces);
+                WearNTear ownHurt = ownPieces.Where(p => p != null && PiecePlacer.SiteOf(p.gameObject) == builderHut.Id)
+                    .Select(p => p.GetComponent<WearNTear>()).FirstOrDefault(w => w != null);
+                foreach (WearNTear w in farmHurt) Hurt(w, 0.2f);
+                if (ownHurt != null) Hurt(ownHurt, 0.7f);
+                yield return new WaitForSeconds(1f);
+                string firstMended = "";
+                for (float waited = 0f; waited < 150f && farmHurt.Any(w => w != null && w.GetHealthPercentage() < 0.99f); waited += 1f)
+                {
+                    if (firstMended.Length == 0 && farmHurt.Any(w => w != null && w.GetHealthPercentage() >= 0.99f)) firstMended = "the Farm";
+                    if (firstMended.Length == 0 && ownHurt != null && ownHurt.GetHealthPercentage() >= 0.99f) firstMended = "his own hut";
+                    yield return new WaitForSeconds(1f);
+                }
+                int farmLeft = farmHurt.Count(w => w != null && w.GetHealthPercentage() < 0.99f);
+                // His next look moves him on, and the Farm's count goes to the Saga then (up to a look away; its review).
+                // Read on the colony's Town Hall now: a new one took the colony over earlier in this test (`hall`), and the first
+                // one's module (`townHall`) has no saga any more (the 1.5.0 release run: the line was written, the old hall read).
+                bool Told() => SagaHas(hall, "mended", builder.CitizenName);
+                for (float waited = 0f; waited < RepairRules.LookSeconds + 5f && !Told(); waited += 1f) yield return new WaitForSeconds(1f);
+                bool told = Told();
+                Check($"The builder mends the worst-damaged building first, though another is nearer, and a big repair goes in the Saga (first {firstMended}; " +
+                      $"{farmHurt.Count} of the Farm's at 20%, {farmLeft} left; in the Saga {told}: {SagaLines(hall)})",
+                    ownHurt != null && farmHurt.Count == 10 && firstMended == "the Farm" && farmLeft == 0 && told);
+
                 // The topmost piece goes (nothing rests on it); the builder gets what it takes in his hut's chest. No monster by
                 // the hut meanwhile: repairs wait for one to go (1.4.3's compatibility run: a Neck spawned by the Farm 4 s before).
                 float monsterReach = RepairRules.MonsterRange + 10f;
@@ -1495,7 +1533,7 @@ namespace VikingColonies.DevTools
             HarmonyLib.AccessTools.FieldRefAccess<Player, HashSet<string>>("m_shownTutorials");
 
         /// <summary>The character hasn't seen this tip (the test shows it, then gives the player their first sight of it back).</summary>
-        private static void ForgetTipForTest(Player player, string tip)
+        internal static void ForgetTipForTest(Player player, string tip)
         {
             try { s_shownTutorials(player)?.Remove(tip); }
             catch (System.Exception) { }   // the game renamed it: the tip stays seen

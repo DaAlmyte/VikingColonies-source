@@ -26,6 +26,15 @@ namespace VikingColonies.Tests
             Assert.False(RoomRules.IsRoomWall("", 0f));
         }
 
+        [Fact]   // the Storehouse's hand-over (1.5): its log sills and stone course stand under its raised floor
+        public void A_wall_wholly_under_the_floor_encloses_no_room()
+        {
+            Assert.False(RoomRules.IsRoomWall("wood_wall_log", -0.6f, topAboveFloor: 0.05f));   // a sill under the floor
+            Assert.False(RoomRules.IsRoomWall("stone_wall_2x1", -1.0f, topAboveFloor: 0f));     // a stone course the floor rests on
+            Assert.True(RoomRules.IsRoomWall("wood_wall_log", -0.1f, topAboveFloor: 2f));       // a log wall standing up past it
+            Assert.True(RoomRules.IsRoomWall("woodwall", 0f));                                   // no top given: as before
+        }
+
         [Fact]
         public void The_woodpile_strip_behind_the_back_wall_is_outside_the_room()
         {

@@ -137,13 +137,17 @@ namespace VikingColonies.Core
     /// <summary>A colony chest a settler might eat breakfast at.</summary>
     public struct BreakfastChest
     {
-        public BreakfastChest(string id, GroundPoint at, bool townHall, bool hasFood)
+        public BreakfastChest(string id, GroundPoint at, bool townHall, bool hasFood, bool storehouse = false)
         {
             Id = id ?? "";
             At = at;
             TownHall = townHall;
             HasFood = hasFood;
+            Storehouse = storehouse;
         }
+
+        /// <summary>The storehouse (1.5): meals come from it first.</summary>
+        public bool Storehouse { get; }
 
         public string Id { get; }
         public GroundPoint At { get; }
@@ -151,7 +155,10 @@ namespace VikingColonies.Core
         public bool HasFood { get; }
     }
 
-    /// <summary>Breakfast at the table (0.15): at the nearest colony chest with his food, the Town Hall's when as near.</summary>
+    /// <summary>
+    /// Breakfast at the table (0.15): at the storehouse when it has the food (1.5), else the nearest colony chest with it,
+    /// the Town Hall's when as near.
+    /// </summary>
     public static class Breakfast
     {
         /// <summary>A seat this near the chest is his table.</summary>
@@ -173,7 +180,8 @@ namespace VikingColonies.Core
 
         public static string Chest(IEnumerable<BreakfastChest> chests, GroundPoint me) =>
             chests.Where(c => c.HasFood)
-                  .OrderBy(c => Math.Round(ColonyRules.Distance(c.At, me), 1))
+                  .OrderByDescending(c => c.Storehouse)
+                  .ThenBy(c => Math.Round(ColonyRules.Distance(c.At, me), 1))
                   .ThenByDescending(c => c.TownHall)
                   .Select(c => c.Id)
                   .FirstOrDefault() ?? "";

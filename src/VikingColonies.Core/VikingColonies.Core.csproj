@@ -2,5 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>VikingColonies.Core</RootNamespace>
+    <!-- C# 7.3 as the project's rules say (the review round of 2026-10-23: Directory.Build.props says latest). -->
+    <LangVersion>7.3</LangVersion>
   </PropertyGroup>
 </Project>

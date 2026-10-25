@@ -4,7 +4,8 @@
 #Category:VikingColonies
 #Pieces
 vc_hut_builder;Misc;0;0;0;0;0;0;1;"";1;1;1
-piece_workbench_ext1;Building;-2.559;-0.1492;2.4;0;0.707107;0;0.707107;"";1;1;1
+piece_workbench;Building;-2.75;-0.1548;1.75;0;0.707107;0;-0.707107;"";1;1;1
+piece_workbench_ext1;Building;-2.559;-0.1492;-0.2;0;0.707107;0;-0.707107;"";1;1;1
 wood_floor;Building;-1;-0.0969;0.4;0;0;0;1;"";1;1;1
 wood_floor;Building;-1;-0.0969;2.4;0;0;0;1;"";1;1;1
 wood_floor;Building;1;-0.0969;0.4;0;0;0;1;"";1;1;1
@@ -13,9 +14,8 @@ wood_floor;Building;3;-0.0969;0.4;0;0;0;1;"";1;1;1
 wood_floor;Building;3;-0.0969;2.4;0;0;0;1;"";1;1;1
 wood_floor;Building;5;-0.0969;0.4;0;0;0;1;"";1;1;1
 wood_floor;Building;5;-0.0969;2.4;0;0;0;1;"";1;1;1
-piece_workbench_ext3;Building;-2.747;-0.0232;0.8;0;0.707107;0;0.707107;"";1;1;1
+piece_workbench_ext3;Building;-4.4;-0.0232;-0.603;0;0;0;1;"";1;1;1
 wood_wall_quarter;Building;-1.5;0;3.4;0;0;0;1;"";1;1;1
-piece_workbench;Building;4.35;-0.025;0.15;0;0;0;1;"";1;1;1
 wood_wall_quarter;Building;5.5;0;3.4;0;0;0;1;"";1;1;1
 wood_stack;Building;-0.6;0.4412;-1.947;0;0;0;1;"";1;1;1
 piece_groundtorch_wood;Building;-1.5;0.5222;3.85;0;0;0;1;"";1;1;1

@@ -10,6 +10,9 @@ namespace VikingColonies.Citizens
         /// <summary>Hits of a guard that reached a player, a settler or a tame (vc_guardtest: the game's own rules keep it 0).</summary>
         internal static int FriendlyHitsForTest;
 
+        /// <summary>Blows of a settler fighting off a weak creature that reached something else and did nothing (vc_weaktest).</summary>
+        internal static int StrayFightHitsForTest;
+
         [HarmonyPatch]
         private static class HoverNameHook
         {
@@ -49,7 +52,7 @@ namespace VikingColonies.Citizens
                     who += " · " + (MoodLevels.ShowsWords(mood) ? "<color=orange>" + feels + "</color>" : feels);
                 }
                 __result += "\n<color=#c8c8c8>" + who + "</color>";
-                if (citizen.Record.Hungry && Config.ColonyConfig.SettlersEat.Value)
+                if (citizen.Record.Hungry && Colony.Creative.SettlersEat(citizen.Record.ColonyId))
                     __result += "\n<color=orange>" + Localization.instance.Localize("$vc_hungry") + "</color>";
             }
         }
@@ -115,7 +118,22 @@ namespace VikingColonies.Citizens
             private static bool FightingPractice(Character __instance, HitData hit)
             {
                 Citizen guard = hit != null ? hit.GetAttacker()?.GetComponent<Citizen>() : null;
-                if (guard == null || guard.Record.Job != SaveKeys.GuardJob) return true;
+                if (guard == null) return true;
+                if (guard.Record.Job != SaveKeys.GuardJob)
+                {
+                    // 1.5.0: a settler fighting off a weak creature practises Fighting when a blow lands on it; the swing's
+                    // arc on anything else (a Boar grazing by, a settler, the player) does nothing (its review).
+                    AI.CitizenAI fighter = guard.GetComponent<AI.CitizenAI>();
+                    if (fighter == null || fighter.FightTarget == null) return true;
+                    if (fighter.FightTarget != __instance)
+                    {
+                        StrayFightHitsForTest++;
+                        return false;
+                    }
+                    guard.Practise(WorkSkill.Fighting);
+                    fighter.NoteBlowLanded();
+                    return true;
+                }
                 if (!GuardRules.IsTarget(Jobs.GuardJob.FactsOf(guard.Body, __instance)))
                 {
                     if (__instance.GetComponent<Citizen>() != null || __instance.IsPlayer() || __instance.IsTamed())

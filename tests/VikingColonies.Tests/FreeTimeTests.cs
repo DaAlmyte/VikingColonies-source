@@ -205,6 +205,22 @@ namespace VikingColonies.Tests
             Assert.All(meetings, m => Assert.Equal(FreeTimeRules.ChatGap, ColonyRules.Distance(m.First, m.Second), 3));
         }
 
+        // The 1.5.0 release run: two settlers met to chat at the storehouse's door, and a courier gave up there ("Solveig
+        // stood in the doorway") and another settler's walk ended short of the store room.
+        [Fact]
+        public void A_chat_spot_keeps_clear_of_doors()
+        {
+            var meeting = new ChatMeeting(new GroundPoint(0, 0), new GroundPoint(FreeTimeRules.ChatGap, 0));
+            Assert.True(ChatPairing.ClearOfDoors(meeting, new[] { new GroundPoint(10, 0) }));
+            Assert.False(ChatPairing.ClearOfDoors(meeting, new[] { new GroundPoint(0.8f, 0.5f) }));   // between them
+            Assert.False(ChatPairing.ClearOfDoors(meeting, new[] { new GroundPoint(FreeTimeRules.ChatGap + 1f, 0) }));   // by the second
+            Assert.True(ChatPairing.ClearOfDoors(meeting, new[] { new GroundPoint(-ChatPairing.DoorClearance - 0.01f, 0) }));
+            Assert.True(ChatPairing.ClearOfDoors(meeting, new GroundPoint[0]));
+            // Its review: a spot 2.3 m straight out from a door, reached 0.4 m short, leaves a chatter on the door's landing
+            // (1.5 m beyond it, 0.6 m round), where a courier waits for them for good.
+            Assert.False(ChatPairing.ClearOfDoors(meeting, new[] { new GroundPoint(-2.3f, 0) }));
+        }
+
         // The review of 1.4.2: each spot at its own settler's height let the wall check climb over a wall on a slope.
         [Fact]
         public void A_meetings_two_spots_are_checked_at_one_height()

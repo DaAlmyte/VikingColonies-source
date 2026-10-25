@@ -233,6 +233,21 @@ namespace VikingColonies.Core
         }
 
         /// <summary>
+        /// How far a chat's spots keep from a door: two talking in a doorway block it (the 1.5.0 release run: a courier gave
+        /// up at the storehouse's door, "Solveig stood in the doorway"). 3 m, as a stroll's (its review: at 2 m a chatter who
+        /// stops 0.4 m short stands on the door's landing, 1.5 m beyond it, where anyone going through waits for them).
+        /// </summary>
+        public const float DoorClearance = 3f;
+
+        /// <summary>Both spots at least <see cref="DoorClearance"/> from every door.</summary>
+        public static bool ClearOfDoors(ChatMeeting meeting, IEnumerable<GroundPoint> doors)
+        {
+            foreach (GroundPoint door in doors ?? Enumerable.Empty<GroundPoint>())
+                if (ColonyRules.Distance(meeting.First, door) < DoorClearance || ColonyRules.Distance(meeting.Second, door) < DoorClearance) return false;
+            return true;
+        }
+
+        /// <summary>
         /// The height a meeting's two spots are checked at (the review of 1.4.2: each at its own settler's height, a wall
         /// check on a slope climbed over the wall): halfway between them, else the height of the one it's beside.
         /// </summary>

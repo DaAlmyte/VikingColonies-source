@@ -165,4 +165,38 @@ namespace VikingColonies.Core
             return held;
         }
     }
+
+    /// <summary>
+    /// Kept pieces of an upgrade's plan the builder took down (each rested on an old piece alone), waiting to go back on the
+    /// order's list: once the old piece they rested on is down too, never before, or they'd only go up on it again (the 1.5.0
+    /// build-through: an order finished with two such poles on the ground; its fix's review: reopened at once, one lower than
+    /// the new piece could go straight back up on the old one, again and again).
+    /// </summary>
+    public sealed class KeptDown
+    {
+        private readonly List<KeyValuePair<int, int>> _waiting = new List<KeyValuePair<int, int>>();
+
+        /// <param name="oldIndex">The upgrade's old piece it rested on, or -1 (nothing to wait for).</param>
+        public void Add(int keptIndex, int oldIndex)
+        {
+            if (keptIndex >= 0) _waiting.Add(new KeyValuePair<int, int>(keptIndex, oldIndex));
+        }
+
+        /// <summary>The kept pieces to put back on the list now (each once): those whose old piece is down.</summary>
+        public List<int> Due(Func<int, bool> oldTakenAway)
+        {
+            var due = new List<int>();
+            for (int i = _waiting.Count - 1; i >= 0; i--)
+            {
+                KeyValuePair<int, int> kept = _waiting[i];
+                if (kept.Value >= 0 && !oldTakenAway(kept.Value)) continue;
+                due.Insert(0, kept.Key);
+                _waiting.RemoveAt(i);
+            }
+            return due;
+        }
+
+        /// <summary>He left the site: the site's own look for missing pieces finds them.</summary>
+        public void Clear() => _waiting.Clear();
+    }
 }

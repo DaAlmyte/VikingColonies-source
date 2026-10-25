@@ -54,7 +54,7 @@ namespace VikingColonies.Construction
             {
                 s_nextCheck = Time.time + CheckSeconds;
                 Findings = SiteSurvey.Look(s_plan, position, rotation, null, ghost, MatchesPlan,
-                    GroundShaper.StonePerCubicMetre, s_things, s_blockers);
+                    GroundShaper.StonePerCubicMetre, s_things, s_blockers, type: s_type);
                 // Only while placing: the same site check also runs for upgrades on whichever computer owns the hut.
                 if (!ColonyPermissions.LocalMayBuildAt(SiteScanner.ColonyFor(position), position)) Findings.AddRed(RedReason.NotYourColony);
                 Verdict = SiteCheck.Judge(Findings, SiteScanner.BuilderLevelFor(position), SiteScanner.ToolsAtHandFor(position));

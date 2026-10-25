@@ -49,7 +49,7 @@ namespace VikingColonies.AI
                 foreach (ColonyBuilding b in ColonyBuilding.All)
                 {
                     if (b == null || !b.IsValid || b.ColonyId != colony || b.Storage == null) continue;
-                    int n = b.Storage.Spare(name);   // what a building keeps is left (0.21)
+                    int n = b.Stores.Sum(store => store.Spare(name));   // what a building keeps is left (0.21); a storehouse's whole store (1.5)
                     if (n <= 0) continue;
                     inChests += n;
                     if (nearest == null || Utils.DistanceXZ(b.transform.position, me) < Utils.DistanceXZ(nearest.transform.position, me)) nearest = b;
@@ -72,7 +72,7 @@ namespace VikingColonies.AI
             int total = 0;
             foreach (ColonyBuilding b in ColonyBuilding.All)
                 if (b != null && b.IsValid && b.ColonyId == _citizen.ColonyId && b.Storage != null)
-                    total += b.Storage.Spare(item);
+                    total += b.Stores.Sum(store => store.Spare(item));
             return total;
         }
 
@@ -114,7 +114,8 @@ namespace VikingColonies.AI
                 _ai.Idle();
                 // Counted again here, item by item: another settler may have taken some since (the 10 stay, review of 0.15).
                 int left = InChests(_fuelItem);
-                while (_fuel.Count(_fuelItem) < _fuelWant && left > FireFuel.Keep && chest.Storage.TryTakeItem(_fuelItem, _fuel)) left--;
+                foreach (StorageModule store in chest.Stores)   // a storehouse: chest by chest (1.5)
+                    while (_fuel.Count(_fuelItem) < _fuelWant && left > FireFuel.Keep && store.TryTakeItem(_fuelItem, _fuel)) left--;
                 _citizen.SaveCarry();
                 if (_fuel.Count(_fuelItem) == 0)
                 {

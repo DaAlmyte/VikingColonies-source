@@ -69,6 +69,9 @@ namespace VikingColonies.Construction
         private readonly RecentSpots _falls = new RecentSpots(60);
         private Piece _clear;   // a leftover of an old colony building he takes down to make room
         private int _clearTakeAway = -1;   // the index of the upgrade's old piece he is taking down, or -1
+        private int _clearKeptFor = -1;   // taking down a kept piece: the old piece it rests on alone, or -1
+        /// <summary>Kept pieces he took down, back on the list once their old piece is down (KeptDown).</summary>
+        private readonly KeptDown _keptDown = new KeptDown();
         private IReadOnlyList<PlannedPiece> _takeAway = new List<PlannedPiece>();
         private readonly Cooldown _takeAwayRetry = new Cooldown(2f);
         private readonly Cooldown _doorwayRetry = new Cooldown(2f);
@@ -153,6 +156,7 @@ namespace VikingColonies.Construction
             NoteState(order);
             if (_putBack != null && PutBack(dt)) return;   // what this site doesn't need goes back to a chest first
             CheckStanding(order, dt);
+            ReopenKept(order);
             if (CollectFallenMaterials(dt)) return;
             if (_clear != null)
             {
@@ -206,6 +210,8 @@ namespace VikingColonies.Construction
             LeaveSite();
             ConstructionModule chosen = ChooseOrder(null);
             if (chosen == null) return;
+            _chestRound.Relook(heldSite: false, newSite: true);   // a new site: every chest looked at afresh
+            _roundSpots.Clear();
             _site = chosen;
             _mend = null;
             IReadOnlyList<PlannedPiece> plan = chosen.Plan;
@@ -312,6 +318,7 @@ namespace VikingColonies.Construction
 
         private void LeaveSite()
         {
+            bool held = _site != null;
             if (_site != null && _site.IsValid) _site.RequestRelease(Citizen.Id);
             _site = null;
             _piece = -1;
@@ -323,8 +330,8 @@ namespace VikingColonies.Construction
             _doorway = null;
             _asideUntil.Clear();
             _giveUps.Clear();   // a new site: nothing left over yet
-            _chestRound.Leave();
-            _roundSpots.Clear();
+            _chestRound.Relook(held, newSite: false);   // an idle look keeps what he learned (the bug hunt)
+            if (held) _roundSpots.Clear();
             _heldRocks.Clear();
             _toldHeldRock = false;
             _spaceLogged = -1;
@@ -334,6 +341,8 @@ namespace VikingColonies.Construction
             _inTheWay.Clear();
             _clear = null;
             _clearTakeAway = -1;
+            _clearKeptFor = -1;
+            _keptDown.Clear();   // the site's own look for missing pieces finds them
             _takeAway = new List<PlannedPiece>();
             _reportedBlocked = "";
             _walksLogged = 0;
@@ -416,6 +425,11 @@ namespace VikingColonies.Construction
             // Taking a hut down (0.23): nothing stays, so every piece comes down from the top.
             List<PieceBox> staying = order.Kind == OrderKind.Remove ? new List<PieceBox>()
                 : pieces.Where(p => p != null && _site.MatchesPlan(p)).Select(PiecePlacer.BoxOf).ToList();
+            // A storehouse's chests the player stood inside stay too (1.5, its review): what holds them up comes down last.
+            StorehouseModule store = order.Kind == OrderKind.Remove ? null : _site.Building?.Storehouse;
+            if (store != null)
+                foreach (Piece piece in store.StandingInside)
+                    if (piece != null && !_site.MatchesPlan(piece)) staying.Add(PiecePlacer.BoxOf(piece));
             int next = RemovalOrder.Next(old, staying, OnGround, order.BuildHandled);
             if (next < 0) return;   // something new must stand first
             _clear = standing[next];
@@ -489,10 +503,20 @@ namespace VikingColonies.Construction
             return keys;
         }
 
+        /// <summary>An old piece in the way of this one that comes down first (not one that stays, <see cref="OldPieceStays"/>).</summary>
         private bool OldPieceInTheWayOf(PlannedPiece piece)
         {
             GameObject prefab = PiecePlacer.Prefab(piece.Prefab);
-            return prefab != null && PiecePlacer.OldPieceInTheWay(prefab, U(piece.Position), U(piece.Rotation), _site.Building, _takeAway, out _) != null;
+            if (prefab == null) return false;
+            Piece old = PiecePlacer.OldPieceInTheWay(prefab, U(piece.Position), U(piece.Rotation), _site.Building, _takeAway, out int index);
+            return old != null && !OldPieceStays(old, index);
+        }
+
+        /// <summary>An old piece left standing: a player's bed, or one already counted taken (TakeDownRules.OldPieceBlocks).</summary>
+        private bool OldPieceStays(Piece old, int index)
+        {
+            BuildOrderRecord order = _site != null ? _site.Order : null;
+            return TakeDownRules.OldPieceBlocks(PiecePlacer.IsPlayersBed(old), order != null && order.TakenAway.Contains(index));
         }
 
         private static bool OnGround(PieceBox box) =>
@@ -520,6 +544,13 @@ namespace VikingColonies.Construction
             if (_takeAway.Count > 0)
             {
                 Piece old = PiecePlacer.OldPieceInTheWay(prefab, U(piece.Position), U(piece.Rotation), _site.Building, _takeAway, out int oldIndex);
+                if (old != null && OldPieceStays(old, oldIndex))
+                {
+                    if (!_inTheWay.ContainsKey(piece.Index))
+                        Log.Info($"{Citizen.CitizenName}: {piece.Prefab} #{piece.Index} of {_site.Building.TypeId} would go into the old {Utils.GetPrefabName(old.gameObject)} at {old.transform.position}, which stays (a player's bed); waiting");
+                    _inTheWay[piece.Index] = old.m_name;
+                    return false;
+                }
                 if (old != null)
                 {
                     // Nothing old comes down before he has what the new piece takes: he fetches it first (or waits for
@@ -536,12 +567,22 @@ namespace VikingColonies.Construction
                             _clearTakeAway = first;
                             Log.Info($"{Citizen.CitizenName} takes down the old {Utils.GetPrefabName(above.gameObject)} at {above.transform.position} first: it rests on the old {Utils.GetPrefabName(old.gameObject)} in the way of {piece.Prefab} #{piece.Index}");
                         }
-                        else if (KeptOnlyOn(old, out Piece kept))
+                        else if (KeptOnlyOn(old, out Piece kept) && PiecePlacer.IsPlayersBed(kept))
+                        {
+                            // A player's bed resting on it alone: it would have to come down, and a bed someone sleeps in
+                            // doesn't (the review of the kept pieces' fix: he swung at it for as long as it stood). In the way.
+                            if (!_inTheWay.ContainsKey(piece.Index))
+                                Log.Info($"{Citizen.CitizenName}: {piece.Prefab} #{piece.Index} waits: the old {Utils.GetPrefabName(old.gameObject)} in its way holds up a player's bed");
+                            _inTheWay[piece.Index] = kept.m_name;
+                            return false;
+                        }
+                        else if (KeptOnlyOn(old, out kept))
                         {
                             // A kept piece resting on it alone comes down first, with the hammer, not falling; it goes back on
                             // the list and up again on the new one (A3: a gable's ornament fell with its ridge).
                             _clear = kept;
                             _clearTakeAway = -1;
+                            _clearKeptFor = oldIndex;
                             Log.Info($"{Citizen.CitizenName} takes down {Utils.GetPrefabName(kept.gameObject)} at {kept.transform.position} first: it rests " +
                                      $"on the old {Utils.GetPrefabName(old.gameObject)} alone, in the way of {piece.Prefab} #{piece.Index}; it goes up again after");
                         }
@@ -563,6 +604,7 @@ namespace VikingColonies.Construction
                 _inTheWay[piece.Index] = blocker.m_name;
                 string blockerSite = PiecePlacer.SiteOf(blocker.gameObject);
                 if (_clear == null && SiteRules.IsLeftover(blockerSite, _site.Building.Id, ColonyBuilding.FindById(blockerSite) != null)
+                    && !PiecePlacer.IsPlayersBed(blocker)   // a player's spawn bed, even a leftover's, is theirs to move
                     && !_badThings.IsBlocked(SiteThing.KeyOf(blocker.gameObject, null), Time.time))
                 {
                     _clear = blocker;
@@ -600,7 +642,9 @@ namespace VikingColonies.Construction
 
         // ---- Materials ----
 
-        private Dictionary<string, int> NeedsOf(PlannedPiece piece) => PiecePlacer.Needs(piece.Prefab);
+        /// <summary>What a piece is built from; nothing in a No build cost world (creative, 1.5: free builders).</summary>
+        private Dictionary<string, int> NeedsOf(PlannedPiece piece) =>
+            Colony.Creative.BuildersFree() ? new Dictionary<string, int>() : PiecePlacer.Needs(piece.Prefab);
 
         private float _fetchPauseUntil;
 
@@ -992,16 +1036,22 @@ namespace VikingColonies.Construction
         /// <returns>Whether a piece came down (the builder practises for that, 0.26).</returns>
         private bool TakeDown(Piece target, int takeAway = -1)
         {
+            int keptFor = _clear == target ? _clearKeptFor : -1;
             if (_clear == target)
             {
                 _clear = null;
                 _clearTakeAway = -1;
+                _clearKeptFor = -1;
             }
-            if (target != null && takeAway >= 0 && PiecePlacer.IsPlayersBed(target))
+            if (target != null && PiecePlacer.IsPlayersBed(target))
             {
                 Log.Info($"{Citizen.CitizenName} leaves the player's bed at {target.transform.position} standing (a spawn point)");
-                target = null;   // counted as taken below; in the way of a new piece, it is reported as in the way
+                target = null;   // an upgrade's: counted as taken below; in the way of a new piece, it is reported as in the way
             }
+            // A kept piece of the plan he takes down (one resting on an old piece alone) goes back on the list once that old
+            // piece is down, not at the next look in 15 s (the 1.5.0 build-through: two such poles came down late in a
+            // Longhouse's level 4, the order finished counting them done, and they stayed down until the minute's repair).
+            int keptIndex = target != null && takeAway < 0 && _site != null && _site.IsValid && _site.MatchesPlan(target) ? PlanIndexOf(target) : -1;
             if (target != null)
             {
                 Vector3 at = target.transform.position;
@@ -1017,7 +1067,32 @@ namespace VikingColonies.Construction
             }
             // Reported after it is down: the last piece of a take-down finishes the hut, and its materials must lie there first (review of 0.24).
             if (takeAway >= 0 && _site != null && _site.IsValid) _site.ReportTaken(takeAway);
+            if (keptIndex >= 0)
+            {
+                _keptDown.Add(keptIndex, keptFor);
+                _standingTimer = Mathf.Min(_standingTimer, 3f);   // what rested on it alone fell: seen soon, not in 15 s (its review)
+            }
             return target != null;
+        }
+
+        /// <summary>Kept pieces he took down, back on the list once the old piece each rested on is down (KeptDown).</summary>
+        private void ReopenKept(BuildOrderRecord order)
+        {
+            foreach (int index in _keptDown.Due(order.TakenAway.Contains))
+            {
+                Log.Info($"{Citizen.CitizenName}: the kept {(_site.Plan.Count > index ? _site.Plan[index].Prefab : "piece")} #{index} of {_site.Building.TypeId} he took down goes back on the list");
+                _site.ReportPiece(index, ConstructionModule.PieceGone);
+            }
+        }
+
+        /// <summary>Which piece of the plan this standing piece is (same kind, place and turn), or -1.</summary>
+        private int PlanIndexOf(Piece piece)
+        {
+            var one = new List<Piece> { piece };
+            IReadOnlyList<PlannedPiece> plan = _site.Plan;
+            for (int i = 0; i < plan.Count; i++)
+                if (plan[i].IsValid && PiecePlacer.FindStanding(plan[i], one) != null) return i;
+            return -1;
         }
 
         private void ReportBlocked(string what)

@@ -157,7 +157,7 @@ namespace VikingColonies.DevTools
             foreach (string line in lines)
             {
                 var answer = new List<string> { $"[{DateTime.Now:HH:mm:ss}] > {line}" };
-                if (state == CommandFileState.Refuse) answer.Add($"  refused: the command file runs only in a test world (its name must contain 'test'); this is {world}");
+                if (state == CommandFileState.Refuse) answer.Add($"  refused: the command file runs only in a test world (its name must start with {TestWorlds.NameStart}); this is {world}");
                 else if (!CommandFile.IsAllowed(line)) answer.Add("  refused: only vc_ commands and a few harmless dev commands run from the file");
                 else
                 {

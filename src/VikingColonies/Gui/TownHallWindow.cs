@@ -254,6 +254,46 @@ namespace VikingColonies.Gui
             if (Building != null) Refresh();
         }
 
+        private Button _creativeEat;
+
+        /// <summary>
+        /// Creative mode (1.5): Finish all now, Set level, Add settlers, Settlers eat (only while the world has No build cost),
+        /// and the camp's Build now and Repair now.
+        /// </summary>
+        protected override void BuildCreative(CreativeBar bar)
+        {
+            bar.Add("$vc_creative_finish_all", "$vc_creative_finish_all_hover", () => HallModule()?.FinishAllNow(), () => HallModule() != null);
+            bar.Add("$vc_creative_level_up", "$vc_creative_level_hover",
+                () => HallModule()?.RequestCreative(HallCreativeAction.SetLevel, Building.Level + 1), () => HallModule() != null && Building.Level < TownHallLevels.MaxLevel);
+            bar.Add("$vc_creative_level_down", "$vc_creative_level_hover",
+                () => HallModule()?.RequestCreative(HallCreativeAction.SetLevel, Building.Level - 1), () => HallModule() != null && Building.Level > 1);
+            bar.Add("$vc_creative_add1", "$vc_creative_add_hover", () => HallModule()?.RequestCreative(HallCreativeAction.AddSettlers, 1), () => HallModule() != null);
+            bar.Add("$vc_creative_add5", "$vc_creative_add_hover", () => HallModule()?.RequestCreative(HallCreativeAction.AddSettlers, 5), () => HallModule() != null);
+            _creativeEat = bar.Add("$vc_creative_eat_button_off", "$vc_creative_eat_hover",
+                () => HallModule()?.RequestCreative(HallCreativeAction.EatOff, EatOff() ? 0 : 1), () =>
+                {
+                    if (HallModule() == null || !Colony.Creative.WorldNoBuildCost()) return false;
+                    UiKit.SetLabel(_creativeEat, L(EatOff() ? "$vc_creative_eat_button_on" : "$vc_creative_eat_button_off"));
+                    return true;
+                });
+            bar.Add("$vc_creative_camp_build", "$vc_creative_build_hover", () => CampSite()?.RequestCreative(CreativeAction.Build), () =>
+            {
+                BuildOrderRecord order = CampSite()?.Order;
+                return order != null && order.State != BuildState.Done && order.Kind != OrderKind.Remove;
+            });
+            bar.Add("$vc_creative_camp_repair", "$vc_creative_repair_hover", () => CampSite()?.RequestCreative(CreativeAction.Repair),
+                () => CampSite() != null && CampSite().Order != null && CampSite().IsBuilt);
+        }
+
+        private TownHallModule HallModule() => Building != null ? Building.GetComponent<TownHallModule>() : null;
+        private ConstructionModule CampSite() => Building != null ? Building.GetComponent<ConstructionModule>() : null;
+
+        private bool EatOff()
+        {
+            ZNetView nview = Building != null ? Building.GetComponent<ZNetView>() : null;
+            return nview != null && nview.IsValid() && nview.GetZDO().GetInt(SaveKeys.ColonyEatOff, 0) == 1;
+        }
+
         protected override void Refresh()
         {
             TownHallModule townHall = Building != null ? Building.GetComponent<TownHallModule>() : null;
@@ -617,7 +657,7 @@ namespace VikingColonies.Gui
         {
             ColonyNeeds needs = townHall.Needs();
             string colony = townHall.GetComponent<ColonyBuilding>()?.ColonyId ?? "";
-            int hungry = ColonyConfig.SettlersEat.Value ? Citizen.All.Count(c => c != null && c.Record.ColonyId == colony && c.Record.Hungry) : 0;
+            int hungry = Colony.Creative.SettlersEat(colony) ? Citizen.All.Count(c => c != null && c.Record.ColonyId == colony && c.Record.Hungry) : 0;
             // The food it keeps for newcomers, said where its food is counted (1.4.2: a rule only the guide told).
             int keptFood = townHall.GetComponent<StockModule>()?.List.Kept(StockList.AnyFood) ?? 0;
             string food = keptFood > 0 ? $"{needs.Food} ({string.Format(L("$vc_food_kept_newcomers"), keptFood)})" : needs.Food.ToString();
@@ -649,7 +689,32 @@ namespace VikingColonies.Gui
                 case NewcomerWait.Mood: next = L("$vc_newcomer_unhappy"); break;
                 default: next = L("$vc_newcomer_soon"); break;
             }
-            return first + "\n" + string.Format(L("$vc_newcomer_next"), next);
+            string store = StorehouseLine(townHall, colony);
+            return first + "\n" + string.Format(L("$vc_newcomer_next"), next) + (store.Length > 0 ? "\n" + store : "");
+        }
+
+        /// <summary>
+        /// The storehouse full, or couriers holding loads they can't put away (1.5.0, the review round's pick): said while
+        /// couriers carry for the colony, with what to do. The storehouse's flag and the roster's statuses are on every computer.
+        /// </summary>
+        internal static string StorehouseLine(TownHallModule townHall, string colony)
+        {
+            ColonyBuilding storehouse = ColonyBuilding.All.FirstOrDefault(b => b != null && b.IsValid && b.IsStorehouse && b.ColonyId == colony);
+            ZNetView view = storehouse != null ? storehouse.GetComponent<ZNetView>() : null;
+            bool full = view != null && view.IsValid() && view.GetZDO().GetBool(SaveKeys.StoreFull);
+            IReadOnlyList<RosterEntry> entries = townHall.Roster.Entries;
+            int couriers = entries.Count(e => e.Job == SaveKeys.CourierJob);
+            int holding = entries.Count(e => e.Job == SaveKeys.CourierJob && e.Status == "$vc_status_courier_holding");
+            switch (StorehouseWarnings.For(storehouse != null, full, couriers, holding))
+            {
+                case StorehouseWarning.Full:
+                    string held = holding == 0 ? "" : " " + (holding == 1 ? L("$vc_store_full_holding_one") : string.Format(L("$vc_store_full_holding"), holding));
+                    return $"<color=orange>{L("$vc_store_full")}{held}</color>";
+                case StorehouseWarning.Holding:
+                    return $"<color=orange>{(holding == 1 ? L("$vc_store_holding_one") : string.Format(L("$vc_store_holding"), holding))}</color>";
+                default:
+                    return "";
+            }
         }
 
         private static string WorkplaceName(string buildingId)

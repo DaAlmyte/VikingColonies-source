@@ -243,6 +243,14 @@ namespace VikingColonies.Core
         /// </summary>
         public static bool HearsRaidCall(float fromHall, float colonyRadius) => fromHall <= colonyRadius + RaidCallReach;
 
+        /// <summary>
+        /// A weak monster about in the colony (1.5.0): alerted or hunting, inside the colony's area and within the tower's
+        /// watch + <see cref="RaidCallReach"/>, the guard goes for it before it bites anyone. An animal (a Boar) only while it
+        /// attacks, as <see cref="IsTarget"/> has it: a Boar penned for taming is left alone.
+        /// </summary>
+        public static bool HuntsInColony(bool weakForColony, bool isAnimal, bool insideColonyArea, bool alertedOrHunting, float fromTower, float reach) =>
+            weakForColony && !isAnimal && insideColonyArea && alertedOrHunting && fromTower <= reach + RaidCallReach;
+
         /// <summary>After a load he couldn't put away (every chest full), he tries again this much later.</summary>
         public const double LoadBackRetrySeconds = 120;
 
@@ -624,9 +632,12 @@ namespace VikingColonies.Core
 
         /// <summary>
         /// A guard whose work brain isn't made yet counts as on duty for that moment, so his work runs, makes it and arms him
-        /// (the whole-mod review of 1.4.1: made at night, in the evening or in a raid, it never was, and he went to bed).
+        /// (the whole-mod review of 1.4.1: made at night, in the evening or in a raid, it never was, and he went to bed). Only
+        /// while it can be made: his tower here and no pause after an error (the review round of 2026-10-23: unarmed "on duty",
+        /// he walked among raiders who had broken his tower and never ran).
         /// </summary>
-        public static bool NeedsBrain(bool hasBrain, bool isGuard, bool enabled) => !hasBrain && isGuard && enabled;
+        public static bool NeedsBrain(bool hasBrain, bool isGuard, bool enabled, bool towerHere, bool paused) =>
+            !hasBrain && isGuard && enabled && towerHere && !paused;
 
         public static float HealPerSecond(float maxHealth) => Math.Max(0f, maxHealth) / HealSeconds;
 

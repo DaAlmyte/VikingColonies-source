@@ -38,13 +38,30 @@ namespace VikingColonies.Tests
                     }
         }
 
+        /// <summary>
+        /// Every job the game has (JobDefinitions' ids, read from its file): a new trade's words can't be forgotten (the
+        /// review round of 2026-10-23: a courier newcomer came as "[vc_calling_courier] from the coast").
+        /// </summary>
+        private static string[] JobIds()
+        {
+            DirectoryInfo? dir = new DirectoryInfo(System.AppContext.BaseDirectory);
+            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "VikingColonies.slnx"))) dir = dir.Parent;
+            Assert.NotNull(dir);
+            string defs = File.ReadAllText(Path.Combine(dir!.FullName, "src", "VikingColonies", "Jobs", "JobDefinitions.cs"));
+            string[] ids = System.Text.RegularExpressions.Regex.Matches(defs, @"Id = SaveKeys\.(\w+Job);")
+                .Cast<System.Text.RegularExpressions.Match>()
+                .Select(m => (string)typeof(SaveKeys).GetField(m.Groups[1].Value)!.GetValue(null)!).ToArray();
+            Assert.Contains(SaveKeys.CourierJob, ids);
+            return ids;
+        }
+
         [Fact]
         public void Every_origin_trait_and_trade_has_its_words()
         {
             string text = Translations();
             foreach (string origin in Origins.All) Assert.Contains("\"" + origin.Substring(1) + "\"", text);
             foreach (Trait trait in System.Enum.GetValues(typeof(Trait)).Cast<Trait>()) Assert.Contains("\"" + Traits.Token(trait).Substring(1) + "\"", text);
-            foreach (string job in new[] { SaveKeys.LumberjackJob, SaveKeys.BuilderJob, SaveKeys.ForagerJob, SaveKeys.FarmerJob, SaveKeys.GuardJob })
+            foreach (string job in JobIds())
             {
                 Assert.Contains("\"vc_calling_" + job + "\"", text);
                 Assert.Contains("\"vc_good_at_" + job + "\"", text);

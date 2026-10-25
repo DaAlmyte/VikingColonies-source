@@ -52,7 +52,6 @@ namespace VikingColonies.Construction
             return stock;
         }
 
-        /// <summary>The hut's storage, then the Town Hall's, then the colony's other huts, nearest first.</summary>
         /// <summary>A tool a worker uses from where it lies (a Cultivator): in his hut's chest, else any of the colony's (1.3.1).</summary>
         public static bool InColony(ColonyBuilding hut, string item)
         {
@@ -61,16 +60,23 @@ namespace VikingColonies.Construction
             return !string.IsNullOrEmpty(hut.ColonyId) && ColonyStores(hut.ColonyId, hut, hut.transform.position).Any(s => s.HasItem(item));
         }
 
+        /// <summary>
+        /// The colony's chests in the order a settler tries them (<see cref="StorehouseRules.Rank"/>): the hut's own, the
+        /// storehouse's store (1.5), the Town Hall's, then the colony's other huts, nearest first.
+        /// </summary>
         public static List<StorageModule> ColonyStores(string colonyId, ColonyBuilding hut, Vector3 near)
         {
-            var stores = new List<StorageModule>();
-            if (hut != null && hut.Storage != null) stores.Add(hut.Storage);
+            var buildings = new List<ColonyBuilding>();
+            if (hut != null) buildings.Add(hut);
             ColonyBuilding hall = ColonyBuilding.FindTownHall(colonyId);
-            if (hall != null && hall.Storage != null) stores.Add(hall.Storage);
-            stores.AddRange(ColonyBuilding.All
-                .Where(b => b != null && b.IsValid && b.ColonyId == colonyId && b != hut && !b.IsTownHall && b.Storage != null)
-                .OrderBy(b => Vector3.Distance(b.transform.position, near))
-                .Select(b => b.Storage));
+            if (hall != null && hall != hut) buildings.Add(hall);
+            buildings.AddRange(ColonyBuilding.All.Where(b => b != null && b.IsValid && b.ColonyId == colonyId && b != hut && !b.IsTownHall));
+            var stores = new List<StorageModule>();
+            foreach (ColonyBuilding b in buildings
+                         .OrderBy(b => StorehouseRules.Rank(b == hut, b.IsStorehouse, b.IsTownHall))
+                         .ThenBy(b => Vector3.Distance(b.transform.position, near)))
+                foreach (StorageModule store in b.Stores)
+                    if (!stores.Contains(store)) stores.Add(store);
             return stores;
         }
 

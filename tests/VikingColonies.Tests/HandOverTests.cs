@@ -88,6 +88,33 @@ namespace VikingColonies.Tests
             Assert.False(TakeDownRules.MayTakeDown(isTownHall: true, hasOrder: true, orderDone: true));
         }
 
+        [Fact]   // the storehouse (1.5)
+        public void A_storehouse_is_taken_down_only_once_its_chests_are_empty()
+        {
+            Assert.False(TakeDownRules.MayTakeDown(isTownHall: false, hasOrder: false, orderDone: false, storeEmpty: false));
+            Assert.True(TakeDownRules.MayTakeDown(false, false, false, storeEmpty: true));
+            Assert.True(TakeDownRules.MayTakeDown(false, false, false));   // every other hut, as before
+        }
+
+        [Fact]   // part 3: couriers empty it first; gear they can't carry is the player's
+        public void A_full_storehouse_is_emptied_by_its_couriers_or_by_the_player()
+        {
+            Assert.Equal(StoreTakeDown.Now, TakeDownRules.ForStore(storeEmpty: true, hasCourier: false, onlyGearLeft: false));
+            Assert.Equal(StoreTakeDown.CouriersEmptyIt, TakeDownRules.ForStore(storeEmpty: false, hasCourier: true, onlyGearLeft: false));
+            Assert.Equal(StoreTakeDown.EmptyItYourself, TakeDownRules.ForStore(storeEmpty: false, hasCourier: false, onlyGearLeft: false));
+            Assert.Equal(StoreTakeDown.EmptyItYourself, TakeDownRules.ForStore(storeEmpty: false, hasCourier: true, onlyGearLeft: true));
+        }
+
+        [Fact]   // its review (part 3): a repair while it empties silently reopened the store
+        public void A_closing_store_waits_through_a_repair_and_is_taken_down_once_empty()
+        {
+            Assert.Equal(ClosingStep.Wait, TakeDownRules.WhileClosing(storeEmpty: false, orderDone: true, repairing: false, takingDown: false));
+            Assert.Equal(ClosingStep.TakeDown, TakeDownRules.WhileClosing(storeEmpty: true, orderDone: true, repairing: false, takingDown: false));
+            Assert.Equal(ClosingStep.Wait, TakeDownRules.WhileClosing(storeEmpty: true, orderDone: false, repairing: true, takingDown: false));
+            Assert.Equal(ClosingStep.Reopen, TakeDownRules.WhileClosing(storeEmpty: true, orderDone: false, repairing: false, takingDown: false));
+            Assert.Equal(ClosingStep.Reopen, TakeDownRules.WhileClosing(storeEmpty: true, orderDone: false, repairing: false, takingDown: true));
+        }
+
         [Fact]   // Review Focus: a Remove order keeps its kind through saving
         public void Remove_order_round_trips()
         {

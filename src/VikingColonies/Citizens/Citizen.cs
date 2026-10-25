@@ -55,6 +55,8 @@ namespace VikingColonies.Citizens
 
         /// <summary>When a monster last hit this settler (Time.time); negative infinity if never. Set on the owner.</summary>
         public double LastMonsterHitTime { get; private set; } = double.NegativeInfinity;
+        /// <summary>How far off the monster that last hit them stood (1.5.0: hit from afar, a stone or an arrow, they run).</summary>
+        public float LastMonsterHitDistance { get; private set; } = float.PositiveInfinity;
 
         /// <summary>Self-test: as if a monster had just hit him.</summary>
         internal void NoteMonsterHitForTest() => LastMonsterHitTime = Time.time;
@@ -96,8 +98,17 @@ namespace VikingColonies.Citizens
                 if (!IsOwner || _record == null || _record.Status == value) return;
                 _record.Status = value;
                 History.Add(value, Time.time);   // for a bug report (0.27)
-                Save();
+                if (_statusSaves.SaveNow(Time.time)) Save();   // else soon (SaveStatusIfDue): not the whole record every tick
             }
+        }
+
+        /// <summary>Two statuses taking turns every tick saved the whole record each time (the review round of 2026-10-23).</summary>
+        private readonly SaveThrottle _statusSaves = new SaveThrottle();
+
+        /// <summary>A status kept back is saved once its time comes (the settler's AI calls it every tick).</summary>
+        internal void SaveStatusIfDue()
+        {
+            if (_statusSaves.Due(Time.time)) Save();
         }
 
         /// <summary>His last states on this computer (vc_bugreport, 0.27); not saved.</summary>
@@ -218,6 +229,7 @@ namespace VikingColonies.Citizens
             LastDamageTime = Time.time;
             if (attacker == null || attacker.IsPlayer() || attacker.GetComponent<Citizen>() != null) return;
             LastMonsterHitTime = Time.time;
+            LastMonsterHitDistance = Vector3.Distance(transform.position, attacker.transform.position);
             int today = Today();
             // A computer that has just taken him over reads his record first, so an old copy is never saved (review I4).
             if (!PrepareOwnerChange() || _record.HitDay == today) return;
@@ -249,6 +261,7 @@ namespace VikingColonies.Citizens
             if (IsOwner) FillInIdentity(record);
             _record = record;
             _recordIsFresh = IsOwner;
+            _statusSaves.Forget();   // the record as saved now: nothing of the old copy waits to be saved
             Carry = CarryLoad.Deserialize(record.Carry);
             InHand.Clear();   // saved in his carry
             if (IsOwner && record.Encode() != saved)
@@ -279,6 +292,7 @@ namespace VikingColonies.Citizens
             if (!IsOwner || _record == null) return;
             _record.Carry = CarryLoad.Together(Carry, InHand).Serialize();
             Zdo.Set(RecordKey, _record.Encode());
+            _statusSaves.Saved(Time.time);
         }
 
         public void SaveCarry() => Save();
@@ -434,7 +448,7 @@ namespace VikingColonies.Citizens
             get
             {
                 CitizenRecord r = Record;
-                return WorkPace.Factor(ColonyConfig.SettlersEat.Value && r.Hungry, ColonyConfig.HungryWorkSpeed.Value,
+                return WorkPace.Factor(r.Hungry && Colony.Creative.SettlersEat(r.ColonyId), ColonyConfig.HungryWorkSpeed.Value,
                     Callings.Matches(r.Calling, r.Job), ColonyConfig.CallingBonus.Value, TraitKind, MoodLevels.WorkFactor(MoodLevel));
             }
         }
@@ -729,7 +743,11 @@ namespace VikingColonies.Citizens
         }
 
         /// <summary>Another computer runs this citizen now; reload the record if it comes back to us.</summary>
-        public void MarkStale() => _recordIsFresh = false;
+        public void MarkStale()
+        {
+            _recordIsFresh = false;
+            _statusSaves.Forget();   // never saved from this old copy (the review round's review)
+        }
 
         /// <summary>Owner only: remember where the Town Hall stands so "gone" can be told apart from "unloaded".</summary>
         public void RememberColonyPos(Vector3 pos)

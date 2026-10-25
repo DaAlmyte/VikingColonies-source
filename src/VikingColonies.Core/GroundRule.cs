@@ -18,6 +18,8 @@ namespace VikingColonies.Core
         TooSteep,
         TooHigh,
         CantFloat,
+        OnlyOneStorehouse,   // the storehouse (1.5): one per colony
+        NeedsBuilderHut,     // the storehouse (1.5): a Builder's Hut builds it
     }
 
     /// <summary>
@@ -101,14 +103,20 @@ namespace VikingColonies.Core
 
         public void Lower() => Value = Clamp(Value - Step);
 
-        /// <summary>Back to zero when another piece is selected.</summary>
+        /// <summary>Back to the piece's start when another piece is selected (<see cref="StartFor"/>).</summary>
         public void Select(string piece)
         {
             piece = piece ?? "";
             if (piece == _piece) return;
             _piece = piece;
-            Value = 0f;
+            Value = StartFor(piece);
         }
+
+        /// <summary>
+        /// Where a piece's ghost starts: the Storehouse 0.75 m up, so it stands on its posts as placed (its hand-over, 1.5:
+        /// at 0 it stood 30 cm up); every other piece on the ground.
+        /// </summary>
+        public static float StartFor(string piece) => piece == SaveKeys.StorehousePiece ? 0.75f : 0f;
 
         private static float Clamp(float value) =>
             (float)(Math.Round(Math.Max(-Limit, Math.Min(Limit, value)) / Step) * Step);

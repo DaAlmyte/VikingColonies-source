@@ -36,6 +36,7 @@ namespace VikingColonies.Config
         public static ConfigEntry<bool> SettlersSafeFromTrees;
         public static ConfigEntry<bool> SettlersGoIndoorsAtNight;
         public static ConfigEntry<bool> SettlersShelterInRaids;
+        public static ConfigEntry<bool> SettlersFightBack;
         public static ConfigEntry<int> TownHallGraceDays;
         public static ConfigEntry<bool> SettlersEat;
         public static ConfigEntry<float> HungryWorkSpeed;
@@ -59,6 +60,9 @@ namespace VikingColonies.Config
         public static ConfigEntry<int> LumberjackHutWoodCost;
         public static ConfigEntry<int> ForagerHutWoodCost;
         public static ConfigEntry<int> FarmWoodCost;
+        public static ConfigEntry<int> StorehouseWoodCost;
+        public static ConfigEntry<int> CourierCarry;
+        public static ConfigEntry<int> CourierCarryPerLevel;
         public static ConfigEntry<int> FieldWoodCost;
         public static ConfigEntry<int> FarmerCarryCapacity;
         public static ConfigEntry<float> ForagerWorkRadius;
@@ -80,6 +84,9 @@ namespace VikingColonies.Config
         public static ConfigEntry<int> BuilderCarryCapacity;
         public static ConfigEntry<KeyCode> RaiseHutKey;
         public static ConfigEntry<KeyCode> LowerHutKey;
+        public static ConfigEntry<CreativeSetting> CreativeMode;
+        public static ConfigEntry<KeyCode> CreativeLevelUpKey;
+        public static ConfigEntry<KeyCode> CreativeLevelDownKey;
         public static ConfigEntry<bool> CommandFile;
         public static ConfigEntry<bool> SkipIntro;
         public static ConfigEntry<string> AutoStartCharacter;
@@ -161,6 +168,11 @@ namespace VikingColonies.Config
             SettlersShelterInRaids = config.BindConfig(ConfigNames.ColonySection, ConfigNames.SettlersShelterInRaids, true,
                 "During a Valheim raid at the colony, settlers shelter inside their huts.",
                 synced: true);
+            SettlersFightBack = config.BindConfig(ConfigNames.ColonySection, ConfigNames.SettlersFightBack, true,
+                "Settlers fight off a weak creature that goes for them (a Neck, a Greyling, a Boar; Greydwarfs and Skeletons as the " +
+                "colony grows) instead of running; they still run when hurt. Guards drive a weak monster stirred up in the colony " +
+                "out before it bites. Off: settlers run and guards wait for an attack, as before 1.5.0.",
+                synced: true);
             TownHallGraceDays = config.BindConfig(ConfigNames.ColonySection, ConfigNames.TownHallGraceDays, 3,
                 "In-game days a colony lives on after losing its Town Hall: a new Town Hall built among its huts in that time takes " +
                 "it over. 0 = the colony ends 30 seconds after its Town Hall is gone.",
@@ -209,8 +221,9 @@ namespace VikingColonies.Config
                 synced: true, acceptableValues: new AcceptableValueRange<int>(1, 100));
             HuginTips = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.HuginTips, true,
                 "Hugin, the raven, explains the colony as you play: the first Town Hall, a hut without a Builder's Hut, the first " +
-                "things the builder needs, the first worker, night, hunger and a death. Each tip once per character, and only with " +
-                "the game's tutorials on. Each player's own.", synced: false);
+                "things the builder needs, the first worker, a field, the Keep in stock tab, the storehouse, free time and the " +
+                "evening fire, night, hunger, moods, trophies and a death. Each tip once per character, and only with the game's " +
+                "tutorials on. Each player's own.", synced: false);
             AskForFeedback = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.AskForFeedback, true,
                 "Once on this computer, at a good moment (a hut near you reaching level 2, or two hours with a colony), a small " +
                 "window asks what you think of the mod, with links to its Discord and its GitHub page. Nothing is sent from the " +
@@ -227,6 +240,15 @@ namespace VikingColonies.Config
                 "or ChatOnly. Each player's own.", synced: false);
             FarmWoodCost = config.BindConfig(ConfigNames.FarmSection, ConfigNames.WoodCost, 20,
                 "Wood needed to place a Farm (on a server, the server's); the builder then puts up its building.",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            StorehouseWoodCost = config.BindConfig(ConfigNames.StorehouseSection, ConfigNames.WoodCost, 20,
+                "Wood needed to place a Storehouse (on a server, the server's); the builder then puts up its building.",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            CourierCarry = config.BindConfig(ConfigNames.CourierSection, ConfigNames.Carry, 50,
+                "How many items a courier carries a trip at a level-1 storehouse (on a server, the server's).",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(1, 500));
+            CourierCarryPerLevel = config.BindConfig(ConfigNames.CourierSection, ConfigNames.CarryPerLevel, 25,
+                "How many more a courier carries for each storehouse level above 1 (on a server, the server's).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
             FieldWoodCost = config.BindConfig(ConfigNames.FieldSection, ConfigNames.WoodCost, 4,
                 "Wood needed to place a field marker (on a server, the server's).",
@@ -262,7 +284,7 @@ namespace VikingColonies.Config
                 "How many items the lumberjack carries before walking back to deliver.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(1, 500));
             ReplantEnabled = config.BindConfig(ConfigNames.LumberjackSection, ConfigNames.Replant, true,
-                "Whether the lumberjack plants a sapling where it cut a tree.",
+                "Whether the lumberjack plants a sapling where they cut a tree.",
                 synced: true);
             ReplantNeedsCultivator = config.BindConfig(ConfigNames.LumberjackSection, ConfigNames.ReplantNeedsCultivator, true,
                 "Whether the lumberjack only replants while a Cultivator is in the Lumberjack's Hut's storage (like the base game's bronze age).",
@@ -297,20 +319,29 @@ namespace VikingColonies.Config
                 "Raises a hut 25 cm while you place it (up to 2 m). Each player's own key.", synced: false);
             LowerHutKey = config.BindConfig(ConfigNames.PlacingSection, ConfigNames.LowerKey, KeyCode.PageDown,
                 "Lowers a hut 25 cm while you place it (down to 2 m). Each player's own key.", synced: false);
+            CreativeMode = config.BindConfig(ConfigNames.CreativeSection, ConfigNames.CreativeMode, CreativeSetting.Auto,
+                "Creative mode (1.5): Auto turns it on in a world with the No build cost setting, and for an admin with debug mode's " +
+                "free building (B): huts placed and upgraded at once, free builders, added settlers. Off: never. On a server, the server's.",
+                synced: true);
+            CreativeLevelUpKey = config.BindConfig(ConfigNames.CreativeSection, ConfigNames.CreativeLevelUpKey, KeyCode.Equals,
+                "In creative, raises the level a colony building goes up at while you place it. Each player's own key.", synced: false);
+            CreativeLevelDownKey = config.BindConfig(ConfigNames.CreativeSection, ConfigNames.CreativeLevelDownKey, KeyCode.Minus,
+                "In creative, lowers that level (down to 'the builder builds it'). Each player's own key.", synced: false);
             CommandFile = config.BindConfig(ConfigNames.DeveloperSection, ConfigNames.CommandFile, false,
                 "For testing the mod: runs VikingColonies console commands written into BepInEx/VikingColonies-commands.txt " +
-                "(only while devcommands is on; answers go to VikingColonies-commands-out.txt). Leave off when playing.", synced: false);
+                "(only in a test world, one whose name starts with VCTest, and while devcommands is on; answers go to " +
+                "VikingColonies-commands-out.txt). Leave off when playing.", synced: false);
             SkipIntro = config.BindConfig(ConfigNames.DeveloperSection, ConfigNames.SkipIntro, false,
                 "Skips the intro film when the game starts.", synced: false);
             AutoStartCharacter = config.BindConfig(ConfigNames.DeveloperSection, ConfigNames.AutoStartCharacter, "",
                 "For testing the mod: with AutoStartWorld, the game goes straight from the main menu into that world with this " +
                 "character (once per launch). Empty = off.", synced: false);
             AutoStartWorld = config.BindConfig(ConfigNames.DeveloperSection, ConfigNames.AutoStartWorld, "",
-                "For testing the mod: the world AutoStartCharacter goes straight into. Only a world whose name contains 'test'. " +
+                "For testing the mod: the world AutoStartCharacter goes straight into. Only a test world, one whose name starts with VCTest. " +
                 "Empty = off.", synced: false);
             VerboseLog = config.BindConfig(ConfigNames.DeveloperSection, ConfigNames.VerboseLog, false,
                 "Writes every settler's step (walks, doors, swings, deliveries) to BepInEx/LogOutput.log, for finding out why " +
-                "something went wrong. Always on in test worlds (a name containing 'test'). Start-up, deaths, the colony's saga, " +
+                "something went wrong. Always on in test worlds (a name starting with VCTest). Start-up, deaths, the colony's saga, " +
                 "warnings and errors are written either way.", synced: false);
         }
     }

@@ -26,6 +26,17 @@ namespace VikingColonies.Tests
             }, new GroundPoint(0f, 0f)));
         }
 
+        [Fact]   // the storehouse (1.5)
+        public void A_full_worker_takes_the_load_to_the_storehouse_before_the_Town_Hall()
+        {
+            var chests = new[] {
+                new ChestRoom { BuildingId = "hall", IsTownHall = true, HasRoom = true, At = new GroundPoint(1, 0) },
+                new ChestRoom { BuildingId = "store", IsStorehouse = true, HasRoom = true, At = new GroundPoint(50, 0) } };
+            Assert.Equal("store", FullChest.Choose(chests, new GroundPoint(0, 0)));
+            chests[1].HasRoom = false;
+            Assert.Equal("hall", FullChest.Choose(chests, new GroundPoint(0, 0)));
+        }
+
         [Fact]
         public void Every_chest_full_waits()
         {

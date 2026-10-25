@@ -44,6 +44,16 @@ namespace VikingColonies.Core
         /// <summary>He left the site: every chest is looked at afresh.</summary>
         public void Leave() => _chests.Clear();
 
+        /// <summary>
+        /// A look for a site: every chest is looked at afresh only when he held a site or takes a new one. A look that finds
+        /// none keeps what he learned (the review round's bug hunt: an idle builder putting leftovers back looked every 5 s,
+        /// each look forgot the chest he couldn't get round to, and he circled his hut for an hour).
+        /// </summary>
+        public void Relook(bool heldSite, bool newSite)
+        {
+            if (heldSite || newSite) Leave();
+        }
+
         private int State(string chest) => chest != null && _chests.TryGetValue(chest, out int state) ? state : 0;
     }
 }

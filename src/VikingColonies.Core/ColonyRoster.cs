@@ -117,16 +117,21 @@ namespace VikingColonies.Core
             return string.Join("\n", lines);
         }
 
+        /// <summary>The most settlers a saved roster is read with, far above any colony's.</summary>
+        public const int MaxDecoded = 1000;
+
         /// <summary>Never throws; lines without a citizen id are skipped.</summary>
         public static ColonyRoster Decode(string text)
         {
             var roster = new ColonyRoster();
             if (string.IsNullOrEmpty(text)) return roster;
+            var seen = new HashSet<string>(System.StringComparer.Ordinal);   // not a look through the roster per line (the review round)
             foreach (string line in text.Split('\n'))
             {
+                if (roster._entries.Count >= MaxDecoded) break;
                 Dictionary<string, string> f = RecordCodec.Decode(line);
                 string id = RecordCodec.Get(f, "id");
-                if (string.IsNullOrEmpty(id) || roster.Get(id) != null) continue;
+                if (string.IsNullOrEmpty(id) || !seen.Add(id)) continue;
                 roster._entries.Add(new RosterEntry
                 {
                     CitizenId = id,

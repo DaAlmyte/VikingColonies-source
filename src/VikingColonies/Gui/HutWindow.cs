@@ -18,11 +18,13 @@ namespace VikingColonies.Gui
     /// </summary>
     internal sealed partial class HutWindow : WindowBase
     {
-        private enum Tab { Hut, Fields, Stock }
+        private enum Tab { Hut, Fields, Stock, ColonyStock, Needs }
 
         private Tab _tab = Tab.Hut;
-        private Button _hutTab, _fieldsTab, _stockTab;
+        private Button _hutTab, _fieldsTab, _stockTab, _colonyStockTab, _needsTab;
         private StockTab _stock;
+        private ColonyStockTab _colonyStock;
+        private NeedsTab _needs;
         private readonly List<GameObject> _hutControls = new List<GameObject>();
         private readonly List<GameObject> _fieldsControls = new List<GameObject>();
         private Text _message;
@@ -61,6 +63,9 @@ namespace VikingColonies.Gui
             _hutTab = UiKit.TopButton(root, L("$vc_tab_hut"), -85f, -62f, 160f, 34f, () => Show(Tab.Hut));
             _fieldsTab = UiKit.TopButton(root, L("$vc_tab_fields"), 85f, -62f, 160f, 34f, () => Show(Tab.Fields));
             _stockTab = UiKit.TopButton(root, L("$vc_tab_stock"), 85f, -62f, 160f, 34f, () => Show(Tab.Stock));
+            _colonyStockTab = UiKit.TopButton(root, L("$vc_tab_colony_stock"), 150f, -62f, 140f, 34f, () => Show(Tab.ColonyStock));   // a storehouse's (1.5)
+            _needsTab = UiKit.TopButton(root, L("$vc_tab_needs"), -55f, -62f, 105f, 34f, () => Show(Tab.Needs));   // a storehouse's (1.5, part 3)
+            foreach (Button tab in new[] { _hutTab, _fieldsTab, _stockTab, _colonyStockTab, _needsTab }) UiKit.Fitted(tab.GetComponentInChildren<Text>());
             _info = UiKit.Label(root, "", -105f, Width - 60f, 235f);
             // The text shrinks to fit rather than run under the buttons (a hut with an order, an upgrade line and a note).
             _info.resizeTextForBestFit = true;
@@ -86,7 +91,7 @@ namespace VikingColonies.Gui
             {
                 ConstructionModule s = Site();
                 if (s == null) return;
-                if (s.IsTakingDown) s.RequestCancelTakeDown();   // review of 0.23
+                if (s.IsTakingDown || s.IsClosingStore) s.RequestCancelTakeDown();   // review of 0.23; a storehouse being emptied (1.5)
                 else s.RequestCancelUpgrade();
             });
             _recall = UiKit.Button(root, L("$vc_recall"), 145f, 180f, 140f, 36f, OnRecall);
@@ -145,6 +150,10 @@ namespace VikingColonies.Gui
                 Windows.StockAdd.Open(hut);
             });
             _stock.Build(root, Width, Height);
+            _colonyStock = new ColonyStockTab(() => Building);
+            _colonyStock.Build(root, Width, Height);
+            _needs = new NeedsTab(() => Building);
+            _needs.Build(root, Width, Height);
         }
 
         protected override void Opened()
@@ -154,6 +163,8 @@ namespace VikingColonies.Gui
             if (_fieldsMessage != null) _fieldsMessage.text = "";
             _fieldsPageIndex = 0;
             _stock?.Reset();
+            _colonyStock?.Reset();
+            _needs?.Reset();
             _takeDownArmedUntil = 0f;   // review of 0.23: "Sure?" carried over to the next hut opened
             Show(Tab.Hut);
         }
@@ -169,20 +180,39 @@ namespace VikingColonies.Gui
         private void Show(Tab tab)
         {
             bool farm = Building != null && Building.TypeId == BuildingTypes.FarmId;
+            bool storehouse = Building != null && Building.IsStorehouse;
             if (tab == Tab.Fields && !farm) tab = Tab.Hut;
+            if ((tab == Tab.ColonyStock || tab == Tab.Needs) && !storehouse) tab = Tab.Hut;
             _tab = tab;
             // Hidden controls first: a list button the hut doesn't have stays hidden by Refresh on the Hut tab.
             foreach (GameObject go in _fieldsControls) go.SetActive(tab == Tab.Fields);
             foreach (GameObject go in _stock.Controls) go.SetActive(tab == Tab.Stock);
+            foreach (GameObject go in _colonyStock.Controls) go.SetActive(tab == Tab.ColonyStock);
+            foreach (GameObject go in _needs.Controls) go.SetActive(tab == Tab.Needs);
             foreach (GameObject go in _hutControls) go.SetActive(tab == Tab.Hut);
-            // Hut and Keep in stock on every hut; Fields between them on a Farm.
+            // Hut and Keep in stock on every hut; Fields between them on a Farm; on a storehouse (1.5) Needs between them and
+            // Stock after them.
             _fieldsTab.gameObject.SetActive(farm);
-            PlaceTab(_hutTab, farm ? -150f : -85f, farm ? 140f : 160f);
-            PlaceTab(_fieldsTab, 0f, 140f);
-            PlaceTab(_stockTab, farm ? 150f : 85f, farm ? 140f : 160f);
+            _colonyStockTab.gameObject.SetActive(storehouse);
+            _needsTab.gameObject.SetActive(storehouse);
+            if (storehouse)
+            {
+                PlaceTab(_hutTab, -165f, 105f);
+                PlaceTab(_needsTab, -55f, 105f);
+                PlaceTab(_stockTab, 55f, 105f);
+                PlaceTab(_colonyStockTab, 165f, 105f);
+            }
+            else
+            {
+                PlaceTab(_hutTab, farm ? -150f : -85f, farm ? 140f : 160f);
+                PlaceTab(_fieldsTab, 0f, 140f);
+                PlaceTab(_stockTab, farm ? 150f : 85f, farm ? 140f : 160f);
+            }
             _hutTab.interactable = tab != Tab.Hut;
             _fieldsTab.interactable = tab != Tab.Fields;
             _stockTab.interactable = tab != Tab.Stock;
+            _colonyStockTab.interactable = tab != Tab.ColonyStock;
+            _needsTab.interactable = tab != Tab.Needs;
             if (tab == Tab.Stock) HuginTips.Show(HuginTips.Stock);
             Refresh();
         }
@@ -197,7 +227,13 @@ namespace VikingColonies.Gui
         private void OnTakeDown()
         {
             ConstructionModule site = Site();
-            if (site == null || !site.MayTakeDown) return;
+            if (site == null || !site.MayTakeDownOnceEmpty) return;
+            StoreTakeDown choice = site.StoreChoice();   // a storehouse (1.5): its couriers empty it first, if they can (part 3)
+            if (choice == StoreTakeDown.EmptyItYourself)
+            {
+                _message.text = string.Format(L("$vc_takedown_store_full"), L(site.StoreHolds()));
+                return;
+            }
             if (Time.time >= _takeDownArmedUntil)
             {
                 _takeDownArmedUntil = Time.time + TakeDownConfirmSeconds;   // the first click asks
@@ -205,7 +241,7 @@ namespace VikingColonies.Gui
                 return;
             }
             _takeDownArmedUntil = 0f;
-            _message.text = L("$vc_takedown_ordered");
+            _message.text = L(choice == StoreTakeDown.CouriersEmptyIt ? "$vc_takedown_emptying" : "$vc_takedown_ordered");
             site.RequestTakeDown();   // after: on the hut's own computer a refusal comes at once and stays shown (review of 0.26)
         }
 
@@ -229,9 +265,20 @@ namespace VikingColonies.Gui
                 _stock.Refresh();
                 return;
             }
+            if (_tab == Tab.ColonyStock)
+            {
+                _colonyStock.Refresh();
+                return;
+            }
+            if (_tab == Tab.Needs)
+            {
+                _needs.Refresh();
+                return;
+            }
             WorkerModule worker = Worker();
             ResidenceModule residence = Building != null ? Building.GetComponent<ResidenceModule>() : null;
-            if (worker == null && residence == null) return;
+            StorehouseModule store = Building != null ? Building.Storehouse : null;
+            if (worker == null && residence == null && store == null) return;
             bool lumberjack = Building.TypeId == BuildingTypes.LumberjackHutId;
             bool forager = Building.TypeId == BuildingTypes.ForagerHutId;
             bool farm = Building.TypeId == BuildingTypes.FarmId;
@@ -273,11 +320,14 @@ namespace VikingColonies.Gui
             string building = site != null ? "\n\n" + site.Describe() : "";
             int level = Building.Level;
             bool hasOrder = site != null && site.Order != null;
-            bool canCancel = hasOrder && (site.CanCancelUpgrade || site.IsTakingDown);
+            bool closing = site != null && site.IsClosingStore;   // a storehouse being emptied for its take-down (1.5)
+            bool canCancel = hasOrder && (site.CanCancelUpgrade || site.IsTakingDown || closing);
             bool showUpgrade = hasOrder && !canCancel && !site.IsUpgrading && !site.IsTakingDown && level < HutLevels.MaxLevel;
             string upgrade = showUpgrade ? "\n\n" + UpgradeLine(site, level) : "";
             if (worker != null && worker.Capacity > 1) line = WorkersLine(worker);   // a Watchtower's guards (1.2)
-            string who = worker != null ? $"\n<b>{L("$vc_worker")}:</b> {line}" : $"\n<b>{L("$vc_beds")}:</b> {residence.Describe()}";
+            string who = worker != null ? $"\n<b>{L(store != null ? "$vc_couriers" : "$vc_worker")}:</b> {line}"
+                : residence != null ? $"\n<b>{L("$vc_beds")}:</b> {residence.Describe()}" : "";
+            if (store != null) who += $"\n<b>{L("$vc_store")}:</b> {string.Format(L("$vc_store_chests"), store.Chests.Count)}";   // a storehouse (1.5)
             string perks = worker != null ? $" — {PerksLine(Building)}" : "";
             _info.text = $"<b>{L("$vc_level")}:</b> {level}{perks}{who}{replant}{work}{building}{upgrade}{colony}";
             if (worker != null) UiKit.SetLabel(_autoHire, L(worker.AutoHire ? "$vc_autohire_on" : "$vc_autohire_off"));
@@ -285,10 +335,10 @@ namespace VikingColonies.Gui
             _recall.interactable = mayManage && state == WorkerModule.WorkerState.Loaded;
             _build.gameObject.SetActive(site != null && site.Order == null);
             _cancelUpgrade.gameObject.SetActive(canCancel);
-            if (canCancel) UiKit.SetLabel(_cancelUpgrade, L(site.IsTakingDown ? "$vc_takedown_cancel" : "$vc_upgrade_cancel"));
+            if (canCancel) UiKit.SetLabel(_cancelUpgrade, L(site.IsTakingDown || closing ? "$vc_takedown_cancel" : "$vc_upgrade_cancel"));
             _replant.gameObject.SetActive(lumberjack);
             _handOver.gameObject.SetActive(Building.TypeId == BuildingTypes.BuilderHutId);
-            bool mayTakeDown = site != null && site.MayTakeDown && !site.IsTakingDown;
+            bool mayTakeDown = site != null && site.MayTakeDownOnceEmpty && !site.IsTakingDown && !closing;   // a storehouse's full chests: the click says so
             _takeDown.gameObject.SetActive(mayTakeDown);
             _takeDown.interactable = mayManage;
             UiKit.SetLabel(_takeDown, L(Time.time < _takeDownArmedUntil ? "$vc_takedown_sure" : "$vc_takedown"));
@@ -392,6 +442,8 @@ namespace VikingColonies.Gui
                 return string.Format(L("$vc_perks_forager"), ForagerJob.WorkRadiusOf(hut).ToString("0"), rows);
             if (hut.TypeId == BuildingTypes.FarmId)
                 return string.Format(L("$vc_perks_farm"), FieldAssignment.Capacity(level), rows);
+            if (hut.IsStorehouse)
+                return string.Format(L("$vc_perks_storehouse"), Jobs.CourierJob.LoadAt(hut), rows);
             if (hut.TypeId == BuildingTypes.WatchtowerId)
                 return string.Format(L("$vc_perks_watchtower"), GuardLevels.Radius(level).ToString("0"), rows);
             return string.Format(L("$vc_perks_builder"), axe, ToolName(ToolKind.Pickaxe, HutLevels.ToolTierCap(ToolKind.Pickaxe, level)), rows);
@@ -476,5 +528,21 @@ namespace VikingColonies.Gui
         }
 
         private ConstructionModule Site() => Building != null ? Building.GetComponent<ConstructionModule>() : null;
+
+        /// <summary>Creative mode (1.5): Build now, Upgrade now, Repair now, and Supply on a Builder's Hut.</summary>
+        protected override void BuildCreative(CreativeBar bar)
+        {
+            bar.Add("$vc_creative_build", "$vc_creative_build_hover", () => Site()?.RequestCreative(CreativeAction.Build), () =>
+            {
+                BuildOrderRecord order = Site()?.Order;
+                return order != null && order.State != BuildState.Done && order.Kind != OrderKind.Remove && !Site().GoingUpNow;
+            });
+            bar.Add("$vc_creative_upgrade", "$vc_creative_upgrade_hover", () => Site()?.RequestCreative(CreativeAction.Upgrade),
+                () => Site() != null && Site().IsBuilt && !Site().IsTakingDown && Building.Level < HutLevels.MaxLevel);
+            bar.Add("$vc_creative_repair", "$vc_creative_repair_hover", () => Site()?.RequestCreative(CreativeAction.Repair),
+                () => Site() != null && Site().IsBuilt && !Site().IsTakingDown);
+            bar.Add("$vc_creative_supply", "$vc_creative_supply_hover", () => Site()?.RequestCreative(CreativeAction.Supply),
+                () => Building != null && Building.TypeId == BuildingTypes.BuilderHutId && Colony.Creative.SupplyNeeded());
+        }
     }
 }

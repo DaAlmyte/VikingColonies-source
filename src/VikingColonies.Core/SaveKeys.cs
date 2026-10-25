@@ -89,9 +89,21 @@ namespace VikingColonies.Core
         public const string FarmPiece = "vc_hut_farm";
         public const string WatchtowerPiece = "vc_hut_watchtower";
         public const string FieldMarkerPiece = "vc_field_marker";
+        public const string StorehouseType = "storehouse";        // 1.5
+        public const string StorehousePiece = "vc_hut_storehouse";
+        public const string CourierJob = "courier";               // 1.5, the storehouse's part 2
+        public const string CourierTasks = "vc_courier_tasks";    // the storehouse's: who carries what
+        /// <summary>On a hut: "Couriers take the rest" turned off (1.5, part 3); absent: on.</summary>
+        public const string CouriersLeave = "vc_couriers_leave";
+        /// <summary>On a storehouse: its take-down is ordered and its couriers are emptying it first (1.5, part 3).</summary>
+        public const string StoreClosing = "vc_store_closing";
+        /// <summary>On a storehouse: no chest inside it has an empty slot, as its owner's couriers' plan last saw (1.5.0).</summary>
+        public const string StoreFull = "vc_store_full";
         /// <summary>The Town Hall's camp (huts round 2): its level (0 until built), and why its next level waits.</summary>
         public const string CampLevel = "vc_camp_level";
         public const string CampWaits = "vc_camp_waits";
+        /// <summary>The Town Hall's ZDO: 1 when its colony is spared its meals in creative (1.5; only while the world has No build cost).</summary>
+        public const string ColonyEatOff = "vc_colony_eat_off";
 
         // Jobs (saved in a settler's record).
         public const string LumberjackJob = "lumberjack";

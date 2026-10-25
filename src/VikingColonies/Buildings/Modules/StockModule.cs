@@ -12,6 +12,7 @@ namespace VikingColonies.Buildings
     {
         private const string RpcSetKeep = "vc_SetKeep";
         private const string RpcMessage = "vc_StockMessage";   // its own: only job huts have WorkerModule's (0.24)
+        private const string RpcSetTakeRest = "vc_SetTakeRest";
 
         private ColonyBuilding _building;
         private ZNetView _nview;
@@ -23,6 +24,7 @@ namespace VikingColonies.Buildings
             if (_nview == null || !_nview.IsValid()) return;
             _nview.Register<string>(RpcSetKeep, OnSet);
             _nview.Register<string>(RpcMessage, OnMessage);
+            _nview.Register<bool>(RpcSetTakeRest, OnSetTakeRest);
         }
 
         private ZDO Zdo => _nview != null && _nview.IsValid() ? _nview.GetZDO() : null;
@@ -40,6 +42,31 @@ namespace VikingColonies.Buildings
                 bool big = IsTownHall || (_building != null && _building.TypeId == BuildingTypes.LonghouseId);
                 return StockList.MaxEntries(big, IsTownHall || _building == null ? 1 : _building.Level);
             }
+        }
+
+        /// <summary>
+        /// "Couriers take the rest" (1.5, part 3): on unless the player turned it off. Off, couriers take nothing from its
+        /// chest, neither its surplus nor for another building's need: it stays as the player arranged it.
+        /// </summary>
+        public bool CouriersTakeRest => !(Zdo != null && Zdo.GetBool(SaveKeys.CouriersLeave, false));
+
+        public void RequestSetTakeRest(bool on)
+        {
+            if (_nview != null && _nview.IsValid()) _nview.InvokeRPC(RpcSetTakeRest, on);
+        }
+
+        /// <summary>Test tool (vc_storehousetest): the switch as if <paramref name="sender"/> asked for it.</summary>
+        internal void SetTakeRestAsForTest(long sender, bool on) => OnSetTakeRest(sender, on);
+
+        private void OnSetTakeRest(long sender, bool on)
+        {
+            if (_nview == null || !_nview.IsOwner()) return;
+            if (!ColonyPermissions.SenderMayManage(_building, sender))
+            {
+                _nview.InvokeRPC(sender, RpcMessage, "$vc_not_your_colony");
+                return;
+            }
+            _nview.GetZDO().Set(SaveKeys.CouriersLeave, !on);
         }
 
         public void RequestSet(StockList list)

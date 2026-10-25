@@ -33,6 +33,7 @@ namespace VikingColonies.Jobs
         public const string ForagerId = SaveKeys.ForagerJob;
         public const string FarmerId = SaveKeys.FarmerJob;
         public const string GuardId = SaveKeys.GuardJob;
+        public const string CourierId = SaveKeys.CourierJob;
 
         public static readonly JobDefinition Lumberjack = new JobDefinition(LumberjackId, "$vc_lumberjack",
             BuildingTypes.LumberjackHutId, (citizen, ai, hut) => new LumberjackJob(citizen, ai, hut));
@@ -50,7 +51,11 @@ namespace VikingColonies.Jobs
         public static readonly JobDefinition Guard = new JobDefinition(GuardId, "$vc_guard",
             BuildingTypes.WatchtowerId, (citizen, ai, hut) => new GuardJob(citizen, ai, hut));
 
-        private static readonly JobDefinition[] s_jobs = { Lumberjack, Builder, Forager, Farmer, Guard };
+        /// <summary>The storehouse's courier (1.5).</summary>
+        public static readonly JobDefinition Courier = new JobDefinition(CourierId, "$vc_courier",
+            BuildingTypes.StorehouseId, (citizen, ai, hut) => new CourierJob(citizen, ai, hut));
+
+        private static readonly JobDefinition[] s_jobs = { Lumberjack, Builder, Forager, Farmer, Guard, Courier };
 
         public static JobDefinition Get(string id) => string.IsNullOrEmpty(id) ? null : s_jobs.FirstOrDefault(j => j.Id == id);
 

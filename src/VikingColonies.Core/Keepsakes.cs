@@ -68,11 +68,18 @@ namespace VikingColonies.Core
 
         public string Get(string citizenId) => citizenId != null && _byId.TryGetValue(citizenId, out string kept) ? kept : null;
 
-        /// <summary>Keeps <paramref name="keepsake"/> for the citizen; true when it is new or changed.</summary>
+        /// <summary>
+        /// Keeps <paramref name="keepsake"/> for the citizen; true when it is new or changed. Never one of an older life than
+        /// the one kept (the review round of 2026-10-23: an old copy's record put back the lower life number, and then
+        /// neither body counted as the old copy, so both lived).
+        /// </summary>
         public bool Set(string citizenId, string keepsake)
         {
             if (string.IsNullOrEmpty(citizenId) || string.IsNullOrEmpty(keepsake)) return false;
             if (_byId.TryGetValue(citizenId, out string old) && old == keepsake) return false;
+            if (old != null && CitizenRecord.Decode(keepsake) is CitizenRecord now && CitizenRecord.Decode(old) is CitizenRecord before
+                && now.Life < before.Life)
+                return false;
             _byId[citizenId] = keepsake;
             return true;
         }

@@ -30,6 +30,7 @@ namespace VikingColonies.Buildings
         private const string RpcBringBack = "vc_BringBack", RpcBringBackResult = "vc_BringBackResult";
         private const string RpcAlarm = "vc_Alarm";
         private const string RpcRaise = "vc_RaiseHall", RpcRaiseResult = "vc_RaiseHallResult";
+        private const string RpcCreativeHall = "vc_CreativeHall";   // creative mode (1.5): HallCreativeAction and a value, checked by the owner
         /// <summary>A trophy counts as shown on an item stand this near the Town Hall (1.4).</summary>
         public const float TrophyRange = 10f;
 
@@ -126,6 +127,7 @@ namespace VikingColonies.Buildings
                 _nview.Register<bool, Vector3>(RpcAlarm, RPC_Alarm);
                 _nview.Register<int>(RpcRaise, RPC_Raise);
                 _nview.Register<string, string>(RpcRaiseResult, RPC_RaiseResult);
+                _nview.Register<int, int>(RpcCreativeHall, RPC_CreativeHall);
             }
             ApplyLevel();
         }
@@ -304,6 +306,91 @@ namespace VikingColonies.Buildings
             ApplyLevel();   // here at once (the effect and the message); other computers follow within 2 s
             GetComponent<Construction.ConstructionModule>()?.CampSoon();   // the camp's next level (huts round 2)
             Answer(sender, "$vc_hall_raised_you", next.ToString());
+        }
+
+        /// <summary>Creative mode (1.5): a Town Hall request to its owner, who checks it (Set level, Add settlers, meals off).</summary>
+        public void RequestCreative(HallCreativeAction action, int value)
+        {
+            if (_nview != null && _nview.IsValid() && _building != null) _nview.InvokeRPC(RpcCreativeHall, (int)action, value);
+        }
+
+        private void RPC_CreativeHall(long sender, int action, int value)
+        {
+            if (_nview == null || !_nview.IsValid() || _building == null || !_nview.IsOwner() || !System.Enum.IsDefined(typeof(HallCreativeAction), action)) return;
+            var what = (HallCreativeAction)action;
+            CreativeRefusal refusal = Colony.Creative.Refusal(_building, sender);
+            if (refusal != CreativeRefusal.None)
+            {
+                Log.Info($"Colony {_building.ColonyId}: creative {what} {value} from {sender}: refused ({refusal})");
+                Answer(sender, Colony.Creative.RefusalWords(refusal), "");
+                return;
+            }
+            Log.Info($"Colony {_building.ColonyId}: creative {what} {value} from {sender}");
+            switch (what)
+            {
+                case HallCreativeAction.SetLevel:
+                    int level = TownHallLevels.Clamp(value);
+                    _building.SetLevel(level);   // down too: the numbers only, nothing built goes (the camp never goes down)
+                    ApplyLevel();
+                    GetComponent<Construction.ConstructionModule>()?.CampSoon();
+                    Answer(sender, "$vc_creative_level_set", level.ToString());
+                    break;
+                case HallCreativeAction.AddSettlers:
+                    int cap = System.Math.Min(ColonyConfig.MaxSettlers.Value, NewcomerRules.HallSettlers);
+                    int add = CreativeRules.SettlersToAdd(System.Math.Max(1, value), Needs().Settlers, cap);
+                    if (add == 0)
+                    {
+                        Answer(sender, "$vc_creative_cap", "");
+                        break;
+                    }
+                    var rng = new System.Random();
+                    for (int i = 0; i < add; i++)
+                    {
+                        Vector3 at = transform.position + Quaternion.Euler(0f, i * 360f / add, 0f) * Vector3.forward * (3f + i % 3);
+                        at.y = ZoneSystem.instance.GetGroundHeight(at) + 0.5f;
+                        Citizen citizen = CitizenPrefab.Spawn(at, Quaternion.identity);
+                        if (citizen == null) break;   // the body didn't load (the start-up check says so)
+                        citizen.InitNew(_building.ColonyId, transform.position, rng);
+                    }
+                    Answer(sender, add < value ? "$vc_creative_added_cap" : "$vc_creative_added", add.ToString());
+                    break;
+                case HallCreativeAction.EatOff:
+                    _nview.GetZDO().Set(SaveKeys.ColonyEatOff, value == 1 ? 1 : 0);
+                    Answer(sender, value == 1 ? "$vc_creative_eat_off" : "$vc_creative_eat_on", "");
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Creative mode (1.5): every open order of this colony finished at once, two a second, on the asking computer: each
+        /// building's owner checks this player's request as for Build now.
+        /// </summary>
+        public void FinishAllNow()
+        {
+            if (_building == null) return;
+            var sites = new List<Construction.ConstructionModule>();
+            var candidates = new List<FinishCandidate>();
+            foreach (Construction.ConstructionModule site in Construction.ConstructionModule.All)
+            {
+                if (site == null || !site.IsValid || site.Building == null || site.Building.ColonyId != _building.ColonyId) continue;
+                BuildOrderRecord order = site.Order;
+                if (order == null) continue;
+                sites.Add(site);
+                candidates.Add(new FinishCandidate { Created = order.Created, IsCamp = site.IsCamp, Kind = order.Kind,
+                    Done = order.State == BuildState.Done, Paused = order.Paused });
+            }
+            IList<int> sequence = CreativeRules.FinishAllSequence(candidates);
+            RPC_RaiseResult(0L, sequence.Count > 0 ? "$vc_creative_finishing" : "$vc_creative_nothing", sequence.Count.ToString());
+            if (sequence.Count > 0) StartCoroutine(FinishInTurn(sequence.Select(i => sites[i]).ToList()));
+        }
+
+        private static System.Collections.IEnumerator FinishInTurn(List<Construction.ConstructionModule> sites)
+        {
+            foreach (Construction.ConstructionModule site in sites)
+            {
+                if (site != null && site.IsValid) site.RequestCreative(CreativeAction.Build);
+                yield return new WaitForSeconds(CreativeRules.FinishAllGapSeconds);
+            }
         }
 
         private void Answer(long sender, string token, string arg)
@@ -904,6 +991,13 @@ namespace VikingColonies.Buildings
             Citizen citizen = CitizenPrefab.Spawn(hallPos + offset + Vector3.up * 0.5f, Quaternion.identity);
             if (citizen == null) return "$vc_no_settler_body";   // his keepsake stays as it was
             citizen.InitRestored(kept, _building.ColonyId, hallPos);
+            // His keepsake has the new life at once (the review round of 2026-10-23: kept only later, by the roster's next
+            // look, an old copy seen first put back the lower life, and neither body counted as the old copy).
+            if (_nview != null && _nview.IsValid() && _nview.IsOwner())
+            {
+                Keepsakes keepsakes = Keepsakes.Decode(_nview.GetZDO().GetString(KeepsakesKey, ""));
+                if (keepsakes.Set(citizenId, Keepsake.Of(kept))) _nview.GetZDO().Set(KeepsakesKey, keepsakes.Encode());
+            }
             Record("returned", kept.Name);
             Log.Event($"Colony {_building.ColonyId}: {kept.Name} was brought back from the Town Hall's keepsake");
             _rosterDirty = true;

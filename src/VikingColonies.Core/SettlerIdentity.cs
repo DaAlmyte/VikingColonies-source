@@ -257,6 +257,7 @@ namespace VikingColonies.Core
             ["farmer"] = new[] { "ArmorRagsChest", "ArmorLeatherLegs" },
             ["forager"] = new[] { "ArmorRagsChest", "ArmorTrollLeatherLegs" },
             ["guard"] = new[] { "ArmorLeatherChest", "ArmorLeatherLegs", "CapeDeerHide" },
+            ["courier"] = new[] { "ArmorRagsChest", "ArmorLeatherLegs", "CapeDeerHide" },   // 1.5
         };
 
         public static string[] For(string jobId) => jobId != null && s_byJob.TryGetValue(jobId, out string[] items) ? items : s_rags;

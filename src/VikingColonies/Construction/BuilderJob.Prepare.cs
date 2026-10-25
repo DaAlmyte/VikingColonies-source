@@ -66,6 +66,8 @@ namespace VikingColonies.Construction
         private bool _toldNoShaper;
         private bool _keepCarry;
         private BuildState _asked = BuildState.Waiting;
+        private float _prepareAskedAt = -1000f;
+        private const float PrepareAskSeconds = 5f;
         private ItemDrop.ItemData _toolCopy;
         private string _toolPrefab = "";
         private ToolKind _toolKind;
@@ -74,6 +76,19 @@ namespace VikingColonies.Construction
         /// <summary>True while he prepares the site (or waits for what he needs to); false once he may build.</summary>
         private bool Prepare(BuildOrderRecord order, float dt)
         {
+            // Creative (1.5, a No build cost world): the site is cleared and flattened at once by its owner; he builds after.
+            if (Colony.Creative.BuildersFree() && (order.State == BuildState.Clearing || order.State == BuildState.Shaping))
+            {
+                Ai.Idle();
+                PutToolAway();
+                if (Time.time >= _prepareAskedAt + PrepareAskSeconds)
+                {
+                    _prepareAskedAt = Time.time;
+                    Log.Info($"{Citizen.CitizenName}: the {_site.Building.TypeId} site is prepared at once (creative)");
+                    _site.RequestPrepareNow();
+                }
+                return true;
+            }
             switch (order.State)
             {
                 case BuildState.Waiting:
@@ -183,6 +198,7 @@ namespace VikingColonies.Construction
             SiteScanner.Scan(_siteFootprint, bottom, floor + 12f, _site.Building, null, _site.MatchesPlan, items, _things, _siteBlockers,
                 null, null, _heldRocks);
             SiteScanner.AddDoorLandings(_site.DoorLandings, bottom, floor + 12f, _site.Building, _site.MatchesPlan, _things);
+            if (order != null && !SiteRules.ClearsPlants(order.Kind)) _things.RemoveAll(t => t.Kind == ClearKind.Plant);   // a repair: the yard's crops stay
             _things.RemoveAll(t => _giveUps.Left(t.Key, InTheBuilding(t)));   // left after a few tries, outside where the building goes
             // A rock another building rests on, where the building itself goes: left whole, it holds the site and is named
             // (the whole-mod review of 1.4.1's builder, I1: the hut went up into it, and the window said nothing).

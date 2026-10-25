@@ -54,6 +54,8 @@ namespace VikingColonies.Jobs
         private readonly StuckDetector _backStuck = new StuckDetector(0.5f, 3);
         /// <summary>Monsters he gave up on (he couldn't land a blow), left alone a while (review of 1.1).</summary>
         private readonly TargetBlacklist _givenUp = new TargetBlacklist(GuardRules.IgnoreSeconds);
+        /// <summary>His target is a weak monster about in the colony, not one attacking: "Driving off" (1.5.0).</summary>
+        private bool _drivingOff;
         private readonly ShieldGuard _shieldGuard = new ShieldGuard();
         private ItemDrop.ItemData _weapon, _shield, _ammo;
         private string _weaponPrefab = "", _shieldPrefab = "", _ammoPrefab = "";
@@ -210,7 +212,7 @@ namespace VikingColonies.Jobs
                     }
                     break;
                 case GuardAction.Fight:
-                    Citizen.Status = "$vc_status_fighting " + _target.m_name;
+                    Citizen.Status = (_drivingOff ? "$vc_status_driving_off " : "$vc_status_fighting ") + _target.m_name;
                     if (_ranged) Shoot();
                     else Fight();
                     break;
@@ -615,12 +617,15 @@ namespace VikingColonies.Jobs
             s_seen.Clear();
             // While the alarm sounds: round where it was sounded, and round his tower for calls for help (1.4's review).
             if (alarm) Character.GetCharactersInRange(alarmAt, ColonyAlarm.Radius, s_nearby);
-            Character.GetCharactersInRange(towerAt, alarm ? help : Mathf.Max(watch, help), s_nearby);
+            // Off alarm, out to the watch + 30 m: weak monsters about in the colony are his too (1.5.0, HuntsInColony).
+            Character.GetCharactersInRange(towerAt, alarm ? help : Mathf.Max(watch + GuardRules.RaidCallReach, help), s_nearby);
             var candidates = new List<TargetCandidate>();
             var who = new List<Character>();
             var leash = new List<KeyValuePair<Vector3, float>>();
+            var driving = new List<bool>();
             Vector3 me = Citizen.transform.position;
             string colony = Citizen.ColonyId;
+            int hallLevel = HallRules.LevelOf(colony);
             foreach (Character c in s_nearby)
             {
                 if (c == null || c == Citizen.Body || !s_seen.Add(c)) continue;
@@ -635,13 +640,20 @@ namespace VikingColonies.Jobs
                     if (answer == AlarmAnswer.None) continue;
                     leash.Add(answer == AlarmAnswer.Alarm ? new KeyValuePair<Vector3, float>(alarmAt, ColonyAlarm.Radius)
                                                           : new KeyValuePair<Vector3, float>(towerAt, help));
+                    driving.Add(false);
                 }
                 else
                 {
                     float nearest = NearestOfColony(at);
                     bool inWatch = GuardRules.InWatch(fromTower, patrol, nearest, raid);
-                    if (!inWatch && !GuardRules.Answers(fromTower, patrol, nearest, raid, facts.AttackingColony, Inside(c, at, colony, facts.AttackingColony), help)) continue;
-                    leash.Add(new KeyValuePair<Vector3, float>(towerAt, inWatch ? watch : help));
+                    bool answers = inWatch || GuardRules.Answers(fromTower, patrol, nearest, raid, facts.AttackingColony, Inside(c, at, colony, facts.AttackingColony), help);
+                    // 1.5.0: a weak monster about in the colony, before it bites anyone (a calm Boar never: IsTarget left it out);
+                    // part of settlers fighting back, so off with its setting (its review).
+                    bool drives = !answers && ColonyConfig.SettlersFightBack.Value && GuardRules.HuntsInColony(WeakRules.IsWeakFor(Utils.GetPrefabName(c.gameObject), c.GetLevel(), hallLevel),
+                        facts.PassiveAnimal, ColonyAreas.ColonyAt(at) == colony, AlertedOrHunting(c), fromTower, watch);
+                    if (!answers && !drives) continue;
+                    leash.Add(new KeyValuePair<Vector3, float>(towerAt, inWatch ? watch : drives ? watch + GuardRules.RaidCallReach : help));
+                    driving.Add(drives);
                 }
                 candidates.Add(new TargetCandidate { Distance = Utils.DistanceXZ(at, me), AttackingColony = facts.AttackingColony });
                 who.Add(c);
@@ -655,7 +667,9 @@ namespace VikingColonies.Jobs
                                             $"{(candidates[pick].AttackingColony ? ", attacking someone of the colony" : "")}" +
                                             $"{(alarm && leash[pick].Key == alarmAt ? ", the alarm" : leash[pick].Value > watch + 0.01f || alarm ? ", a call for help" : "")})");
             if (chosen != _target && raid) CallRaiders(chosen);
+            if (chosen != _target && driving[pick]) Log.Info($"{Citizen.CitizenName} drives off the {chosen.m_name}: about in the colony");
             SetTarget(chosen);
+            _drivingOff = driving[pick];
             _leashCentre = leash[pick].Key;
             _leashRadius = leash[pick].Value;
         }
@@ -793,8 +807,16 @@ namespace VikingColonies.Jobs
             return false;
         }
 
+        /// <summary>Alerted or hunting someone (a monster's brain): about, not asleep or wandering (1.5.0, HuntsInColony).</summary>
+        private static bool AlertedOrHunting(Character c)
+        {
+            MonsterAI ai = c.GetComponent<MonsterAI>();
+            return ai != null && (ai.IsAlerted() || ai.GetTargetCreature() != null);
+        }
+
         private void ForgetTarget()
         {
+            _drivingOff = false;
             if (!ReferenceEquals(_target, null)) SwingLog.EndSwing(Citizen);
             _target = null;
         }
@@ -972,8 +994,9 @@ namespace VikingColonies.Jobs
                 }
                 if (!Ai.GoTo(chest.transform.position, ChestReach)) return true;
                 Ai.Idle();
-                int spare = chest.Storage.Spare(_ballistaAmmo);   // what the chest keeps stays (Keep in stock)
-                while (Citizen.InHand.Count(_ballistaAmmo) < Mathf.Min(_ballistaWant, spare) && chest.Storage.TryTakeItem(_ballistaAmmo, Citizen.InHand)) { }
+                int spare = chest.Stores.Sum(store => store.Spare(_ballistaAmmo));   // what the chest keeps stays (Keep in stock)
+                foreach (StorageModule store in chest.Stores)   // a storehouse: chest by chest (1.5)
+                    while (Citizen.InHand.Count(_ballistaAmmo) < Mathf.Min(_ballistaWant, spare) && store.TryTakeItem(_ballistaAmmo, Citizen.InHand)) { }
                 Citizen.SaveCarry();
                 if (Citizen.InHand.Count(_ballistaAmmo) == 0)
                 {
@@ -1025,7 +1048,7 @@ namespace VikingColonies.Jobs
                     foreach (ColonyBuilding b in ColonyBuilding.All)
                     {
                         if (b == null || !b.IsValid || b.ColonyId != colony || b.Storage == null) continue;
-                        int s = b.Storage.Spare(name);
+                        int s = b.Stores.Sum(store => store.Spare(name));   // a storehouse: its whole store (1.5)
                         if (s <= 0) continue;
                         spare += s;
                         if (nearest == null || Utils.DistanceXZ(b.transform.position, towerAt) < Utils.DistanceXZ(nearest.transform.position, towerAt)) nearest = b;

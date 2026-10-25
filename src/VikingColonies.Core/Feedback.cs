@@ -46,7 +46,7 @@ namespace VikingColonies.Core
         /// that prefix: a player's world called "Greatest" or "Contest" is asked as any other (the review of 1.4.2).
         /// </summary>
         public static bool OurTestWorld(string world) =>
-            !string.IsNullOrEmpty(world) && world.StartsWith("VCTest", StringComparison.OrdinalIgnoreCase);
+            TestWorlds.IsTestWorld(world);
     }
 
     /// <summary>

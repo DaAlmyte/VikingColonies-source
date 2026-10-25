@@ -16,7 +16,7 @@ namespace VikingColonies.AI
     /// The settler's brain stem. Runs only on the computer that owns the settler: checks colony and workplace
     /// still exist, then runs the job's brain or the jobless routine.
     /// </summary>
-    public class CitizenAI : BaseAI
+    public partial class CitizenAI : BaseAI
     {
         private const float MembershipCheckSeconds = 2f;
         private const float ThreatCheckSeconds = 0.5f;
@@ -65,6 +65,8 @@ namespace VikingColonies.AI
         private Citizen _citizen;
         private Job _job;
         private string _jobFor = "";
+        /// <summary>The hut object the job was made for: one made anew (its area loaded again) gets a new job.</summary>
+        private ColonyBuilding _jobHut;
         private bool _hadOwnership;
         private float _dt;
         private float _checkTimer;
@@ -193,6 +195,7 @@ namespace VikingColonies.AI
             if (!_hadOwnership)
             {
                 _citizen.LoadRecord();   // the previous owner may have changed it
+                _finishing.Reset();   // an evening on another computer isn't this one's (the review round's review)
                 _citizen.ApplyAppearance();   // now that this computer owns it, save its looks for everyone
                 // Another computer ran him meanwhile: where he was going indoors, and whether he had settled, is stale.
                 _refugeId = "";
@@ -213,6 +216,7 @@ namespace VikingColonies.AI
                 _hadOwnership = true;   // last: an error above runs all of it again next time (review of 0.25)
                 LogMovementSettings();   // a note for the log only (once)
             }
+            _citizen.SaveStatusIfDue();   // after the record is this computer's own again (its review: before, an old copy was saved)
             if (Time.time >= _clothesCheckAt)
             {
                 // The game puts no clothes on during a swing: fired mid-swing, he'd stay bare (review M1).
@@ -263,6 +267,11 @@ namespace VikingColonies.AI
             bool onDuty = OnGuardDuty();   // an armed guard (1.1): no breakfast table, evening, shelter or bed
             if (onDuty && _breakfast.Running) _breakfast.Interrupt();   // gone on duty mid-breakfast (1.2): he eats from the chests
             _meals.Tick(_citizen, dt, _breakfast.Serves && !onDuty);   // once a day, from the colony's chests (at the table, 0.15)
+            if (Time.time >= _healAt)
+            {
+                _healAt = Time.time + Healing.StepSeconds;
+                HealStep();   // every settler heals (1.5.0)
+            }
             Perf.Stop("settler: meals", timer);
 
             _threatTimer -= dt;
@@ -270,12 +279,13 @@ namespace VikingColonies.AI
             {
                 _threatTimer = ThreatCheckSeconds;
                 timer = Perf.Start();
-                UpdateThreat();
+                UpdateThreat(onDuty);
                 Perf.Stop("settler: watching for monsters", timer);
             }
             // The red "!" shows exactly while fleeing; the game only ever clears it for monster brains.
             bool fleeing = _flee.Fleeing && !onDuty;
             if (IsAlerted() != fleeing) SetAlerted(fleeing);
+            if (Fighting && !onDuty && FightOff()) return true;   // a weak creature fought off (1.5.0): the job waits
             bool alarm = TownHallModule.ColonyAlarmFor(_citizen.ColonyId, out _);   // the Town Hall's alarm (1.3): in, as in a raid
             IndoorReason reason = GuardDuty.Indoors(IndoorRules.Reason(_flee.Fleeing, RaidAtColony() || alarm, ColonyConfig.SettlersShelterInRaids.Value || alarm,
                 EnvMan.IsNight(), ColonyConfig.SettlersGoIndoorsAtNight.Value), onDuty);
@@ -333,7 +343,7 @@ namespace VikingColonies.AI
                 {
                     if (!_eveningBegun)
                     {
-                        if (_job != null && _job.FinishingBeforeNight(dt)) return true;
+                        if (FinishingBeforeNight(dt)) return true;
                         _eveningBegun = true;
                         _job?.OnNight();   // he puts things away for the day (the builder leaves his site)
                     }
@@ -357,7 +367,7 @@ namespace VikingColonies.AI
                 // Night: the job first finishes what it must (the lumberjack's load), then he goes in; no hut: as before.
                 if (reason == IndoorReason.Night)
                 {
-                    if (_job != null && _job.FinishingBeforeNight(dt))
+                    if (FinishingBeforeNight(dt))
                     {
                         // Seen: a lumberjack's slow delivery used up his time to get into his Longhouse, and he gave it up.
                         _refuge.Wait(Time.time);   // that clock starts once he's free to go in
@@ -365,6 +375,7 @@ namespace VikingColonies.AI
                     }
                     if (GoIndoors()) return true;
                 }
+                else _finishing.Reset();   // the day: the next evening's errand is waited for again
                 Work(dt);
             }
             catch (Exception e)
@@ -373,6 +384,20 @@ namespace VikingColonies.AI
             }
             return true;
         }
+
+        /// <summary>
+        /// The job's last errand before night, waited for a minute at most; then in they go with it (the review round of
+        /// 2026-10-23: one who couldn't reach the hut with a load stood out all night).
+        /// </summary>
+        private bool FinishingBeforeNight(float dt)
+        {
+            if (_job == null || !_finishing.Asks) return false;
+            bool finishing = _finishing.Wait(_job.FinishingBeforeNight(dt), Time.time);
+            if (!_finishing.Asks) Log.Info($"{_citizen.CitizenName} gave up their last errand before night after {FinishingClock.Limit:0} s; they go in with what they hold");
+            return finishing;
+        }
+
+        private readonly FinishingClock _finishing = new FinishingClock();
 
         /// <summary>The self-test makes his next work tick fail once, to check he recovers.</summary>
         internal void FailWorkOnceForTest() => _failForTest = true;
@@ -423,11 +448,14 @@ namespace VikingColonies.AI
             if (workplace != null && job != null)
             {
                 string key = record.Workplace + "/" + record.Job;
-                if (_job == null || _jobFor != key)
+                // Its hut made anew too (the review round of 2026-10-23: its area unloaded and loaded again while he was
+                // indoors or at the fire, the job kept the old, destroyed hut and he stood "Unemployed" for good).
+                if (_job == null || _jobFor != key || !ReferenceEquals(_jobHut, workplace))
                 {
                     DropJob();
                     _job = job.CreateBrain(_citizen, this, workplace);
                     _jobFor = key;
+                    _jobHut = workplace;
                 }
                 _job.Tick(dt);
             }
@@ -464,6 +492,7 @@ namespace VikingColonies.AI
             Job job = _job;
             _job = null;   // gone even if stopping it fails, so it isn't stopped again on every tick
             _jobFor = "";
+            _jobHut = null;
             _doors?.Reset();
             try
             {
@@ -539,9 +568,12 @@ namespace VikingColonies.AI
             }
         }
 
-        private void UpdateThreat()
+        private void UpdateThreat(bool onDuty)
         {
-            float nearest = float.PositiveInfinity;
+            float nearest = float.PositiveInfinity, nearestStrong = float.PositiveInfinity;
+            Character nearestOne = null;
+            int hall = HallRules.LevelOf(_citizen.ColonyId);
+            bool fightBack = ColonyConfig.SettlersFightBack.Value;
             bool passive = ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(GlobalKeys.PassiveMobs);
             s_nearby.Clear();
             Character.GetCharactersInRange(transform.position, FleeTracker.WatchDistance, s_nearby);
@@ -549,15 +581,63 @@ namespace VikingColonies.AI
             {
                 if (other == null) continue;
                 float distance = Vector3.Distance(transform.position, other.transform.position);
-                if (distance >= nearest || !IsThreat(_citizen.Body, other, distance, passive)) continue;
+                if (!IsThreat(_citizen.Body, other, distance, passive, fightBack ? hall : 0)) continue;
+                // Something too strong for the colony's age about: today's flee, never a fight beside it (1.5.0).
+                if (!WeakRules.IsWeakFor(Utils.GetPrefabName(other.gameObject), other.GetLevel(), hall)) nearestStrong = Mathf.Min(nearestStrong, distance);
+                if (distance >= nearest) continue;
                 nearest = distance;
+                nearestOne = other;
                 _threatPos = other.transform.position;
                 _hasThreatPos = true;
                 _threatName = other.GetHoverName();
             }
             bool wasFleeing = _flee.Fleeing;
-            _flee.Update(nearest, _citizen.LastMonsterHitTime, Time.time, Traits.FleeRange(_citizen.TraitKind, FleeTracker.StartDistance));   // brave or timid (0.16)
-            if (_flee.Fleeing && !wasFleeing) Log.Info($"{_citizen.CitizenName} flees from {(_hasThreatPos ? _threatName : "an attack")}.");
+            double ignoreHitsBefore = _fightEndedAt;   // bites taken in a fight already over don't start a run (its review)
+            // Fight a weak creature off, carry on, or flee as today (1.5.0): decided while not already running. A guard has
+            // their own fight; at night, in a raid or lying down they don't go out to one (its review).
+            bool mayFight = !onDuty && _citizen.Record.Job != SaveKeys.GuardJob && !_lying
+                            && _indoors != IndoorReason.Night && _indoors != IndoorReason.Raid;
+            Character fightWith = nearestOne;
+            float fightAt = nearest;
+            StandUpChoice choice;
+            if (!mayFight || wasFleeing || !float.IsPositiveInfinity(nearestStrong)) choice = StandUpChoice.Flee;
+            else if (KeepsFighting(out float keptAt))
+            {
+                choice = StandUpChoice.Fight;   // the one they fight, while it still goes for them (not the next of a pack)
+                fightWith = _fightTarget;
+                fightAt = keptAt;
+            }
+            else if (nearestOne == null)
+            {
+                if (Fighting)
+                {
+                    EndFight("it's gone", resume: true);   // they won: back to work, not into hiding
+                    ignoreHitsBefore = _fightEndedAt;
+                }
+                choice = StandUpChoice.Flee;
+            }
+            else choice = DecideAbout(nearestOne, nearest, hall);
+            if (choice == StandUpChoice.Fight)
+            {
+                if (_fightTarget != fightWith) StartFight(fightWith, fightAt);
+            }
+            else if (Fighting)
+            {
+                bool hurt = _citizen.Body.GetHealthPercentage() <= StandUp.BreakOffHealth;
+                EndFight(choice == StandUpChoice.Flee ? (hurt ? "breaks off at half health and flees" : "runs") : "carries on", resume: choice != StandUpChoice.Flee);
+            }
+            if (choice == StandUpChoice.Flee)
+            {
+                double hit = FightRules.HitCounts(_citizen.LastMonsterHitTime, ignoreHitsBefore) ? _citizen.LastMonsterHitTime : double.NegativeInfinity;
+                _flee.Update(nearest, hit, Time.time, Traits.FleeRange(_citizen.TraitKind, FleeTracker.StartDistance));   // brave or timid (0.16)
+            }
+            else
+                _flee.Update(float.PositiveInfinity, double.NegativeInfinity, Time.time);   // fighting or carrying on: nothing to run from
+            if (_flee.Fleeing && !wasFleeing)
+            {
+                Log.Info($"{_citizen.CitizenName} flees from {(_hasThreatPos ? _threatName : "an attack")}.");
+                if (nearestOne != null) NoteFleeFrom(nearestOne, hall);
+            }
             if (!_flee.Fleeing && wasFleeing)
             {
                 Log.Info($"{_citizen.CitizenName} is safe again.");
@@ -579,13 +659,17 @@ namespace VikingColonies.AI
         /// world's passive enemies, only stirred-up ones; a weak one (a Neck) only right beside him (1.4.1). A bite counts
         /// whatever bit (FleeTracker's hit memory).
         /// </summary>
-        private static bool IsThreat(Character me, Character other, float distance, bool passiveEnemies)
+        /// <param name="hallLevel">With settlers fighting back, the Town Hall's level: what's weak grows with it, so a Greydwarf
+        /// after someone else across the yard doesn't send the whole colony running (1.5.0, its review). 0: 1.4.1's few.</param>
+        private static bool IsThreat(Character me, Character other, float distance, bool passiveEnemies, int hallLevel)
         {
             if (other == me || other.IsDead() || !BaseAI.IsEnemy(me, other)) return false;
             MonsterAI ai = other.GetComponent<MonsterAI>();
             Character target = ai != null ? ai.GetTargetCreature() : null;
+            string prefab = Utils.GetPrefabName(other.gameObject);
+            bool weak = hallLevel > 0 ? WeakRules.IsWeakFor(prefab, other.GetLevel(), hallLevel) : FleeTracker.IsWeak(prefab, other.GetLevel());
             return ai != null && FleeTracker.Counts(ai.IsSleeping(), ai.IsAlerted(), target != null, distance, passiveEnemies,
-                FleeTracker.IsWeak(Utils.GetPrefabName(other.gameObject), other.GetLevel()), targetsHim: target == me);
+                weak, targetsHim: target == me);
         }
 
         private void Flee()
@@ -835,9 +919,20 @@ namespace VikingColonies.AI
         internal bool RaidAtHome => RaidAtColony();
 
         /// <summary>An armed guard with <c>Guards.Enabled</c>, not hurt: he stays out to fight (1.1); otherwise he is as anyone.</summary>
-        private bool OnGuardDuty() => _job is GuardJob guard
-            ? GuardDuty.OnDuty(guard.Armed, ColonyConfig.GuardsEnabled.Value, guard.Retreating)
-            : GuardDuty.NeedsBrain(_job != null, _citizen.Record.IsEmployed && _citizen.Record.Job == SaveKeys.GuardJob, ColonyConfig.GuardsEnabled.Value);
+        private bool OnGuardDuty()
+        {
+            if (_job is GuardJob guard) return GuardDuty.OnDuty(guard.Armed, ColonyConfig.GuardsEnabled.Value, guard.Retreating);
+            CitizenRecord record = _citizen.Record;
+            bool isGuard = record.IsEmployed && record.Job == SaveKeys.GuardJob;
+            return isGuard && GuardDuty.NeedsBrain(_job != null, true, ColonyConfig.GuardsEnabled.Value, TowerHere(), _errors.Paused(Time.time));
+        }
+
+        /// <summary>His guard tower is here (loaded on this computer, standing): only then can his work make him a guard.</summary>
+        private bool TowerHere()
+        {
+            ColonyBuilding tower = ColonyBuilding.FindById(_citizen.Record.Workplace);
+            return tower != null && tower.IsValid;
+        }
 
         /// <summary>A Valheim raid is running and its area holds his colony's Town Hall.</summary>
         private bool RaidAtColony()

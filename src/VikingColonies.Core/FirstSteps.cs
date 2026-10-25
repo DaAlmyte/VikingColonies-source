@@ -12,6 +12,7 @@ namespace VikingColonies.Core
         {
             "$vc_status_needs", "$vc_status_storage_full", "$vc_status_cant_reach_hut", "$vc_status_cant_reach_site",
             "$vc_status_no_support", "$vc_status_in_the_way",
+            "$vc_status_fighting_off", "$vc_status_driving_off",   // 1.5.0: what they do about a weak creature, said where it's seen
         };
 
         /// <summary>Statuses where "Hungry" isn't shown: asleep, sheltering or fleeing (review: a Longhouse at night was full of it).</summary>
@@ -59,5 +60,26 @@ namespace VikingColonies.Core
 
         /// <summary>A job hut placed in a colony that has no Builder's Hut yet: nobody will put it up.</summary>
         public static bool NeedsBuilderTip(bool isBuilderHut, bool colonyHasBuilderHut) => !isBuilderHut && !colonyHasBuilderHut;
+
+        /// <summary>
+        /// The tips a hut placed just now gets, once it has joined its colony. One placed already built (creative mode,
+        /// 1.5.0) gets the storehouse's, never the builder's: its words say the hut stands empty until a builder puts it up.
+        /// </summary>
+        public static PlacedTips TipsForPlaced(bool isBuilderHut, bool isStorehouse, bool colonyHasBuilderHut, bool placedBuilt)
+        {
+            PlacedTips tips = PlacedTips.None;
+            if (!placedBuilt && NeedsBuilderTip(isBuilderHut, colonyHasBuilderHut)) tips |= PlacedTips.Builder;
+            if (isStorehouse) tips |= PlacedTips.Storehouse;
+            return tips;
+        }
+    }
+
+    /// <summary>Hugin's tips for a hut placed just now (<see cref="TipRules.TipsForPlaced"/>).</summary>
+    [System.Flags]
+    public enum PlacedTips
+    {
+        None = 0,
+        Builder = 1,
+        Storehouse = 2,
     }
 }

@@ -14,11 +14,12 @@ wood_floor;Building;2;-0.0969;-1.6;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;0.4;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;2.4;0;0;0;1;"";1;1;1
 wood_floor;Building;2;-0.0969;4.4;0;0;0;1;"";1;1;1
+piece_workbench_ext1;Building;3.9;-0.1298;6.2;0;0.707107;0;0.707107;"";1;1;1
 wood_core_stack;Building;6;-0.0878;1;0;0.707107;0;0.707107;"";1;1;1
-piece_workbench_ext1;Building;6;-0.1298;7.8;0;0.707107;0;0.707107;"";1;1;1
 charcoal_kiln;Building;8.6;-0.1067;-6;0;0;0;1;"";1;1;1
 wood_wall_quarter;Building;-0.5;0;5.4;0;0;0;1;"";1;1;1
 rug_wolf;Furniture;1;0.01;-2.6;0;0.707107;0;0.707107;"";1;1;1
+piece_workbench;Building;2.25;-0.025;2.4;0;0.707107;0;-0.707107;"";1;1;1
 wood_wall_quarter;Building;2.5;0;5.4;0;0;0;1;"";1;1;1
 wood_wall_log;Building;-1;0.15;-3.6;0;0.707107;0;0.707107;"";1;1;1
 wood_wall_log;Building;-1;0.15;-1.6;0;0.707107;0;0.707107;"";1;1;1

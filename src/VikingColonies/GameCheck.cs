@@ -28,6 +28,7 @@ namespace VikingColonies
             Field(typeof(BaseAI), "m_lastFindPathTime", "settlers finding a new way at once"),
             Field(typeof(Character), "m_maxAirAltitude", "no fall damage when a settler is moved out or recalled"),
             Field(typeof(Character), "m_lastHit", "the cause of a settler's death"),
+            Field(typeof(Humanoid), "m_rightItem", "what a settler holds when they fight off a weak creature"),
             Field(typeof(PrivateArea), "m_allAreas", "doors in warded areas and colony permissions"),
             Method(typeof(PrivateArea), "IsEnabled", "doors in warded areas"),
             Method(typeof(PrivateArea), "IsInside", "doors in warded areas and colony permissions"),

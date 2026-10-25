@@ -160,6 +160,20 @@ namespace VikingColonies.DevTools
             ItemStand stand = prefab.GetComponent<ItemStand>();
             if (stand != null && stand.m_attachOther != null)
                 fields.Add(Pair("attach", Vec(prefab.transform.InverseTransformPoint(stand.m_attachOther.position))));
+            // A station's upgrade: the station it raises and how far from it it may stand (2026-10-22, a player on Discord:
+            // some huts' upgrades don't reach their workbench).
+            StationExtension extension = prefab.GetComponent<StationExtension>();
+            if (extension != null && extension.m_craftingStation != null)
+            {
+                fields.Add(Pair("extends", Str(extension.m_craftingStation.name)));
+                fields.Add(Pair("reach", F(extension.m_maxStationDistance)));
+            }
+            // Where someone sits and the way they face (2026-10-22: the camp's sitting logs; until then read from the
+            // seat's colliders).
+            List<string> sits = prefab.GetComponentsInChildren<Chair>(true).Where(c => c.m_attachPoint != null)
+                .Select(c => "{" + Pair("at", Vec(prefab.transform.InverseTransformPoint(c.m_attachPoint.position))) + ", " +
+                             Pair("facing", Vec(prefab.transform.InverseTransformDirection(c.m_attachPoint.forward))) + "}").ToList();
+            if (sits.Count > 0) fields.Add(Pair("sits", "[" + string.Join(", ", sits) + "]"));
             if (wear != null)
             {
                 SupportMaterial m = SupportProbe.MaterialOf(wear);

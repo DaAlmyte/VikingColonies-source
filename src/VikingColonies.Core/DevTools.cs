@@ -7,8 +7,16 @@ namespace VikingColonies.Core
     /// <summary>Auto-start only goes into a test world, so a setting can never start someone's real world.</summary>
     public static class TestWorlds
     {
+        /// <summary>The start of every test world's name (VCTest, VCTestMP, VCTestFlat, VCTestRun, VCTestCompat).</summary>
+        public const string NameStart = "VCTest";
+
+        /// <summary>
+        /// One of our test worlds: its name starts with VCTest. Not any name containing "test" (the review round of
+        /// 2026-10-23: a player's "Greatest" or "Contest" got full step-by-step logging, the test commands and the command
+        /// file).
+        /// </summary>
         public static bool IsTestWorld(string name) =>
-            !string.IsNullOrEmpty(name) && name.IndexOf("test", StringComparison.OrdinalIgnoreCase) >= 0;
+            !string.IsNullOrEmpty(name) && name.StartsWith(NameStart, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// A world whose name starts with VCTestFlat is made as one meadow at one height, with no trees, rocks, rivers or

@@ -55,7 +55,30 @@ namespace VikingColonies.Buildings
         public int Level => Zdo?.GetInt(LevelKey, 1) ?? 1;
         public BuildingType Type => BuildingTypes.Get(TypeId);
         public bool IsTownHall => TypeId == BuildingTypes.TownHallId;
+        public bool IsStorehouse => TypeId == BuildingTypes.StorehouseId;
         public StorageModule Storage { get; private set; }
+
+        /// <summary>
+        /// The building's chests: its own first, then for a storehouse every chest standing inside it (1.5). Never a
+        /// destroyed one.
+        /// </summary>
+        public IReadOnlyList<StorageModule> Stores
+        {
+            get
+            {
+                var stores = new List<StorageModule>();
+                if (Storage != null) stores.Add(Storage);
+                if (_storehouse != null && _storehouse.Open)   // not while it's being taken down: its chests go with it
+                    foreach (StorageModule chest in _storehouse.Chests)
+                        if (chest != null && chest != Storage) stores.Add(chest);
+                return stores;
+            }
+        }
+
+        private StorehouseModule _storehouse;
+
+        /// <summary>A storehouse's store (null for every other building).</summary>
+        public StorehouseModule Storehouse => _storehouse;
         /// <summary>Its Keep in stock list (0.21).</summary>
         public StockModule Stock { get; private set; }
 
@@ -68,6 +91,10 @@ namespace VikingColonies.Buildings
         public static ColonyBuilding FindTownHall(string colonyId) =>
             string.IsNullOrEmpty(colonyId) ? null : s_all.FirstOrDefault(b => b != null && b.IsTownHall && b.ColonyId == colonyId);
 
+        /// <summary>The colony's storehouse (one per colony, 1.5), or null.</summary>
+        public static ColonyBuilding FindStorehouse(string colonyId) =>
+            string.IsNullOrEmpty(colonyId) ? null : s_all.FirstOrDefault(b => b != null && b.IsValid && b.IsStorehouse && b.ColonyId == colonyId);
+
         public static IEnumerable<ColonyBuilding> TownHalls() => s_all.Where(b => b != null && b.IsTownHall && b.IsValid);
 
         private void Awake()
@@ -75,6 +102,7 @@ namespace VikingColonies.Buildings
             _nview = GetComponent<ZNetView>();
             Storage = GetComponent<StorageModule>();
             Stock = GetComponent<StockModule>();
+            _storehouse = GetComponent<StorehouseModule>();
             if (!IsValid) return;   // the build-preview ghost has no network object
             bool isNew = false;
             if (_nview.IsOwner()) isNew = EnsureSavedData();

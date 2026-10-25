@@ -181,6 +181,18 @@ namespace VikingColonies.Tests
             Assert.Equal(0f, offset.Value, 3);
         }
 
+        [Fact]   // the Storehouse's hand-over (1.5): it stands on its posts as placed, not 30 cm up
+        public void The_storehouse_starts_raised_three_quarters_of_a_metre()
+        {
+            var offset = new PlacementOffset();
+            offset.Select(SaveKeys.StorehousePiece);
+            Assert.Equal(0.75f, offset.Value, 3);
+            offset.Lower();
+            Assert.Equal(0.5f, offset.Value, 3);
+            offset.Select("vc_hut_builder");
+            Assert.Equal(0f, offset.Value, 3);
+        }
+
         [Fact]
         public void The_ghost_is_lifted_once_however_often_the_game_updates_it()
         {

@@ -18,13 +18,13 @@ namespace VikingColonies.Gui
     {
         public const string Colony = "vc_tip_colony", Builder = "vc_tip_builder", Needs = "vc_tip_needs", Worker = "vc_tip_worker",
             Night = "vc_tip_night", Hunger = "vc_tip_hunger", Death = "vc_tip_death", FreeTime = "vc_tip_freetime", Evening = "vc_tip_evening", Field = "vc_tip_field",
-            Stock = "vc_tip_stock",
+            Stock = "vc_tip_stock", Storehouse = "vc_tip_storehouse",
             Mood = "vc_tip_mood", Trophy = "vc_tip_trophy";
 
         /// <summary>A tip comes only to a player this near where it happened.</summary>
         private const float NearMetres = 40f;
 
-        private static readonly string[] s_all = { Colony, Builder, Needs, Worker, Night, Hunger, Death, FreeTime, Evening, Field, Mood, Stock, Trophy };
+        private static readonly string[] s_all = { Colony, Builder, Needs, Worker, Night, Hunger, Death, FreeTime, Evening, Field, Mood, Stock, Trophy, Storehouse };
 
         private static readonly AccessTools.FieldRef<List<Raven.RavenText>> s_tempTexts = TempTextsRef();
 
@@ -227,7 +227,7 @@ namespace VikingColonies.Gui
                     float distance = Vector3.Distance(c.transform.position, me);
                     if (distance > NearMetres) continue;
                     CitizenRecord record = c.Record;
-                    string words = HelpWords.Words(record.Status, record.Hungry && ColonyConfig.SettlersEat.Value);
+                    string words = HelpWords.Words(record.Status, record.Hungry && Colony.Creative.SettlersEat(record.ColonyId));
                     if (words == HelpWords.HungryToken)
                     {
                         HuginTips.Show(HuginTips.Hunger);   // with the words off too
@@ -395,7 +395,7 @@ namespace VikingColonies.Gui
                 _sagas[record.ColonyId] = saga = module != null ? module.Saga : new SagaLog();
             }
             TalkContext context = SmallTalk.FromSaga(saga, today, record.Name);
-            context.Hungry = record.Hungry && ColonyConfig.SettlersEat.Value;
+            context.Hungry = record.Hungry && Colony.Creative.SettlersEat(record.ColonyId);
             context.Wet = EnvMan.IsWet();
             context.WaitStatus = record.Status ?? "";
             context.Jobless = !record.IsEmployed;

@@ -108,7 +108,7 @@ namespace VikingColonies.DevTools
                 line.Recent = c.History.Lines(Time.time, s => Localization.instance.Localize(s));
                 line.Troubles = c.GetComponent<AI.CitizenAI>()?.Troubles() ?? "";
             }
-            else line.Recent = new List<string> { NotHere + " (too far from you, or another player's game runs him): his recent states and troubles are kept there" };
+            else line.Recent = new List<string> { NotHere + " (too far from you, or another player's game runs them): their recent states and troubles are kept there" };
             return line;
         }
 

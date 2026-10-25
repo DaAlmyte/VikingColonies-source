@@ -22,7 +22,7 @@ namespace VikingColonies.DevTools
     internal sealed class BuildRunCommand : ConsoleCommand
     {
         public override string Name => "vc_buildrun";
-        public override string Help => "VikingColonies (test worlds): 'vc_buildrun [lumberjack forager farm longhouse watchtower builder camp]' puts a colony " +
+        public override string Help => "VikingColonies (test worlds): 'vc_buildrun [lumberjack forager farm longhouse watchtower builder storehouse camp]' puts a colony " +
                                        "in front of you whose builders build each hut (default: all, and the Town Hall's camp) level 1 to 5 from materials " +
                                        "put in its chest; 'vc_buildrun stop' ends it";
         public override bool IsCheat => true;
@@ -58,10 +58,11 @@ namespace VikingColonies.DevTools
 
     internal static class BuildRun
     {
-        public static readonly string[] All = { "lumberjack", "forager", "farm", "longhouse", "watchtower", "builder", "camp" };
+        public static readonly string[] All = { "lumberjack", "forager", "farm", "longhouse", "watchtower", "builder", "storehouse", "camp" };
         /// <summary>Game seconds one level may take before the run gives up on it (40 game minutes).</summary>
         private const double LevelTimeout = 2400.0;
         private const float Spacing = 26f;
+        private const int PerRow = 6;
         /// <summary>How far in front of the camp the layout's middle lies (between the camp and the row of huts).</summary>
         private const float LayoutMiddle = 24f;
         /// <summary>
@@ -162,6 +163,9 @@ namespace VikingColonies.DevTools
                     Log.Event("vc_buildrun: FAIL no Town Hall founded");
                     yield break;
                 }
+                // Read once, at founding: put back at once, not at the run's end (the first 1.5.0 run timed out, its scenario's
+                // vc_set then saved the whole config with the run's 10, and the next runs' colonies began with 8 settlers).
+                DevHelpers.SetUnsaved(ColonyConfig.StartingCitizens, startingWas);
                 hall.SetLevel(TownHallLevels.MaxLevel);   // as if every trophy were shown: huts may go to level 5
                 Inventory hallChest = hall.GetComponent<Container>().GetInventory();
                 foreach (KeyValuePair<string, int> tool in new Dictionary<string, int> { { "Hoe", 1 }, { "PickaxeIron", 1 }, { "AxeIron", 1 }, { "Stone", 200 } })
@@ -174,7 +178,9 @@ namespace VikingColonies.DevTools
                     yield return AtOnceToLevel(support, HutLevels.MaxLevel);
                 }
 
-                // The subjects in a row in front of the camp (each hut's level-5 lot is under 22 m across).
+                // The subjects in rows of six in front of the camp (each hut's level-5 lot is under 22 m across); a seventh
+                // (the Storehouse, 1.5) in a row behind, in the middle (the first 1.5 run: seven in one row put the end huts
+                // past the colony's 90 m at level 2, and the old row's six spots are tried and clear).
                 int n = names.Count(x => x != "camp");
                 int k = 0;
                 foreach (string name in names)
@@ -190,9 +196,10 @@ namespace VikingColonies.DevTools
                         Log.Event($"vc_buildrun: no such hut '{name}'");
                         continue;
                     }
-                    Vector3 at = origin + forward * 44f + right * ((k - (n - 1) / 2f) * Spacing);
+                    int row = k / PerRow, inRow = Mathf.Min(PerRow, n - row * PerRow);
+                    Vector3 at = origin + forward * (44f + row * Spacing) + right * ((k % PerRow - (inRow - 1) / 2f) * Spacing);
                     k++;
-                    ColonyBuilding hut = DevHelpers.Place(type.PrefabName, at, facing, me);
+                    ColonyBuilding hut = DevHelpers.Place(type.PrefabName, at, facing, me, PlacementOffset.StartFor(type.PrefabName));   // a Storehouse on its posts (1.5)
                     if (hut == null) continue;
                     if (type.Id != BuildingTypes.BuilderHutId) hut.GetComponent<WorkerModule>()?.RequestSetAutoHire(false);   // settlers for builders
                     subjects.Add(new Subject { Name = name, Building = hut, Site = hut.GetComponent<ConstructionModule>() });

@@ -211,8 +211,10 @@ namespace VikingColonies.Jobs
             int wood = 0;
             if (limit > 0)
                 foreach (ColonyBuilding b in ColonyBuilding.All)
-                    if (b != null && b.IsValid && b.ColonyId == hut.ColonyId && b.Storage != null && b.Storage.Contents().TryGetValue("Wood", out int n))
-                        wood += n;
+                    if (b != null && b.IsValid && b.ColonyId == hut.ColonyId)
+                        foreach (StorageModule store in b.Stores)   // a storehouse: its whole store (1.5)
+                            if (store.Contents().TryGetValue("Wood", out int n))
+                                wood += n;
             bool enough = WoodLimit.Enough(limit, wood);
             if (enough != _enoughWood)
                 Log.Info(enough ? $"{Citizen.CitizenName} has enough wood: {wood} in the colony's chests (stop at {limit})"

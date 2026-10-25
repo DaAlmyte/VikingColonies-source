@@ -143,6 +143,13 @@ namespace VikingColonies.Core
             isFieldMarker && !string.IsNullOrEmpty(thisSite) && fieldsFarm == thisSite;
 
         /// <summary>
+        /// Plants and crops on the site are cleared while it is built or upgraded, not for a repair: a finished Farm's yard is
+        /// the farmer's (the review round of 2026-10-23: a fence piece knocked off opened a repair, and the builder pulled up
+        /// every crop in the yard while the farmer replanted). The same orders as <see cref="FieldPlots.SiteBusy"/>.
+        /// </summary>
+        public static bool ClearsPlants(OrderKind kind) => kind == OrderKind.Build || kind == OrderKind.Upgrade;
+
+        /// <summary>
         /// Whether a piece standing where the builder wants to put one blocks it. His own hut's chest, pieces he put up
         /// for this hut and pieces that are exactly part of the plan are fine; anything else (a player's own building,
         /// another hut's building) is in the way — he never builds into another building.

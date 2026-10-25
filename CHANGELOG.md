@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.5.0 (2026-10-25) — The storehouse, creative mode and settlers standing up to weak animals
+
+**For server owners:** the server and every player need 1.5.0. New settings: `Creative.CreativeMode` (Auto; the
+server's value counts for everyone), `Storehouse.WoodCost` (20), `Courier.Carry` (50) and `Courier.CarryPerLevel` (25),
+`Colony.SettlersFightBack` (on), and each player's two keys for creative mode. A Town Hall saves one new value, `vc_colony_eat_off`; the Storehouse is a
+new building and saves who carries what (`vc_courier_tasks`) and whether its couriers are emptying it for a take-down
+(`vc_store_closing`) and whether its chests are full (`vc_store_full`); a hut saves `vc_couriers_leave` when its "Couriers take the rest" is off; a settler's record
+gains the Hauling skill. Worlds and colonies load as they were.
+
+### New
+- **A Storehouse: the colony's store**, a Norse storehouse on posts with a stair to its door (its outline starts 0.75 m
+  up while you place it). One per colony, built by a Builder's Hut. Every chest standing inside it holds
+  the colony's goods: the builder looks there right after its own hut, meals come from it first, and a worker whose hut
+  chest is full takes the load there before the Town Hall. Its **Stock** tab shows what the colony's chests hold, most
+  first, and where most of each lies. Taking it down, its couriers first carry the goods to the colony's other chests.
+  Hugin explains it the first time you place one.
+- **Couriers.** The storehouse hires couriers (one, then up to three as it grows) who carry for the whole colony: they
+  fill what buildings keep in stock and the builder's order, take producers' surplus to the storehouse before their
+  chests fill, put away what you drop in the storehouse's own chest, and keep the store like with like (each kind
+  into the chest already holding it; sorting from level 3 tidies the rest). They never take what a
+  building keeps, a Farm's or a lumberjack's seeds, or anything from the Town Hall. Once a colony has a courier, idle
+  settlers stop carrying and rest instead. **Couriers take the rest**, on each hut's Keep in stock tab, turned off
+  keeps that hut's chest as you arranged it.
+- **The storehouse's Needs tab: your shopping list.** Every building short of something, with what and how much, who is
+  bringing it or why nobody can ("only in the Town Hall", "no room in its chest"), and under them what nobody in the
+  colony has: "Bring: 40 Iron, 10 Food (any)".
+- **Creative mode.** In a world with the No build cost setting, or for an admin in debug mode with free building (B):
+  place a colony building already built at the level you pick (**=** and **-** while placing); **Build now**, **Upgrade
+  now** and **Repair now** beside each building's window; **Finish all now**, the Town Hall's level without the
+  trophies, **Add settlers** and **Settlers eat** on the Town Hall; **Supply what's needed** on a Builder's Hut. In a No
+  build cost world builders build for free. Survival play is as it was. See the guide's "Creative mode".
+- **Settlers stand up to weak animals.** A Neck, a Greyling or a Boar that goes for a settler is fought off with what's
+  in their hands, or fists, instead of the whole colony running and hiding again and again; Greydwarfs count from the
+  Town Hall's level 2 and Skeletons from level 3. They still run when hurt to half, from anything stronger, from what's
+  thrown from afar, in a raid or with the alarm, and a timid settler still runs. Every settler now heals when left alone,
+  and is whole after a night in bed. Guards drive off a weak monster prowling in the colony before it bites. The setting
+  `Colony.SettlersFightBack` (on).
+- **The Town Hall's overview says when the storehouse is full**, with what to do (more chests inside it, or a higher
+  level), and when couriers hold loads with nowhere to put them.
+- **Repairs:** the builder mends the worst-damaged building first and finishes it before the next; a big repair goes in
+  the Saga ("Ulf mended 14 pieces of the Longhouse").
+- Hugin's storehouse tip also comes for a Storehouse placed already built in creative mode.
+
+### Fixed
+- Two settlers no longer stop to chat in a doorway, where they held up anyone going through (a courier could give up
+  at the storehouse's door).
+- The Builder's Hut's chopping block, adze and tool shelf stood too far from its workbench to upgrade it. From level 2
+  the workbench stands in the covered yard with the chopping block and adze beside it, and from level 3 the tool shelf
+  hangs inside on the same wall, so it reaches level 4. The Lumberjack's Hut's chopping block had no workbench: the hut
+  now has one inside, along its right wall, and the chopping block stands by the door. The Builder's Hut's artisan
+  table, too exposed to use at the yard's far end, stands inside from level 4. Huts built before 1.5 get them at their
+  next upgrade; one already at level 5 keeps its old layout.
+- A world whose name merely contained "test" ("Greatest", "Contest") counted as a test world: every step of every
+  settler went to the log, and the test commands worked there. Test worlds are now only those whose name starts with
+  `VCTest`; use such a name for a world where you make your own designs.
+- A guard whose Watchtower raiders had broken (or whose tower wasn't loaded) still counted as on duty, without a weapon:
+  they walked among the raiders and never ran, or stood out all night. Now they shelter like everyone until their tower
+  is back.
+- A worker who couldn't reach their hut with a load at dusk stood outside all night, and their hover text, switching
+  between "Delivering" and "Can't reach the hut" every frame, saved their whole record each time (sent to every player on
+  a server). Now they give that last errand a minute, then go in with the load still in hand, and a settler's changing
+  hover text is saved at most twice a second.
+- An old Longhouse (built before 1.4.3) whose upgrade puts a new piece where a player's spawn bed stands never finished
+  its upgrade: the builder "took down" the bed again and again, leaving it standing. The bed now shows as in the way, for
+  you to move, and builders never take down a bed someone sleeps in, a leftover's either.
+- A repair of a Farm (a fence piece a troll knocked off) had the builder pull up every crop in the Farm's yard while the
+  farmer replanted. A repair now leaves plants and crops where they grow.
+- A builder putting leftovers back in their hut's chest, whose way round to it needed a door they couldn't get to,
+  circled the hut for good. They now put them in from where they stand, as they already did while working on a site.
+
 ## 1.4.3 (2026-10-23) — The huts polished, and fixes
 
 **For server owners:** the server and every player need 1.4.3. Each colony building saves one new value,

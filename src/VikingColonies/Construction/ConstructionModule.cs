@@ -48,6 +48,8 @@ namespace VikingColonies.Construction
         private const string RpcLeaveAsIs = "vc_OrderLeaveAsIs";
         private const string RpcRemoved = "vc_OrderPieceRemoved";
         private const string RpcStartCamp = "vc_CampStart";
+        private const string RpcCreative = "vc_Creative";   // creative mode (1.5): CreativeAction, checked by the owner
+        private const string RpcPrepareNow = "vc_PrepareNow";   // a free builder's ask (1.5): only while the world has No build cost
         private const float CampCheckSeconds = 15f;
         private const string RpcMessage = "vc_ConstructionMessage";   // its own: the Town Hall and the Longhouse have no WorkerModule (0.25)
         private const float FinishStepSeconds = 0.25f;   // between ground changes in vc_build finish
@@ -57,10 +59,8 @@ namespace VikingColonies.Construction
 
         private ColonyBuilding _building;
         private ZNetView _nview;
-        private byte[] _planBlob;
-        private List<PlannedPiece> _plan = s_noPlan;
-        private byte[] _takeAwayBlob;
-        private List<PlannedPiece> _takeAway = s_noPlan;
+        private readonly ContentCache<List<PlannedPiece>> _planCache = new ContentCache<List<PlannedPiece>>();
+        private readonly ContentCache<List<PlannedPiece>> _takeAwayCache = new ContentCache<List<PlannedPiece>>();
         private readonly TextCache<BuildOrderRecord> _orderCache = new TextCache<BuildOrderRecord>(BuildOrderRecord.Decode);
         private readonly Dictionary<string, List<Vector3>> _planByPrefab = new Dictionary<string, List<Vector3>>();
         private List<PlannedPiece> _planIndexed;
@@ -123,6 +123,8 @@ namespace VikingColonies.Construction
             _nview.Register(RpcLeaveAsIs, OnLeaveAsIs);
             _nview.Register<int>(RpcRemoved, OnRemoved);
             _nview.Register(RpcStartCamp, OnStartCamp);
+            _nview.Register<int>(RpcCreative, OnCreative);
+            _nview.Register(RpcPrepareNow, OnPrepareNow);
             s_all.Add(this);
             // The Town Hall's camp grows with the hall's level (huts round 2): looked at now and then by its owner.
             if (_building != null && _building.IsTownHall)
@@ -137,29 +139,72 @@ namespace VikingColonies.Construction
             // camp, when there is a design for it and its site is clear (huts round 2).
             if (IsValid && _nview.IsOwner() && _building.PlacedThisSession && Order == null)
             {
+                int creativeLevel = CreativePlacing.TakeFor(_building);   // creative mode (1.5): placed already built
                 if (IsCamp)
                 {
                     StartCoroutine(StartCampOnceFounded());
+                    if (creativeLevel > 0) StartCoroutine(CreativeHallOnceFounded(creativeLevel));
                     return;
                 }
                 CreateOrder();
-                StartCoroutine(BuilderTipOnceJoined());
+                if (creativeLevel > 0) StartCoroutine(CreativeBuildOnceJoined(creativeLevel));
+                else StartCoroutine(BuilderTipOnceJoined());
             }
         }
 
         private void OnDestroy() => s_all.Remove(this);
 
+        /// <summary>Creative (1.5): a hut placed already built, once it has joined its colony (the owner checks as for Build now).</summary>
+        private IEnumerator CreativeBuildOnceJoined(int level)
+        {
+            for (float waited = 0f; IsValid && string.IsNullOrEmpty(_building.ColonyId) && waited < 15f; waited += 1f)
+                yield return new WaitForSeconds(1f);
+            if (!IsValid || string.IsNullOrEmpty(_building.ColonyId)) yield break;
+            if (!Colony.Creative.OwnerAccepts(_building, ZNet.GetUID()))
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: placed built at level {level}: refused (not creative here)");
+                yield break;
+            }
+            int cap = CreativeRules.MaxPlacedLevel(false, Buildings.HallRules.PerksOf(_building.ColonyId).HutCap);
+            yield return BuildToLevelAtOnce(Mathf.Min(level, cap));
+            if (IsValid) ShowPlacedTips(placedBuilt: true);   // the storehouse's tip (1.5.0; the review round's pick)
+        }
+
+        /// <summary>Creative (1.5): a Town Hall placed at a level: that level once founded, and its camp built up to it.</summary>
+        private IEnumerator CreativeHallOnceFounded(int level)
+        {
+            TownHallModule hall = GetComponent<TownHallModule>();
+            for (float waited = 0f; IsValid && hall != null && !hall.Founded && waited < 30f; waited += 1f)
+                yield return new WaitForSeconds(1f);
+            if (!IsValid || hall == null || !hall.Founded) yield break;
+            if (!Colony.Creative.OwnerAccepts(_building, ZNet.GetUID()))
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: placed at level {level}: refused (not creative here)");
+                yield break;
+            }
+            hall.RequestCreative(HallCreativeAction.SetLevel, level);
+            for (float waited = 0f; IsValid && _building.Level < level && waited < 10f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
+            yield return BuildToLevelAtOnce(level);
+        }
+
         /// <summary>
         /// Hugin's builder tip for a hut placed just now, once it has joined its colony (a second or so after placing;
-        /// review of 0.11: checked at once, every new hut looked like it had no Builder's Hut).
+        /// review of 0.11: checked at once, every new hut looked like it had no Builder's Hut); the storehouse's tip (1.5).
         /// </summary>
         private System.Collections.IEnumerator BuilderTipOnceJoined()
         {
             for (float waited = 0f; IsValid && string.IsNullOrEmpty(_building.ColonyId) && waited < 15f; waited += 1f)
                 yield return new WaitForSeconds(1f);
             if (!IsValid || string.IsNullOrEmpty(_building.ColonyId)) yield break;
-            if (TipRules.NeedsBuilderTip(_building.TypeId == BuildingTypes.BuilderHutId, HasBuilderHut()))
-                Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.Builder);
+            ShowPlacedTips(placedBuilt: false);
+        }
+
+        /// <summary>Hugin's tips for a hut placed just now (<see cref="TipRules.TipsForPlaced"/>): the builder's, the storehouse's (1.5).</summary>
+        private void ShowPlacedTips(bool placedBuilt)
+        {
+            PlacedTips tips = TipRules.TipsForPlaced(_building.TypeId == BuildingTypes.BuilderHutId, _building.IsStorehouse, HasBuilderHut(), placedBuilt);
+            if ((tips & PlacedTips.Builder) != 0) Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.Builder);
+            if ((tips & PlacedTips.Storehouse) != 0) Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.Storehouse);
         }
 
         /// <summary>
@@ -199,12 +244,8 @@ namespace VikingColonies.Construction
             {
                 byte[] blob = IsValid ? _nview.GetZDO().GetByteArray(PlanKey) : null;
                 if (blob == null || blob.Length == 0) return s_noPlan;
-                if (!ReferenceEquals(blob, _planBlob))
-                {
-                    _planBlob = blob;
-                    _plan = PlanCodec.Decode(PlanStore.Unpack(blob));
-                }
-                return _plan;
+                // By its bytes, not its array: another computer's hut sends the same plan in a new array at every update.
+                return _planCache.Get(blob, b => PlanCodec.Decode(PlanStore.Unpack(b)));
             }
         }
 
@@ -215,12 +256,7 @@ namespace VikingColonies.Construction
             {
                 byte[] blob = IsValid ? _nview.GetZDO().GetByteArray(TakeAwayKey) : null;
                 if (blob == null || blob.Length == 0) return s_noPlan;
-                if (!ReferenceEquals(blob, _takeAwayBlob))
-                {
-                    _takeAwayBlob = blob;
-                    _takeAway = PlanCodec.Decode(PlanStore.Unpack(blob));
-                }
-                return _takeAway;
+                return _takeAwayCache.Get(blob, b => PlanCodec.Decode(PlanStore.Unpack(b)));
             }
         }
 
@@ -234,14 +270,50 @@ namespace VikingColonies.Construction
             }
         }
 
-        /// <summary>The player may ask for it to be taken down: a hut whose building is finished (0.23).</summary>
-        public bool MayTakeDown
+        /// <summary>
+        /// The player may ask for it to be taken down: a hut whose building is finished (0.23); a storehouse once the chests
+        /// standing inside it are empty (1.5).
+        /// </summary>
+        public bool MayTakeDown => MayTakeDownOnceEmpty && StoreEmpty;
+
+        /// <summary>As <see cref="MayTakeDown"/>, but for what the chests inside a storehouse hold (its window says what's left).</summary>
+        public bool MayTakeDownOnceEmpty
         {
             get
             {
                 BuildOrderRecord order = Order;
                 return _building != null && TakeDownRules.MayTakeDown(_building.IsTownHall, order != null, order != null && order.State == BuildState.Done);
             }
+        }
+
+        /// <summary>A storehouse's take-down is ordered and its couriers are emptying it first (1.5, part 3).</summary>
+        public bool IsClosingStore => IsValid && _nview.GetZDO().GetBool(SaveKeys.StoreClosing, false);
+
+        /// <summary>What a storehouse's take-down does now with what its chests inside hold (1.5, part 3).</summary>
+        public StoreTakeDown StoreChoice()
+        {
+            if (StoreEmpty) return StoreTakeDown.Now;
+            WorkerModule couriers = _building.GetComponent<WorkerModule>();
+            bool hasCourier = couriers != null && couriers.Workers(out List<Citizen> loaded, out List<RosterEntry> elsewhere) && loaded.Count + elsewhere.Count > 0;
+            bool onlyGear = _building.Storehouse.Chests.SelectMany(c => c.Contents().Keys).All(i => !StorageModule.Carried(i));
+            return TakeDownRules.ForStore(false, hasCourier, onlyGear);
+        }
+
+        /// <summary>A storehouse's chests inside hold nothing (always true for every other building).</summary>
+        public bool StoreEmpty => _building == null || _building.Storehouse == null || _building.Storehouse.Chests.All(c => c.Contents().Count == 0);
+
+        /// <summary>What a storehouse's chests inside still hold, the three items with the most: "40 Wood, 12 Stone…".</summary>
+        public string StoreHolds()
+        {
+            if (_building == null || _building.Storehouse == null) return "";
+            var held = new Dictionary<string, int>();
+            foreach (StorageModule chest in _building.Storehouse.Chests)
+                foreach (KeyValuePair<string, int> item in chest.Contents())
+                    held[item.Key] = (held.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
+            List<StockLine> lines = ColonyStock.Totals(new[] { new ChestCount("", held) });
+            var top = new Dictionary<string, int>();
+            foreach (StockLine line in lines.Take(3)) top[line.Item] = line.Total;
+            return PiecePlacer.DescribeItems(top) + (lines.Count > 3 ? "…" : "");
         }
 
         /// <summary>An upgrade is under way (the hut keeps working at its old level meanwhile).</summary>
@@ -415,14 +487,18 @@ namespace VikingColonies.Construction
         public bool MayStartCamp => IsCamp && Order == null && HasCampDesign(CampRules.FirstLevel);
 
         /// <summary>Whether this hut may go up a level now, and why not.</summary>
-        public UpgradeLock UpgradeCheck()
+        public UpgradeLock UpgradeCheck() => UpgradeCheck(ignoreBuilderHut: false);
+
+        /// <param name="ignoreBuilderHut">Creative (1.5): the Builder's Hut's level doesn't count; the Town Hall's limit does.</param>
+        public UpgradeLock UpgradeCheck(bool ignoreBuilderHut)
         {
             BuildOrderRecord order = Order;
             if (order == null) return UpgradeLock.NotFinished;   // a hut from before builders: build it first
             bool isBuilderHut = _building.TypeId == BuildingTypes.BuilderHutId;
             // Not while a repair runs (review of 0.13: the builder on it kept the old plan's work).
-            return HutLevels.CanUpgrade(_building.Level, IsBuilt && !IsRepairing, IsUpgrading, HighestBuilderHutLevel(_building.ColonyId), isBuilderHut,
-                IsTakingDown,   // review of 0.23: an upgrade then a cancel left the builder stuck
+            return HutLevels.CanUpgrade(_building.Level, IsBuilt && !IsRepairing, IsUpgrading,
+                ignoreBuilderHut ? HutLevels.MaxLevel : HighestBuilderHutLevel(_building.ColonyId), isBuilderHut,
+                IsTakingDown || IsClosingStore,   // review of 0.23: an upgrade then a cancel left the builder stuck
                 Buildings.HallRules.PerksOf(_building.ColonyId).HutCap);   // 1.4: no higher than the Town Hall allows
         }
 
@@ -450,6 +526,9 @@ namespace VikingColonies.Construction
         public static int ColonyBuilderLevel(string colonyId) => System.Math.Max(1, HighestBuilderHutLevel(colonyId));
 
         /// <summary>The next level's design laid around this chest, or null (with why) when it can't be used.</summary>
+        /// <summary>vc_storehousetest: the next level's plan here.</summary>
+        internal List<PlannedPiece> NextLevelPlanForTest() => NextLevelPlan(out _);
+
         private List<PlannedPiece> NextLevelPlan(out string problem)
         {
             problem = "no design for the next level";
@@ -470,9 +549,10 @@ namespace VikingColonies.Construction
             if (plan == null) return null;
             DesignDiff diff = DesignDiff.Compare(Plan, plan);
             var needs = new Dictionary<string, int>();
-            foreach (int index in diff.Build)
-                foreach (KeyValuePair<string, int> need in PiecePlacer.Needs(plan[index].Prefab))
-                    needs[need.Key] = (needs.TryGetValue(need.Key, out int n) ? n : 0) + need.Value;
+            if (!Colony.Creative.BuildersFree())   // free builders need nothing (the review round)
+                foreach (int index in diff.Build)
+                    foreach (KeyValuePair<string, int> need in PiecePlacer.Needs(plan[index].Prefab))
+                        needs[need.Key] = (needs.TryGetValue(need.Key, out int n) ? n : 0) + need.Value;
             SiteFindings findings = SiteSurvey.Look(plan, transform.position, transform.rotation, this, null, MatchesPlan,
                 GroundShaper.StonePerCubicMetre, new List<SiteThing>(), new List<Piece>(), upgrade: true);
             List<ToolInfo> atHand = BuilderTools.AtHand(BuilderTools.ColonyStores(_building.ColonyId, null, transform.position));
@@ -588,6 +668,11 @@ namespace VikingColonies.Construction
                 Log.Info($"{_building.TypeId} {_building.Id}: is being taken down: not finished at once");   // 0.24: it put the pieces back
                 return 0;
             }
+            if (_finishingNow)
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: already going up at once: not finished twice");   // its review (1.5)
+                return 0;
+            }
             int cleared = ClearSiteNow();
             if (cleared > 0) Log.Info($"{_building.TypeId} {_building.Id}: {cleared} things cleared off the site at once");
             var levels = new List<Vector3>();
@@ -602,6 +687,7 @@ namespace VikingColonies.Construction
                 return pieces.Count;
             }
             RequestAdvance(BuildState.Building);   // the builder stops shaping: this flattens it
+            _finishingNow = true;   // until the pieces are up: a second finish would put pieces on ground still being levelled
             StartCoroutine(FlattenThenPutUp(levels, smooths, pieces, order.Ground));
             return pieces.Count;
         }
@@ -614,16 +700,95 @@ namespace VikingColonies.Construction
         private int ClearSiteNow()
         {
             int cleared = 0;
+            // A repair, as the builder's: plants and crops stay (a Farm's yard), and so do things lying in the finished hut (its
+            // review: creative's Repair now pulled up every crop in a Farm's yard).
+            BuildOrderRecord order = Order;
+            bool repair = order != null && order.Kind == OrderKind.Repair;
             foreach (SiteThing thing in ThingsToClear())
             {
-                if (thing.IsGone || thing.Area != null) continue;
+                if (thing.IsGone) continue;
+                if (repair && ((thing.Kind == ClearKind.Plant && !SiteRules.ClearsPlants(order.Kind)) || thing.Kind == ClearKind.Item)) continue;
+                if (thing.Area != null)
+                {
+                    // A rock's part on the site, broken with one overwhelming blow (its review, 1.5: a hut placed built over a
+                    // boulder stood with the rock inside it); the rest of a big rock stays, as the builder leaves it.
+                    IDestructible rock = thing.Root != null ? thing.Root.GetComponent<IDestructible>() : null;
+                    if (rock == null) continue;
+                    var hit = new HitData();
+                    hit.m_damage.m_pickaxe = 1000000f;
+                    hit.m_toolTier = 100;
+                    hit.m_point = thing.Position;
+                    hit.m_dir = Vector3.down;
+                    hit.m_hitCollider = thing.Area;
+                    rock.Damage(hit);
+                    cleared++;
+                    continue;
+                }
+                // Never deleted (the review round of 2026-10-23: a stack lying there, a leftover chest's contents, gone): a stack
+                // goes into a colony chest or stays; a leftover comes down as the builder's hammer takes it, dropping what it
+                // holds and its materials; a player's bed stays (theirs to move).
+                if (thing.Kind == ClearKind.Item)
+                {
+                    if (PutAwayNow(thing.Root)) cleared++;
+                    continue;
+                }
                 ZNetView nview = thing.Root.GetComponent<ZNetView>();
                 if (nview == null || !nview.IsValid()) continue;
+                if (thing.Kind == ClearKind.Leftover)
+                {
+                    if (PiecePlacer.IsPlayersBed(thing.Piece)) continue;
+                    WearNTear wear = thing.Root.GetComponent<WearNTear>();
+                    if (wear != null)
+                    {
+                        nview.ClaimOwnership();
+                        wear.Remove();
+                        cleared++;
+                        continue;
+                    }
+                }
                 nview.ClaimOwnership();
                 ZNetScene.instance.Destroy(thing.Root);
                 cleared++;
             }
             return cleared;
+        }
+
+        /// <summary>
+        /// A stack lying on the site, put at once into the colony's Builder's Hut (the nearest first), else its Town Hall:
+        /// whole into one chest with room for it; where none has, it stays where it lies.
+        /// </summary>
+        private bool PutAwayNow(GameObject root)
+        {
+            ItemDrop drop = root != null ? root.GetComponent<ItemDrop>() : null;
+            ZNetView view = root != null ? root.GetComponent<ZNetView>() : null;
+            if (drop == null || drop.m_itemData == null || drop.m_itemData.m_dropPrefab == null || view == null || !view.IsValid()) return false;
+            string item = drop.m_itemData.m_dropPrefab.name;
+            int count = drop.m_itemData.m_stack;
+            IEnumerable<StorageModule> chests = ColonyBuilding.All
+                .Where(b => b != null && b.IsValid && b.ColonyId == _building.ColonyId && b.TypeId == BuildingTypes.BuilderHutId && b.Storage != null)
+                .OrderBy(b => Vector3.Distance(b.transform.position, transform.position)).Select(b => b.Storage);
+            ColonyBuilding hall = ColonyBuilding.FindTownHall(_building.ColonyId);
+            if (hall != null && hall.IsValid && hall.Storage != null) chests = chests.Concat(new[] { hall.Storage });
+            foreach (StorageModule chest in chests)
+            {
+                if (chest.RoomFor(item) < count) continue;
+                var load = new CarryLoad();
+                load.Add(item, count);
+                chest.TryDeposit(load);
+                int left = load.Count(item);
+                if (left >= count) continue;   // nothing went in (busy, or no room after all)
+                // What went in leaves the ground: a part that didn't fit is dropped there anew, never kept whole as well (its
+                // review: the stack stayed and the next chest got it too).
+                Vector3 at = root.transform.position;
+                ItemDrop.ItemData rest = left > 0 ? drop.m_itemData.Clone() : null;
+                view.ClaimOwnership();
+                ZNetScene.instance.Destroy(root);
+                if (rest != null) ItemDrop.DropItem(rest, left, at, Quaternion.identity);
+                Log.Info($"{_building.TypeId} {_building.Id}: {count - left} {item} on the site put into {chest.name}{(left > 0 ? $", {left} left lying" : "")}");
+                return true;
+            }
+            Log.Info($"{_building.TypeId} {_building.Id}: {count} {item} on the site left where it lies (no chest with room)");
+            return false;
         }
 
         /// <summary>What a builder would clear here: on the site, and what grows or lies in front of its doors.</summary>
@@ -669,6 +834,7 @@ namespace VikingColonies.Construction
         public int MendNow()
         {
             List<PlannedPiece> pieces = Plan.Where(p => CanFinish(p, buriedCheck: false)).ToList();
+            ClearSettlersFrom(pieces);
             long creator = ColonyOwner();
             foreach (PlannedPiece piece in pieces)
             {
@@ -678,8 +844,28 @@ namespace VikingColonies.Construction
             return pieces.Count;
         }
 
+        /// <summary>
+        /// Right before pieces go up at once, each settler a piece would cover makes way as for the builder: moved at once to a
+        /// free spot outside, and keeps away a while (the review round's full run: one standing on a site when a hut went up at
+        /// once stayed wedged under its floor for 20 minutes; creative's Build now, Upgrade now and Repair now go this way).
+        /// Only who a piece covers, and only the settlers this computer runs.
+        /// </summary>
+        private void ClearSettlersFrom(IEnumerable<PlannedPiece> pieces)
+        {
+            var moved = new HashSet<AI.CitizenAI>();
+            foreach (PlannedPiece piece in pieces)
+            {
+                GameObject prefab = PiecePlacer.Prefab(piece.Prefab);
+                if (prefab == null) continue;
+                foreach (AI.CitizenAI settler in PiecePlacer.SettlersAt(prefab, U(piece.Position), U(piece.Rotation), null))
+                    if (moved.Add(settler)) settler.MakeWay(this, U(piece.Position), now: true, $"the {_building.TypeId} going up at once");
+            }
+        }
+
         private void PutUp(IEnumerable<PlannedPiece> pieces)
         {
+            List<PlannedPiece> going = pieces.Where(p => PiecePlacer.FindStanding(p) == null).ToList();
+            ClearSettlersFrom(going);   // right before, after any levelling (its review: cleared first, they walked back meanwhile)
             long creator = ColonyOwner();
             foreach (PlannedPiece piece in pieces)
             {
@@ -691,6 +877,82 @@ namespace VikingColonies.Construction
         }
 
         private IEnumerator FlattenThenPutUp(List<Vector3> levels, List<Vector3> smooths, List<PlannedPiece> pieces, float ground)
+        {
+            try
+            {
+                yield return Flatten(levels, smooths, ground);
+                PutUp(pieces);
+            }
+            finally
+            {
+                _finishingNow = false;
+            }
+        }
+
+        /// <summary>A finish at once is running here: the ground still being levelled or old pieces still going (creative, 1.5).</summary>
+        private bool _finishingNow;
+
+        /// <summary>This building is going up at once right now (its owner's view): creative's Build now waits for it.</summary>
+        public bool GoingUpNow => _finishingNow || _upgradingAtOnce || _preparingNow;
+
+        /// <summary>
+        /// Creative (1.5, a No build cost world): the site cleared and flattened at once, as FinishNow does before its pieces;
+        /// the builder then puts them up one by one. Owner only.
+        /// </summary>
+        public void PrepareSiteNow()
+        {
+            BuildOrderRecord order = Order;
+            if (_preparingNow || !IsValid || !_nview.IsOwner() || order == null || order.State == BuildState.Done || order.Kind == OrderKind.Remove) return;
+            int cleared = ClearSiteNow();
+            var levels = new List<Vector3>();
+            var smooths = new List<Vector3>();
+            bool flatten = PlanFlatten(order, levels, smooths);
+            Log.Info($"{_building.TypeId} {_building.Id}: the site prepared at once (creative): {cleared} things cleared, {levels.Count} spots levelled");
+            StartCoroutine(PrepareThenBuild(flatten, levels, smooths, order.Ground));
+        }
+
+        private bool _preparingNow;
+
+        /// <summary>The ground first, then the order moves on: a builder must not put pieces up on ground still being levelled.</summary>
+        private IEnumerator PrepareThenBuild(bool flatten, List<Vector3> levels, List<Vector3> smooths, float ground)
+        {
+            _preparingNow = true;
+            try
+            {
+                if (flatten) yield return Flatten(levels, smooths, ground);
+            }
+            finally
+            {
+                _preparingNow = false;
+            }
+            if (IsValid) RequestAdvance(BuildState.Building);
+        }
+
+        /// <summary>
+        /// Creative (1.5): built at once up to <paramref name="level"/> (a building placed already built): its order finished,
+        /// then a level at a time, then anything that fell put back. Owner only.
+        /// </summary>
+        public IEnumerator BuildToLevelAtOnce(int level)
+        {
+            for (float waited = 0f; IsValid && Order == null && waited < 15f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
+            if (!IsValid || Order == null) yield break;
+            FinishNow();
+            for (float waited = 0f; IsValid && (_finishingNow || Order == null || Order.State != BuildState.Done) && waited < 180f; waited += 0.5f)
+                yield return new WaitForSeconds(0.5f);
+            while (IsValid && DesignLevel < level)
+            {
+                int was = DesignLevel;
+                UpgradeAtOnce(ZNet.GetUID(), creative: true);
+                yield return null;
+                for (float waited = 0f; IsValid && (_upgradingAtOnce || _finishingNow) && waited < 180f; waited += 0.5f) yield return new WaitForSeconds(0.5f);
+                if (DesignLevel == was) break;
+            }
+            yield return new WaitForSeconds(2f);
+            if (IsValid) MendNow();
+            Log.Info($"{_building.TypeId} {_building.Id}: placed already built, level {DesignLevel} (asked for {level})");
+        }
+
+        private IEnumerator Flatten(List<Vector3> levels, List<Vector3> smooths, float ground)
         {
             // As the builder does: level, let the ground settle, look again where it's still off (up to three passes).
             for (int pass = 0; pass < 3 && levels.Count > 0; pass++)
@@ -709,7 +971,6 @@ namespace VikingColonies.Construction
                 yield return new WaitForSeconds(FinishStepSeconds);
             }
             yield return new WaitForSeconds(FinishStepSeconds);
-            PutUp(pieces);
         }
 
         /// <summary>
@@ -789,13 +1050,30 @@ namespace VikingColonies.Construction
             return positions.Any(p => Vector3.Distance(p, at) <= DesignDiff.SamePlace);
         }
 
+        /// <summary>A storehouse being emptied for its take-down: what's left, or why its couriers can't (part 3).</summary>
+        private string ClosingLine()
+        {
+            switch (StoreChoice())
+            {
+                case StoreTakeDown.CouriersEmptyIt: return string.Format(L("$vc_store_emptying"), L(StoreHolds()));
+                case StoreTakeDown.EmptyItYourself:
+                    bool gear = _building.Storehouse.Chests.SelectMany(c => c.Contents().Keys).All(i => !StorageModule.Carried(i));
+                    return string.Format(L(gear ? "$vc_store_emptying_gear" : "$vc_store_emptying_no_courier"), L(StoreHolds()));
+                default: return L("$vc_store_emptied");
+            }
+        }
+
         /// <summary>What a hut's window says about its building.</summary>
         public string Describe()
         {
             BuildOrderRecord order = Order;
             if (order == null) return L("$vc_built_before_builders");
             var lines = new List<string>();
-            if (order.State == BuildState.Done) lines.Add(L("$vc_built"));
+            if (order.State == BuildState.Done)
+            {
+                lines.Add(L("$vc_built"));
+                if (IsClosingStore) lines.Add($"<color=orange>{ClosingLine()}</color>");   // a storehouse being emptied (1.5)
+            }
             else
             {
                 if (order.Kind == OrderKind.Upgrade)
@@ -876,12 +1154,16 @@ namespace VikingColonies.Construction
         /// <summary>Town Hall › Work orders: a repair is left as it is (its missing pieces aren't put back).</summary>
         public void RequestLeaveAsIs() => _nview.InvokeRPC(RpcLeaveAsIs);
 
-        /// <summary>The materials of the pieces still to put up (not up, not skipped); empty for a finished order.</summary>
+        /// <summary>
+        /// The materials of the pieces still to put up (not up, not skipped); empty for a finished order, and where builders
+        /// build free (the review round of 2026-10-23: the Work orders, the storehouse's Needs, its couriers and Hand over
+        /// asked for materials nobody used).
+        /// </summary>
         public Dictionary<string, int> RemainingNeeds()
         {
             var total = new Dictionary<string, int>();
             BuildOrderRecord order = Order;
-            if (order == null || order.State == BuildState.Done) return total;
+            if (order == null || order.State == BuildState.Done || Colony.Creative.BuildersFree()) return total;
             IReadOnlyList<PlannedPiece> plan = Plan;
             for (int i = 0; i < plan.Count && i < order.Total; i++)
                 if (order.IsOpen(i) && plan[i].IsValid) NeedsTally.Add(total, PiecePlacer.Needs(plan[i].Prefab));
@@ -989,18 +1271,251 @@ namespace VikingColonies.Construction
         /// <summary>Test command: makes the upgrade if needed, takes the old pieces away at once and puts the new ones up.</summary>
         private void OnUpgradeNow(long sender)
         {
-            // A test shortcut (vc_build), but a network message all the same: only who may manage the colony (review of 0.20, bug 4).
+            // A test shortcut (vc_build), but a network message all the same: only who may manage the colony (review of 0.20, bug 4),
+            // and only in a test world or in creative (1.5).
             if (!IsValid || !_nview.IsOwner() || !Allowed(sender)) return;
+            bool testWorld = ZNet.instance != null && TestWorlds.IsTestWorld(ZNet.instance.GetWorldName());
+            if (!testWorld && !Colony.Creative.OwnerAccepts(_building, sender))
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: an upgrade at once from {sender} refused: not a test world, not creative");
+                Tell(sender, "$vc_creative_refused");
+                return;
+            }
+            UpgradeAtOnce(sender, creative: false);
+        }
+
+        /// <summary>
+        /// One level up at once (owner): the old pieces taken away, the new ones put up. In creative the Builder's Hut's level
+        /// doesn't count, the Town Hall's limit does; a press while one runs is kept and done after it (one level a press).
+        /// </summary>
+        private void UpgradeAtOnce(long sender, bool creative)
+        {
             if (IsTakingDown)
             {
                 Log.Info($"{_building.TypeId} {_building.Id}: is being taken down: not upgraded at once");
                 Tell(sender, "$vc_upgrade_lock_takedown");
                 return;
             }
-            if (IsCamp && Order == null && !TryStartCamp(out _)) return;   // a test shortcut: the camp's first level
-            if (!IsUpgrading && (DesignLevel >= HutLevels.MaxLevel || !CreateUpgrade(DesignLevel + 1))) return;
+            if (_upgradingAtOnce)
+            {
+                _upgradesWaiting++;
+                return;
+            }
+            if (_finishingNow || _preparingNow)
+            {
+                BusyRefusalsForTest++;
+                Tell(sender, "$vc_creative_busy");
+                return;
+            }
+            if (IsCamp && Order == null && !TryStartCamp(out _)) return;   // the camp's first level
+            if (!IsUpgrading)
+            {
+                if (creative && !IsCamp)
+                {
+                    UpgradeLock locked = UpgradeCheck(ignoreBuilderHut: true);
+                    if (locked != UpgradeLock.None)
+                    {
+                        Log.Info($"{_building.TypeId} {_building.Id}: creative upgrade refused ({locked})");
+                        Tell(sender, CreativeLockToken(locked));
+                        return;
+                    }
+                    // The next level's site, as the builder's upgrade checks it (the review round of 2026-10-23: a level running
+                    // into a neighbour or a player's chest left pieces out, marked built, and its repair was blocked for good).
+                    // Placing a hut built at a level climbs here too, and stops at the last level that fits.
+                    UpgradePreview preview = PreviewUpgrade();
+                    if (preview == null || preview.Site.Colour == SiteColour.Red)
+                    {
+                        Log.Info($"{_building.TypeId} {_building.Id}: creative upgrade refused ({(preview == null ? "no design" : preview.Site.Red.ToString())})");
+                        Tell(sender, preview == null ? "$vc_upgrade_refused" : SiteText.RedToken(preview.Site.Red));
+                        return;
+                    }
+                }
+                if (DesignLevel >= HutLevels.MaxLevel || !CreateUpgrade(DesignLevel + 1)) return;
+            }
             int removed = TakeAwayAllNow();
-            StartCoroutine(FinishAfterRemoval(removed));
+            StartCoroutine(UpgradeAtOnceRun(sender, creative, removed));
+        }
+
+        private bool _upgradingAtOnce;
+        private int _upgradesWaiting;
+
+        /// <summary>vc_creativetest: how many creative requests were answered "already going up".</summary>
+        internal static int BusyRefusalsForTest;
+
+        /// <summary>vc_storehousetest: how many take-downs the owner refused for a storehouse's full chests.</summary>
+        internal static int StoreFullRefusalsForTest;
+
+        private IEnumerator UpgradeAtOnceRun(long sender, bool creative, int removed)
+        {
+            _upgradingAtOnce = true;
+            try
+            {
+                yield return FinishAfterRemoval(removed);
+                // Until it is up (the ground can take a while on a slope; the review of 1.5: a fixed 30 s ran out).
+                for (float waited = 0f; IsValid && (_finishingNow || (Order != null && Order.State != BuildState.Done)) && waited < 180f; waited += 0.5f)
+                    yield return new WaitForSeconds(0.5f);
+            }
+            finally
+            {
+                _upgradingAtOnce = false;
+            }
+            if (_upgradesWaiting > 0 && IsValid)
+            {
+                _upgradesWaiting--;
+                UpgradeAtOnce(sender, creative);
+            }
+        }
+
+        private static string CreativeLockToken(UpgradeLock locked)
+        {
+            switch (locked)
+            {
+                case UpgradeLock.MaxLevel: return "$vc_upgrade_lock_max";
+                case UpgradeLock.NotFinished: return "$vc_upgrade_lock_unfinished";
+                case UpgradeLock.TakingDown: return "$vc_upgrade_lock_takedown";
+                case UpgradeLock.TownHallTooLow: return "$vc_creative_hall_limit";
+                default: return "$vc_upgrade_lock_running";
+            }
+        }
+
+        /// <summary>
+        /// A builder in a No build cost world asks for the site prepared at once (creative, 1.5). From whichever computer runs
+        /// the builder, so no manager's check: the owner does it only while the world itself has No build cost.
+        /// </summary>
+        public void RequestPrepareNow()
+        {
+            if (IsValid) _nview.InvokeRPC(RpcPrepareNow);
+        }
+
+        private void OnPrepareNow(long sender)
+        {
+            if (!IsValid || !_nview.IsOwner() || !Colony.Creative.BuildersFree()) return;
+            BuildOrderRecord order = Order;
+            if (order == null || (order.State != BuildState.Clearing && order.State != BuildState.Shaping)) return;
+            PrepareSiteNow();
+        }
+
+        /// <summary>Creative mode (1.5): one creative request to this building's owner, who checks it.</summary>
+        public void RequestCreative(CreativeAction action)
+        {
+            if (IsValid) _nview.InvokeRPC(RpcCreative, (int)action);
+        }
+
+        private void OnCreative(long sender, int action)
+        {
+            if (!IsValid || !_nview.IsOwner() || !System.Enum.IsDefined(typeof(CreativeAction), action) || !Allowed(sender)) return;
+            var what = (CreativeAction)action;
+            CreativeRefusal refusal = Colony.Creative.Refusal(_building, sender);
+            if (refusal != CreativeRefusal.None)
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: creative {what} from {sender}: refused ({refusal})");
+                Tell(sender, Colony.Creative.RefusalWords(refusal));
+                return;
+            }
+            if (what == CreativeAction.Supply && !Colony.Creative.SupplyNeeded())
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: creative Supply from {sender}: refused (builders build free here)");
+                Tell(sender, "$vc_creative_supply_free");
+                return;
+            }
+            Log.Info($"{_building.TypeId} {_building.Id}: creative {what} from {sender}");
+            switch (what)
+            {
+                case CreativeAction.Build:
+                    CreativeBuild(sender);
+                    break;
+                case CreativeAction.Upgrade:
+                    UpgradeAtOnce(sender, creative: true);
+                    break;
+                case CreativeAction.Repair:
+                    CreativeRepair(sender);
+                    break;
+                case CreativeAction.Supply:
+                    Supply(sender);
+                    break;
+            }
+        }
+
+        /// <summary>Build now: the open build or upgrade (or repair) finished at once.</summary>
+        private void CreativeBuild(long sender)
+        {
+            if (GoingUpNow)
+            {
+                BusyRefusalsForTest++;
+                Tell(sender, "$vc_creative_busy");
+                return;
+            }
+            BuildOrderRecord order = Order;
+            if (order == null || order.State == BuildState.Done || order.Kind == OrderKind.Remove)
+            {
+                Tell(sender, "$vc_creative_nothing");
+                return;
+            }
+            if (order.Kind == OrderKind.Upgrade)
+            {
+                int removed = TakeAwayAllNow();
+                StartCoroutine(FinishAfterRemoval(removed));
+            }
+            else FinishNow();
+        }
+
+        /// <summary>Repair now: every broken or missing piece back at once.</summary>
+        private void CreativeRepair(long sender)
+        {
+            if (IsTakingDown)   // its review (1.5): the pieces put back would be left as a shell the builder never takes
+            {
+                Tell(sender, "$vc_upgrade_lock_takedown");
+                return;
+            }
+            if (GoingUpNow)
+            {
+                BusyRefusalsForTest++;
+                Tell(sender, "$vc_creative_busy");
+                return;
+            }
+            int mended = MendNow();
+            CheckForRepair();
+            BuildOrderRecord order = Order;
+            if (order != null && order.Kind == OrderKind.Repair && order.State != BuildState.Done) FinishNow();
+            else if (mended == 0) Tell(sender, "$vc_creative_nothing");
+        }
+
+        /// <summary>
+        /// Supply what's needed (a Builder's Hut): what the colony's open orders still need, beyond this hut's chest, made into
+        /// it; what doesn't fit goes to the Town Hall's chest when this computer owns that too (only a chest's owner may
+        /// change it), else the asker hears that some didn't fit.
+        /// </summary>
+        private void Supply(long sender)
+        {
+            if (_building.TypeId != BuildingTypes.BuilderHutId || _building.Storage == null) return;
+            var needs = new Dictionary<string, int>();
+            foreach (ConstructionModule site in s_all)
+            {
+                if (site == null || !site.IsValid || site._building.ColonyId != _building.ColonyId) continue;
+                BuildOrderRecord order = site.Order;
+                if (order == null || order.State == BuildState.Done || order.Kind == OrderKind.Remove) continue;
+                NeedsTally.Add(needs, site.RemainingNeeds());
+            }
+            Dictionary<string, int> held = _building.Storage.Contents();
+            Inventory own = GetComponent<Container>()?.GetInventory();
+            ColonyBuilding hall = ColonyBuilding.FindTownHall(_building.ColonyId);
+            ZNetView hallView = hall != null ? hall.GetComponent<ZNetView>() : null;
+            Inventory spill = hallView != null && hallView.IsValid() && hallView.IsOwner() ? hall.GetComponent<Container>()?.GetInventory() : null;
+            int put = 0, left = 0;
+            foreach (KeyValuePair<string, int> need in needs)
+            {
+                int want = need.Value - (held.TryGetValue(need.Key, out int n) ? n : 0);
+                GameObject prefab = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(need.Key) : null;
+                if (want <= 0 || prefab == null) continue;
+                for (int i = 0; i < want; i++)
+                {
+                    if (own != null && own.AddItem(prefab, 1)) put++;
+                    else if (spill != null && spill.AddItem(prefab, 1)) put++;
+                    else left++;
+                }
+            }
+            Log.Info($"{_building.TypeId} {_building.Id}: supplied {put} items for the colony's orders; {left} didn't fit");
+            Tell(sender, left > 0 ? "$vc_supply_full" : put > 0 ? "$vc_supply_done" : "$vc_creative_nothing");
         }
 
         /// <summary>
@@ -1009,8 +1524,10 @@ namespace VikingColonies.Construction
         /// </summary>
         private IEnumerator FinishAfterRemoval(int removed)
         {
+            _finishingNow = true;   // the old pieces go first: no other finish meanwhile (its review, 1.5)
             yield return null;
             yield return null;
+            _finishingNow = false;
             int placed = FinishNow();
             Log.Info($"{_building.TypeId} {_building.Id}: upgrading at once to level {Order?.TargetLevel}: {removed} old pieces removed, {placed} going up");
         }
@@ -1047,15 +1564,61 @@ namespace VikingColonies.Construction
         /// </summary>
         private void OnTakeDown(long sender)
         {
-            if (!IsValid || !_nview.IsOwner() || !MayTakeDown || !Allowed(sender)) return;
+            if (!IsValid || !_nview.IsOwner() || !Allowed(sender)) return;
+            if (!MayTakeDown)
+            {
+                if (MayTakeDownOnceEmpty)   // a storehouse whose chests inside hold something here (the asker's window may have seen them empty)
+                {
+                    if (StoreChoice() == StoreTakeDown.CouriersEmptyIt)
+                    {
+                        // Its couriers carry the store away first; then it is taken down (part 3).
+                        if (!IsClosingStore) Log.Info($"{_building.TypeId} {_building.Id}: to be taken down once its couriers have emptied its store ({StoreHolds()})");
+                        _nview.GetZDO().Set(SaveKeys.StoreClosing, true);
+                        Tell(sender, "$vc_takedown_emptying");
+                        return;
+                    }
+                    StoreFullRefusalsForTest++;
+                    Log.Info($"{_building.TypeId} {_building.Id}: not taken down: chests inside hold {StoreHolds()}");
+                    Tell(sender, "$vc_takedown_store_not_empty");
+                }
+                return;
+            }
+            StartTakeDown(sender);
+        }
+
+        /// <summary>
+        /// Owner, every few seconds while a storehouse closes (part 3): its couriers have emptied it, so it is taken down
+        /// now; a repair meanwhile is waited for; another order, it opens again.
+        /// </summary>
+        internal void TakeDownOnceEmptied()
+        {
+            if (!IsValid || !_nview.IsOwner() || !IsClosingStore || _finishing) return;
+            BuildOrderRecord order = Order;
+            switch (TakeDownRules.WhileClosing(StoreEmpty, MayTakeDownOnceEmpty, order != null && order.Kind == OrderKind.Repair && order.State != BuildState.Done, IsTakingDown))
+            {
+                case ClosingStep.Reopen:
+                    _nview.GetZDO().Set(SaveKeys.StoreClosing, false);
+                    Log.Info($"{_building.TypeId} {_building.Id}: its store opens again (another order came, or it is taken down already)");
+                    return;
+                case ClosingStep.TakeDown:
+                    Log.Info($"{_building.TypeId} {_building.Id}: its couriers emptied its store; taken down now");
+                    StartTakeDown(0L);
+                    return;
+            }
+        }
+
+        /// <summary>Owner: the take-down order made; <paramref name="sender"/> 0 when nobody is waiting for an answer.</summary>
+        private void StartTakeDown(long sender)
+        {
             // Every piece must be loaded, or those out of reach would stay standing (0.26, review of 0.23).
             Footprint site = SiteFootprint;
             if (site != null && ZoneSystem.instance != null && site.Corners().Any(c => !ZoneSystem.instance.IsZoneLoaded(CoreVectors.U(c))))
             {
                 Log.Info($"{_building.TypeId} {_building.Id}: not taken down: part of it isn't loaded");
-                Tell(sender, "$vc_takedown_not_loaded");
+                if (sender != 0L) Tell(sender, "$vc_takedown_not_loaded");
                 return;
             }
+            if (IsClosingStore) _nview.GetZDO().Set(SaveKeys.StoreClosing, false);
             IReadOnlyList<PlannedPiece> plan = Plan;
             var near = new List<Piece>();
             Piece.GetAllPiecesInRadius(transform.position, PlanRadius(plan), near);
@@ -1081,7 +1644,14 @@ namespace VikingColonies.Construction
 
         private void OnCancelTakeDown(long sender)
         {
-            if (!IsValid || !_nview.IsOwner() || !IsTakingDown || _finishing || !Allowed(sender)) return;
+            if (!IsValid || !_nview.IsOwner() || _finishing || !Allowed(sender)) return;
+            if (IsClosingStore && !IsTakingDown)
+            {
+                _nview.GetZDO().Set(SaveKeys.StoreClosing, false);   // the store opens again (part 3)
+                Log.Info($"{_building.TypeId} {_building.Id}: take-down cancelled while its store was being emptied");
+                return;
+            }
+            if (!IsTakingDown) return;
             ZDO zdo = _nview.GetZDO();
             zdo.Set(OrderKey, zdo.GetString(PrevOrderKey, ""));
             zdo.Set(PrevOrderKey, "");
@@ -1287,7 +1857,10 @@ namespace VikingColonies.Construction
             return true;
         }
 
-        /// <summary>Test command: takes every old piece of a running upgrade away at once (no materials drop).</summary>
+        /// <summary>
+        /// Takes every old piece of a running upgrade away at once (no materials drop), but a chest holding something drops
+        /// it, as the builder's hammer does (the review round of 2026-10-23: a design's chest went with its contents).
+        /// </summary>
         private int TakeAwayAllNow()
         {
             IReadOnlyList<PlannedPiece> old = TakeAwayPlan;
@@ -1299,7 +1872,10 @@ namespace VikingColonies.Construction
                 {
                     ZNetView nview = standing.GetComponent<ZNetView>();
                     if (nview != null && nview.IsValid() && !nview.IsOwner()) nview.ClaimOwnership();
-                    ZNetScene.instance.Destroy(standing.gameObject);
+                    Inventory held = standing.GetComponent<Container>()?.GetInventory();
+                    WearNTear wear = standing.GetComponent<WearNTear>();
+                    if (held != null && held.NrOfItems() > 0 && wear != null) wear.Remove();
+                    else ZNetScene.instance.Destroy(standing.gameObject);
                     removed++;
                 }
                 ReportTaken(i);

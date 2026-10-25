@@ -27,6 +27,9 @@ namespace VikingColonies.Jobs
         /// <summary>He is taking his load to another chest.</summary>
         public bool Active => _to.Length > 0;
 
+        /// <summary>The building whose chests his load goes to ("" when none).</summary>
+        public string To => _to;
+
         /// <summary>
         /// Where his load goes, the chest of <paramref name="full"/> being full: false when every other one is full too.
         /// <paramref name="keep"/> stays in his hands, so it needs no room (review of 0.21: a lumberjack's seeds found
@@ -42,7 +45,14 @@ namespace VikingColonies.Jobs
                 if (b == null || !b.IsValid || b == full || b.ColonyId != citizen.ColonyId || b.Storage == null || b.Id.Length == 0
                     || _skipped.IsBlocked(b.Id, now)) continue;
                 Vector3 at = b.transform.position;
-                chests.Add(new ChestRoom { BuildingId = b.Id, At = new GroundPoint(at.x, at.z), IsTownHall = b.IsTownHall, HasRoom = b.Storage.HasRoomFor(load) });
+                bool room = false;
+                foreach (StorageModule store in b.Stores)   // a storehouse: any chest of its store (1.5)
+                    if (store.HasRoomFor(load))
+                    {
+                        room = true;
+                        break;
+                    }
+                chests.Add(new ChestRoom { BuildingId = b.Id, At = new GroundPoint(at.x, at.z), IsTownHall = b.IsTownHall, IsStorehouse = b.IsStorehouse, HasRoom = room });
             }
             Vector3 me = citizen.transform.position;
             _to = FullChest.Choose(chests, new GroundPoint(me.x, me.z)) ?? "";
@@ -82,14 +92,24 @@ namespace VikingColonies.Jobs
             ai.Idle();
             ai.Face(to.transform.position);
             int before = citizen.Carry.Total;
-            StorageModule.DepositResult result = to.Storage.TryDeposit(citizen.Carry, keep);
-            if (result == StorageModule.DepositResult.Busy) return true;   // its owner is handing it over, or a player has it open
-            citizen.SaveCarry();
+            bool busy = false;
+            foreach (StorageModule store in to.Stores)   // a storehouse's store chest by chest, its own first (1.5)
+            {
+                if (citizen.Carry.Beyond(keep).Total == 0) break;
+                if (store.TryDeposit(citizen.Carry, keep) == StorageModule.DepositResult.Busy) busy = true;
+            }
             int moved = before - citizen.Carry.Total;
+            bool allIn = citizen.Carry.Beyond(keep).Total == 0;
+            if (!allIn && busy)
+            {
+                if (moved > 0) citizen.SaveCarry();
+                return true;   // a chest's owner is handing it over, or a player has it open: the rest waits for it
+            }
+            citizen.SaveCarry();
             Log.Info($"{citizen.CitizenName} put {moved} of their load in {_to}'s chest (their own is full)");
             if (moved == 0) _skipped.Add(_to, now);   // it took nothing after all: not that one again for a while
             _to = "";
-            if (result == StorageModule.DepositResult.StorageFull) Choose(citizen, full, keep);   // that one filled up too: the next
+            if (!allIn) Choose(citizen, full, keep);   // that one filled up too: the next
             return Active;
         }
 
@@ -107,7 +127,8 @@ namespace VikingColonies.Jobs
                 return false;
             }
             float distance = Utils.DistanceXZ(citizen.transform.position, at);
-            return MoveRules.DeliverFromHere(_stuck.Update(distance, Time.time), distance);
+            // Never through a wall (the player's watch of 1.5): stuck behind one, it waits till its patience runs out.
+            return MoveRules.DeliverFromHere(_stuck.Update(distance, Time.time), distance) && ai.NothingBetween(at);
         }
     }
 }

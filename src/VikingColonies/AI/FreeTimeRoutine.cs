@@ -204,8 +204,8 @@ namespace VikingColonies.AI
                 case Leisure.Chat:
                     // The nearest first; with a wall between them wherever they'd meet, the next (1.4.3), up to three.
                     if (partners.Any(p => StartChat(p, now))) break;
-                    // A wall between them and every one of them: a stroll instead (1.4.2), said once for them all (1.4.3's review).
-                    Log.Info($"{_citizen.CitizenName} won't chat with {ChatPairing.Names(askable)}: a wall stands between them wherever they'd meet");
+                    // A wall between them, or a doorway (1.5.0), with every one of them: a stroll instead (1.4.2), said once for them all.
+                    Log.Info($"{_citizen.CitizenName} won't chat with {ChatPairing.Names(askable)}: a wall stands between them, or a door is in the way, wherever they'd meet");
                     Begin(Leisure.Stroll, now);
                     _spot = StrollSpot(me);
                     SaveDoing(ActivityWords.Token(Leisure.Stroll), "");
@@ -389,16 +389,23 @@ namespace VikingColonies.AI
         }
 
         /// <summary>
-        /// The first meeting place with no wall between its two spots, both checked at one height
-        /// (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall (the life test checks it).
+        /// The first meeting place clear of doors (1.5.0) with no wall between its two spots, both checked at one height
+        /// (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall or a door (the life test checks the wall).
         /// </summary>
         internal static bool ChooseMeeting(Vector3 mine, Vector3 theirs, out ChatMeeting meeting)
         {
             List<ChatMeeting> places = ChatPairing.Meetings(Ground(mine), Ground(theirs));
+            // Not in a doorway (the 1.5.0 release run: two met at the storehouse's door, and a courier gave up there).
+            Vector3 middle = (mine + theirs) / 2f;
+            float near = Utils.DistanceXZ(mine, theirs) / 2f + FreeTimeRules.ChatGap + ChatPairing.DoorClearance;
+            var doors = new List<GroundPoint>();
+            foreach (Door door in Jobs.WorldScan.Doors())
+                if (door != null && Utils.DistanceXZ(door.transform.position, middle) <= near) doors.Add(Ground(door.transform.position));
             for (int i = 0; i < places.Count; i++)
             {
                 float y = ChatPairing.MeetingHeight(i, mine.y, theirs.y);
                 ChatMeeting place = places[i];
+                if (!ChatPairing.ClearOfDoors(place, doors)) continue;
                 if (WallBetween(new Vector3(place.First.X, y, place.First.Z), new Vector3(place.Second.X, y, place.Second.Z))) continue;
                 meeting = place;
                 return true;

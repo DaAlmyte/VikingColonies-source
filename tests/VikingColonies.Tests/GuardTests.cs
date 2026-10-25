@@ -300,10 +300,19 @@ namespace VikingColonies.Tests
         [Fact]
         public void A_guard_with_no_brain_yet_is_on_duty_for_a_moment_so_he_can_arm()
         {
-            Assert.True(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: true));
-            Assert.False(GuardDuty.NeedsBrain(hasBrain: true, isGuard: true, enabled: true));    // his brain says
-            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: false, enabled: true));  // not a guard
-            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: false));  // guards off
+            Assert.True(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: true, towerHere: true, paused: false));
+            Assert.False(GuardDuty.NeedsBrain(hasBrain: true, isGuard: true, enabled: true, towerHere: true, paused: false));    // his brain says
+            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: false, enabled: true, towerHere: true, paused: false));  // not a guard
+            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: false, towerHere: true, paused: false));  // guards off
+        }
+
+        // The review round of 2026-10-23: with his tower not loaded here, or broken by raiders, or in the pause after an error,
+        // no brain is made, so he was "on duty" unarmed: he walked among the raiders and never ran, or stood out all night.
+        [Fact]
+        public void A_guard_whose_brain_cant_be_made_is_as_anyone()
+        {
+            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: true, towerHere: false, paused: false));
+            Assert.False(GuardDuty.NeedsBrain(hasBrain: false, isGuard: true, enabled: true, towerHere: true, paused: true));
         }
 
         [Fact]   // Review Focus: an armed guard on duty stays out; one without a weapon shelters like everyone

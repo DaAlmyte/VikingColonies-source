@@ -23,7 +23,7 @@ namespace VikingColonies.DevTools
     {
         public override string Name => "vc_watch";
         public override string Help => "VikingColonies (test worlds): '" + WatchRequest.Usage + "': a settler's place, status, path, " +
-                                       "goal and the door near him in the log every 0.5 s while it changes (else every 5 s); up to 4 at once";
+                                       "goal and the door near them in the log every 0.5 s while it changes (else every 5 s); up to 4 at once";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)

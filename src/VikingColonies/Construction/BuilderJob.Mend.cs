@@ -8,8 +8,9 @@ using static VikingColonies.Construction.CoreVectors;
 namespace VikingColonies.Construction
 {
     /// <summary>
-    /// Repair (0.13): a builder with no order to work on mends his colony's damaged pieces, the nearest first, with a
-    /// swing of his hammer as a player repairs (free of materials). A new order takes him away at the next piece.
+    /// Repair (0.13): a builder with no order to work on mends his colony's damaged pieces with a swing of his hammer as a
+    /// player repairs (free of materials); since 1.5.0 the worst-damaged building first, finished before the next, and a big
+    /// repair told in the Saga. A new order takes him away at the next piece.
     /// </summary>
     public partial class BuilderJob
     {
@@ -18,6 +19,8 @@ namespace VikingColonies.Construction
         private WearNTear _mend;
         private string _mendHut = "";
         private Vector3 _mendSpot;   // where he stands to mend it: on the ground just outside its building
+        private string _mendSite = "";   // the building being mended (1.5.0): finished before the next
+        private int _mendedHere;         // pieces mended there in this go, for the Saga
 
         /// <summary>True while he mends a piece (or walks to it); false when there is nothing to mend.</summary>
         private bool Mend(float dt)
@@ -28,6 +31,12 @@ namespace VikingColonies.Construction
                 if (!_mendLook.Ready(Time.time)) return false;
                 _mendLook.Start(Time.time);
                 _mend = FindDamaged(out _mendHut, out ColonyBuilding hut);
+                string site = _mend != null && hut != null ? hut.Id : "";
+                if (site != _mendSite)
+                {
+                    TellMended();   // the last building is done (or another came first): a big repair goes in the Saga
+                    _mendSite = site;
+                }
                 if (_mend == null) return false;
                 _mendSpot = MendSpot(_mend.transform.position, hut);
                 _walkStuck.Reset();
@@ -79,7 +88,9 @@ namespace VikingColonies.Construction
 
         private bool MendNow(WearNTear target)
         {
+            float before = target != null ? target.GetHealthPercentage() : 1f;
             if (target == null || !target.Repair()) return false;
+            if (RepairRules.CountsForSaga(before)) _mendedHere++;   // rain's wear doesn't make a Saga line (its review)
             Log.Info($"{Citizen.CitizenName} mended the {Utils.GetPrefabName(target.gameObject)} at {target.transform.position}");
             if (_mend == target) _mend = null;
             return true;
@@ -113,7 +124,7 @@ namespace VikingColonies.Construction
             return beside;
         }
 
-        /// <summary>The nearest damaged piece the colony's builders put up for its buildings; null for none.</summary>
+        /// <summary>The next damaged piece of the colony's buildings (<see cref="RepairRules.MendNext"/>); null for none.</summary>
         private WearNTear FindDamaged(out string hutToken, out ColonyBuilding hutOf)
         {
             hutToken = "";
@@ -125,6 +136,7 @@ namespace VikingColonies.Construction
             var found = new List<WearNTear>();
             var spots = new List<Vec3>();
             var sites = new List<string>();
+            var health = new List<float>();
             // The huts' own chests too: losing one loses the hut (review of 0.13).
             foreach (KeyValuePair<string, ColonyBuilding> hut in huts)
             {
@@ -133,6 +145,7 @@ namespace VikingColonies.Construction
                 found.Add(chest);
                 spots.Add(V(chest.transform.position));
                 sites.Add(hut.Key);
+                health.Add(chest.GetHealthPercentage());
             }
             foreach (WearNTear wear in WearNTear.GetAllInstances())
             {
@@ -142,12 +155,25 @@ namespace VikingColonies.Construction
                 found.Add(wear);
                 spots.Add(V(wear.transform.position));
                 sites.Add(site);
+                health.Add(wear.GetHealthPercentage());
             }
-            int pick = RepairRules.Nearest(spots, V(Citizen.transform.position));
+            int pick = RepairRules.MendNext(spots, health, sites, V(Citizen.transform.position), _mendSite);
             if (pick < 0) return null;
             hutOf = huts[sites[pick]];
             hutToken = hutOf.Type?.NameToken ?? "";
             return found[pick];
+        }
+
+        /// <summary>A big repair of one building (<see cref="RepairRules.SagaWorthy"/>) goes in the Saga; the count starts again.</summary>
+        private void TellMended()
+        {
+            if (RepairRules.SagaWorthy(_mendedHere) && _mendSite.Length > 0)
+            {
+                ColonyBuilding building = ColonyBuilding.FindById(_mendSite);
+                Colony.Saga.Record(Citizen.ColonyId, "mended", Citizen.CitizenName, _mendedHere.ToString(), Colony.Saga.HutWord(building));
+                Log.Info($"{Citizen.CitizenName} mended {_mendedHere} pieces of the {building?.TypeId ?? _mendSite}: told in the Saga");
+            }
+            _mendedHere = 0;
         }
 
         private static string IdOf(WearNTear wear)

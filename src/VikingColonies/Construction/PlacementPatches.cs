@@ -34,6 +34,7 @@ namespace VikingColonies.Construction
             s_lower = new ButtonConfig { Name = "vc_lower_hut", Config = ColonyConfig.LowerHutKey, HintToken = "$vc_key_lower" };
             InputManager.Instance.AddButton(Plugin.PluginGuid, s_raise);
             InputManager.Instance.AddButton(Plugin.PluginGuid, s_lower);
+            CreativePlacing.RegisterKeys();   // creative mode (1.5): the level a colony building goes up at once
         }
 
         /// <summary>
@@ -49,6 +50,7 @@ namespace VikingColonies.Construction
                 if (__instance != Player.m_localPlayer || piece == null) return true;
                 BuildingType type = BuildingTypes.ByPrefab(Utils.GetPrefabName(piece.gameObject));
                 GameObject ghost = s_ghost(__instance);
+                if (type != null && ghost != null && ghost.activeSelf) CreativePlacing.NotePlacing(type, ghost.transform.position);
                 // A field marker in a colony he may not manage is refused, as a hut is (final review of 0.20); its owner checks too.
                 if (Utils.GetPrefabName(piece.gameObject) == SaveKeys.FieldMarkerPiece && ghost != null && ghost.activeSelf)
                 {
@@ -83,6 +85,8 @@ namespace VikingColonies.Construction
                 s_offset.Select(selected != null ? selected.name : "");
                 BuildingType type = selected != null ? BuildingTypes.ByPrefab(Utils.GetPrefabName(selected.gameObject)) : null;
                 GameObject ghost = s_ghost(__instance);
+                bool placing = type != null && ghost != null && ghost.activeSelf && __instance.InPlaceMode();
+                CreativePlacing.Update(placing ? type : null, placing ? ghost.transform.position : Vector3.zero);
                 if (type == null || type.Id == BuildingTypes.TownHallId || ghost == null || !ghost.activeSelf || !__instance.InPlaceMode())
                 {
                     SitePreview.Clear();
@@ -107,8 +111,11 @@ namespace VikingColonies.Construction
             [HarmonyPatch(typeof(Hud), "UpdateCrosshair"), HarmonyPostfix]
             private static void AfterUpdateCrosshair(Hud __instance)
             {
-                if (!SitePreview.Active || string.IsNullOrEmpty(SitePreview.Text) || __instance.m_hoverName == null) return;
-                __instance.m_hoverName.text = SitePreview.Text;
+                if (__instance.m_hoverName == null) return;
+                string site = SitePreview.Active ? SitePreview.Text ?? "" : "";
+                string creative = CreativePlacing.Line();   // creative mode (1.5): the level it goes up at once
+                if (site.Length == 0 && creative.Length == 0) return;
+                __instance.m_hoverName.text = site.Length == 0 ? creative : creative.Length == 0 ? site : site + "\n" + creative;
             }
         }
 

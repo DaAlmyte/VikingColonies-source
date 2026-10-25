@@ -55,7 +55,7 @@ namespace VikingColonies.AI
         public bool Due()
         {
             CitizenRecord r = _citizen.Record;
-            if (!ColonyConfig.SettlersEat.Value || !r.HasColony || EnvMan.instance == null || ZNet.instance == null) return false;
+            if (!Colony.Creative.SettlersEat(r.ColonyId) || !r.HasColony || EnvMan.instance == null || ZNet.instance == null) return false;
             int today = Today();
             if (Meals.FirstDay(r.LastMealDay) || !Meals.Due(r.LastMealDay, today, EnvMan.IsNight()) || _gaveUpDay == today)
             {
@@ -75,7 +75,7 @@ namespace VikingColonies.AI
         private float _dueSince = -1f;
 
         /// <summary>Whether the meal is this routine's to serve today (else <see cref="MealTime"/> eats where he stands).</summary>
-        public bool Serves => ColonyConfig.SettlersEat.Value && _gaveUpDay != Today();
+        public bool Serves => Colony.Creative.SettlersEat(_citizen.Record.ColonyId) && _gaveUpDay != Today();
 
         public void Tick()
         {
@@ -122,13 +122,14 @@ namespace VikingColonies.AI
             {
                 if (b == null || !b.IsValid || b.ColonyId != r.ColonyId || b.Storage == null) continue;
                 chests.Add(b);
-                foreach (KeyValuePair<string, int> item in b.Storage.SpareContents())   // kept food is left (0.21)
+                foreach (StorageModule store in b.Stores)   // a storehouse: every chest of its store (1.5)
+                foreach (KeyValuePair<string, int> item in store.SpareContents())   // kept food is left (0.21)
                     if (FoodItems.Value(item.Key) > 0f) stock[item.Key] = (stock.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
             }
             _food = Meals.Choose(FoodItems.In(stock), _citizen.Record.LastMeals) ?? "";   // not what he had lately, when there's a choice
             Vector3 me = _citizen.transform.position;
             _chestId = LastChestForTest = Breakfast.Chest(chests.Select(b => new BreakfastChest(b.Id, new GroundPoint(b.transform.position.x, b.transform.position.z),
-                b.IsTownHall, _food.Length > 0 && b.Storage.Spare(_food) > 0)), new GroundPoint(me.x, me.z));
+                b.IsTownHall, _food.Length > 0 && SpareIn(b, _food) > 0, b.IsStorehouse)), new GroundPoint(me.x, me.z));
             if (_food.Length == 0 || _chestId.Length == 0)
             {
                 GiveUp("nothing to eat in the colony's chests");
@@ -140,6 +141,9 @@ namespace VikingColonies.AI
             SaveDoing("$vc_doing_eating");
             Log.Info($"{_citizen.CitizenName} goes to breakfast: {FoodItems.Name(_food)} from {_chestId}");
         }
+
+        /// <summary>How much of the food a building's chests spare (a storehouse: its whole store).</summary>
+        private static int SpareIn(ColonyBuilding building, string food) => building.Stores.Sum(store => store.Spare(food));
 
         private void ToChest(float now)
         {
@@ -153,10 +157,10 @@ namespace VikingColonies.AI
             if (!_ai.GoTo(chest.transform.position, ReachChest)) return;
             _ai.Idle();
             _ai.Face(chest.transform.position);
-            if (!chest.Storage.TryTakeItem(_food, _plate))
+            if (!chest.Stores.Any(store => store.TryTakeItem(_food, _plate)))   // a storehouse: chest by chest (1.5)
             {
                 // Someone ate the last of it on the way: he chooses again (review of 0.15); a busy chest: again next tick.
-                if (chest.Storage.Spare(_food) <= 0) _step = Step.None;
+                if (SpareIn(chest, _food) <= 0) _step = Step.None;
                 return;
             }
             // A seat near the chest is his table; none free: he eats standing.

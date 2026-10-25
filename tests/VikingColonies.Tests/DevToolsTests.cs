@@ -204,12 +204,18 @@ namespace VikingColonies.Tests
 
         // ---- Auto-start ----
 
-        [Fact]
-        public void Auto_start_only_goes_into_a_world_whose_name_says_test()
+        [Fact]   // the review round of 2026-10-23: "Greatest", "Latest", "Contest" counted as test worlds (full logging, test commands)
+        public void Auto_start_only_goes_into_one_of_our_test_worlds()
         {
             Assert.True(TestWorlds.IsTestWorld("VCTest"));
             Assert.True(TestWorlds.IsTestWorld("VCTestMP"));
-            Assert.True(TestWorlds.IsTestWorld("tester"));
+            Assert.True(TestWorlds.IsTestWorld("VCTestFlat"));
+            Assert.True(TestWorlds.IsTestWorld("vctestrun"));
+            Assert.False(TestWorlds.IsTestWorld("Greatest"));
+            Assert.False(TestWorlds.IsTestWorld("Flattest"));
+            Assert.False(TestWorlds.IsTestWorld("Contest"));
+            Assert.False(TestWorlds.IsTestWorld("tester"));
+            Assert.False(TestWorlds.IsTestWorld("MyVCTest"));
             Assert.False(TestWorlds.IsTestWorld("MyWorld"));
             Assert.False(TestWorlds.IsTestWorld(""));
             Assert.False(TestWorlds.IsTestWorld(null));

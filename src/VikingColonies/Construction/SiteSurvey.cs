@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using VikingColonies.Buildings;
 using VikingColonies.Core;
 using static VikingColonies.Construction.CoreVectors;
 
@@ -55,8 +56,9 @@ namespace VikingColonies.Construction
                 if (!piece.IsValid) continue;
                 GameObject prefab = PiecePlacer.Prefab(piece.Prefab);
                 if (prefab == null) continue;
-                float bottom = piece.Position.Y + PieceShape.Of(prefab).Extents.min.y;   // walls stand upright: only turned about y
-                if (RoomRules.IsRoomWall(piece.Prefab, bottom - chest.y)) walls.Add(piece);
+                Bounds shape = PieceShape.Of(prefab).Extents;
+                float bottom = piece.Position.Y + shape.min.y, top = piece.Position.Y + shape.max.y;   // walls stand upright: only turned about y
+                if (RoomRules.IsRoomWall(piece.Prefab, bottom - chest.y, top - chest.y)) walls.Add(piece);
             }
             return walls.Count == 0 ? null : Footprint.Around(OutlinePoints(walls), V(chest), Q(rotation), SiteMargin);
         }
@@ -128,11 +130,12 @@ namespace VikingColonies.Construction
         /// Everything the site check needs for a hut at this spot: what the builder would clear, how the ground must
         /// change (and the stone for it), and every reason the hut can't stand here. <paramref name="clear"/> and
         /// <paramref name="blockers"/> are filled as by <see cref="SiteScanner.Scan"/>. An <paramref name="upgrade"/>'s
-        /// ground is judged as the upgrade levels it (<see cref="GroundRule.Judge"/>).
+        /// ground is judged as the upgrade levels it (<see cref="GroundRule.Judge"/>). <paramref name="type"/> is the kind being
+        /// placed (a building's own when <paramref name="self"/> is given), for its own rules (the storehouse's, 1.5).
         /// </summary>
         public static SiteFindings Look(IReadOnlyList<PlannedPiece> plan, Vector3 chest, Quaternion rotation, ConstructionModule self,
             GameObject ignore, Func<Piece, bool> matchesPlan, float stonePerCubicMetre, List<SiteThing> clear, List<Piece> blockers,
-            bool upgrade = false)
+            bool upgrade = false, BuildingType type = null)
         {
             var findings = new SiteFindings();
             Footprint site = SiteFootprint(plan, chest, rotation);
@@ -146,7 +149,7 @@ namespace VikingColonies.Construction
             findings.Target = target;
             GroundPlan.Range(site, GroundAt, out float lowest, out float highest);
             if (GroundRule.TooSteep(lowest, highest)) findings.AddRed(RedReason.TooSteep);
-            SiteScanner.CheckPlace(findings, site, chest, self);
+            SiteScanner.CheckPlace(findings, site, chest, self, type ?? (self != null ? self.Building?.Type : null));
 
             float bottom = Mathf.Min(lowest, floor - reachBelow) - 1f;
             float top = Mathf.Max(highest, floor + Mathf.Max(topAbove, 2f)) + 1f;
@@ -162,7 +165,9 @@ namespace VikingColonies.Construction
             foreach (SiteThing thing in clear.Where(t => t.Kind != ClearKind.Rock)) findings.Add(thing.Kind, thing.Tier);
             foreach (IGrouping<GameObject, SiteThing> rock in clear.Where(t => t.Kind == ClearKind.Rock).GroupBy(t => t.Root))
                 findings.Add(ClearKind.Rock, rock.Max(t => t.Tier));   // a big rock counts once, however many parts are on the site
+            if (upgrade && self != null && self.Building != null && self.Building.Storehouse != null) KeepStoreChests(plan, self.Building.Storehouse, blockers);
             if (blockers.Count > 0) findings.AddRed(RedReason.OtherBuilding);
+            LastBlockersForTest = string.Join(", ", blockers.Where(b => b != null).Select(b => $"{Utils.GetPrefabName(b.gameObject)} at {b.transform.position}"));
 
             List<GroundOp> ops = GroundPlan.Plan(site, findings.Target, GroundAt);
             foreach (Footprint landing in DoorLandings(plan, site, chest))   // the ground in front of the doors is levelled too
@@ -173,6 +178,42 @@ namespace VikingColonies.Construction
             findings.Stone = GroundPlan.Stone(ops, stonePerCubicMetre);
             return findings;
         }
+
+        /// <summary>
+        /// A storehouse's upgrade (1.5, its review): the chests the player stood inside it stay, a personal one too, unless a
+        /// piece of the new level goes where one stands or nothing of it holds one up
+        /// (<see cref="StorehouseRules.ChestStaysThroughUpgrade"/>).
+        /// </summary>
+        private static void KeepStoreChests(IReadOnlyList<PlannedPiece> plan, StorehouseModule store, List<Piece> blockers)
+        {
+            var chests = new HashSet<GameObject>(store.StandingInside.Where(c => c != null).Select(c => c.gameObject));
+            if (chests.Count == 0) return;
+            List<PlannedPiece> placed = plan.Where(p => p.IsValid && PiecePlacer.Prefab(p.Prefab) != null).ToList();
+            List<PieceBox> newPieces = placed.Select(PiecePlacer.PlannedBox).ToList();
+            blockers.RemoveAll(b =>
+            {
+                if (b == null || !chests.Contains(b.gameObject)) return false;
+                PieceBox box = PiecePlacer.BoxOf(b);
+                if (StorehouseRules.ChestStaysThroughUpgrade(box, newPieces, OnGround(box))) return true;
+                int way = StorehouseRules.InTheWayOf(box, newPieces);
+                string why = way >= 0 ? $"the new level's {placed[way].Prefab} goes there ({Describe(newPieces[way])})" : "nothing of the new level holds it up";
+                string line = $"a chest inside the storehouse ({Describe(box)}) is in its upgrade's way: {why}";
+                if (line != s_lastChestWay) Log.Info(line);   // once, not every look of the window
+                s_lastChestWay = line;
+                return false;
+            });
+        }
+
+        private static string s_lastChestWay = "";
+
+        private static string Describe(PieceBox box) =>
+            $"{box.Min.X:0.00},{box.Min.Y:0.00},{box.Min.Z:0.00} to {box.Max.X:0.00},{box.Max.Y:0.00},{box.Max.Z:0.00}";
+
+        /// <summary>vc_storehousetest: the pieces in the way at the last site check.</summary>
+        internal static string LastBlockersForTest = "";
+
+        /// <summary>A piece standing on the ground (as the builder judges it): it needs nothing under it.</summary>
+        public static bool OnGround(PieceBox box) => box.Min.Y <= GroundAt((box.Min.X + box.Max.X) / 2f, (box.Min.Z + box.Max.Z) / 2f) + 0.3f;
 
         private static readonly List<Piece> s_near = new List<Piece>();
         private static readonly List<Collider> s_unbreakable = new List<Collider>();

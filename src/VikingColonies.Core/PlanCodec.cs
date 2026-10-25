@@ -22,7 +22,7 @@ namespace VikingColonies.Core
                 var n = new float[7];
                 bool ok = parts.Length == 8 && parts[0].Length > 0;
                 for (int i = 0; ok && i < 7; i++)
-                    ok = float.TryParse(parts[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out n[i]);
+                    ok = RecordCodec.TryParseFinite(parts[i + 1], out n[i]);
                 pieces.Add(ok
                     ? new PlannedPiece(pieces.Count, parts[0], new Vec3(n[0], n[1], n[2]), new Quat(n[3], n[4], n[5], n[6]).Normalized)
                     : new PlannedPiece(pieces.Count, "", Vec3.Zero, Quat.Identity));

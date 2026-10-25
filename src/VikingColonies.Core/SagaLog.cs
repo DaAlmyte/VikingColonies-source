@@ -34,7 +34,7 @@ namespace VikingColonies.Core
         public const int MaxEntries = 60;
 
         private static readonly HashSet<string> s_kinds = new HashSet<string>
-            { "arrived", "died", "built", "level", "recalled", "rescued", "hired", "left", "returned", "came", "repelled", "takendown", "raised", "bossfell" };
+            { "arrived", "died", "built", "level", "recalled", "rescued", "hired", "left", "returned", "came", "repelled", "takendown", "raised", "bossfell", "mended" };
 
         private readonly List<SagaEntry> _entries = new List<SagaEntry>();   // oldest first
 
@@ -50,7 +50,7 @@ namespace VikingColonies.Core
         public void Add(SagaEntry entry)
         {
             if (entry == null) return;
-            if (_entries.Count > 0 && Same(_entries[_entries.Count - 1], entry)) return;
+            if (_entries.Count > 0 && Repeats(entry.Kind) && Same(_entries[_entries.Count - 1], entry)) return;
             _entries.Add(entry);
             if (_entries.Count > MaxEntries) _entries.RemoveRange(0, _entries.Count - MaxEntries);
         }
@@ -90,6 +90,12 @@ namespace VikingColonies.Core
             }
             return log;
         }
+
+        /// <summary>
+        /// The kinds a repeat of is dropped: a settler stuck again and again, Recall pressed again and again. Not "built" or
+        /// "level", whose line names only the hut's kind (the review round: two Farms finished the same day showed as one).
+        /// </summary>
+        private static bool Repeats(string kind) => kind == "rescued" || kind == "recalled";
 
         private static bool Same(SagaEntry a, SagaEntry b) =>
             a.Day == b.Day && a.Kind == b.Kind && a.Args.SequenceEqual(b.Args);

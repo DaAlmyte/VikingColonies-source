@@ -11,7 +11,7 @@ namespace VikingColonies.Construction
     internal sealed class BuildCommand : ConsoleCommand
     {
         public override string Name => "vc_build";
-        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build earth' paints the earth under its roof as trodden earth now (a finished building does it on its own within a minute), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
+        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build earth' paints the earth under its roof as trodden earth now (a finished building does it on its own within a minute), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build stations' each of its crafting stations' level, roof and cover, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -113,6 +113,9 @@ namespace VikingColonies.Construction
                     List<string> lines = site.StandReport(out int total, out int standing);
                     Print($"vc_build stands: {site.Building.TypeId} level {site.Building.Level}: {standing} of {total} pieces stand");
                     foreach (string line in lines) Print("vc_build stands: " + line);
+                    break;
+                case "stations":
+                    foreach (string line in Stations(site)) Print(line);
                     break;
                 case "cancel":
                     if (!site.CanCancelUpgrade) Print($"vc_build: nothing to cancel ({(site.IsUpgrading ? "the builder has changed a piece already" : "no upgrade under way")}).");
@@ -254,6 +257,28 @@ namespace VikingColonies.Construction
             if (preview.Site.Colour == SiteColour.Red) return $"vc_build: the bigger building can't go here: {SiteText.Describe(preview.Site, 0f)}";
             site.RequestUpgrade();
             return $"vc_build: upgrade of {site.Building.TypeId} to level {preview.Level} ordered; it needs {Localization.instance.Localize(PiecePlacer.DescribeItems(preview.Needs))}";
+        }
+
+        /// <summary>
+        /// vc_build stations: each crafting station of the hut's building, its level (the upgrades that reach it) and whether
+        /// the game lets it work there (under a roof, its cover; a player on Discord, 2026-10-22: some huts' upgrades didn't
+        /// reach their workbench).
+        /// </summary>
+        private static List<string> Stations(ConstructionModule site)
+        {
+            var lines = new List<string>();
+            string hut = $"vc_build stations: {site.Building.TypeId} level {site.Building.Level}: ";
+            foreach (CraftingStation station in Object.FindObjectsByType<CraftingStation>(FindObjectsSortMode.None))
+            {
+                if (station == null || PiecePlacer.SiteOf(station.gameObject) != site.Building.Id) continue;
+                Transform check = station.m_roofCheckPoint != null ? station.m_roofCheckPoint : station.transform;
+                Cover.GetCoverForPoint(check.position, out float cover, out bool underRoof);
+                lines.Add(hut + $"{Utils.GetPrefabName(station.gameObject)} level {station.GetLevel()}, under a roof {underRoof}, " +
+                          $"cover {cover.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" +
+                          (station.m_craftRequireRoof ? " (needs a roof)" : ""));
+            }
+            if (lines.Count == 0) lines.Add(hut + "none");
+            return lines;
         }
 
         /// <summary>Puts the materials the hut's next level needs into its chest, as far as they fit.</summary>

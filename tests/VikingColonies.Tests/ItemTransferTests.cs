@@ -46,6 +46,19 @@ namespace VikingColonies.Tests
             Assert.Equal(0, leftover);
         }
 
+        [Fact]   // a courier putting away like with like (1.5): one kind into a chest, the rest still carried
+        public void Only_the_named_item_is_stored()
+        {
+            var store = new FakeStore();
+            var load = Load(("Wood", 20), ("Stone", 30));
+            int leftover = ItemTransfer.Deposit(load, store, null, null, only: "Stone");
+            Assert.Equal(30, store.Count("Stone"));
+            Assert.Equal(0, store.Count("Wood"));
+            Assert.Equal(20, load.Count("Wood"));
+            Assert.Equal(0, load.Count("Stone"));
+            Assert.Equal(0, leftover);
+        }
+
         [Fact]
         public void Nearly_full_storage_takes_what_fits_and_the_rest_stays_carried()
         {

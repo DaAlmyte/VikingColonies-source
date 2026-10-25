@@ -304,6 +304,12 @@ namespace VikingColonies.Core
             Pair("rebuilt", string.Join(",", Rebuilt.Select(r => RecordCodec.FormatInt(r.Key) + ":" + RecordCodec.FormatInt(r.Value)))),
         });
 
+        /// <summary>
+        /// The most pieces an order counts, far above any design (the biggest is a few hundred): a saved count beyond it
+        /// is cut to it (the review round of 2026-10-23: a tampered "total=2000000000" hung the hut's owner on every load).
+        /// </summary>
+        public const int MaxPieces = 20000;
+
         /// <summary>Null for an empty or unreadable text. Never throws; unknown fields are ignored.</summary>
         public static BuildOrderRecord Decode(string text)
         {
@@ -315,7 +321,7 @@ namespace VikingColonies.Core
             var order = new BuildOrderRecord
             {
                 State = Enum.IsDefined(typeof(BuildState), state) ? (BuildState)state : BuildState.Waiting,
-                Total = Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "total"), 0)),
+                Total = Math.Min(MaxPieces, Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "total"), 0))),
                 Builder = RecordCodec.Get(f, "builder"),
                 ClaimTime = ParseDouble(RecordCodec.Get(f, "claim")),
                 Created = ParseDouble(RecordCodec.Get(f, "created")),
@@ -324,7 +330,7 @@ namespace VikingColonies.Core
                 Ground = ParseFloat(RecordCodec.Get(f, "ground")),
                 Kind = Enum.IsDefined(typeof(OrderKind), kind) ? (OrderKind)kind : OrderKind.Build,
                 TargetLevel = HutLevels.Clamp(RecordCodec.ParseInt(RecordCodec.Get(f, "level"), 1)),
-                TakeAwayTotal = Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "take"), 0)),
+                TakeAwayTotal = Math.Min(MaxPieces, Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "take"), 0))),
                 Changed = RecordCodec.Get(f, "changed") == "1",
                 First = System.Math.Max(0, ParseDouble(RecordCodec.Get(f, "first"))),
                 Paused = RecordCodec.Get(f, "paused") == "1",
@@ -357,11 +363,10 @@ namespace VikingColonies.Core
             return order;
         }
 
-        private static double ParseDouble(string text) =>
-            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : 0;
+        private static double ParseDouble(string text) => RecordCodec.TryParseFinite(text, out double value) ? value : 0;
 
-        private static float ParseFloat(string text) =>
-            float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ? value : float.NaN;
+        /// <summary>NaN (not set) for anything but a finite number.</summary>
+        private static float ParseFloat(string text) => RecordCodec.TryParseFinite(text, out float value) ? value : float.NaN;
 
         private static KeyValuePair<string, string> Pair(string key, string value) => new KeyValuePair<string, string>(key, value);
     }

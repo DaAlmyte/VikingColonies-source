@@ -26,7 +26,7 @@ namespace VikingColonies.Gui
         private readonly Button[] _less = new Button[RowCount], _more = new Button[RowCount], _remove = new Button[RowCount];
         private readonly string[] _items = new string[RowCount];
         private Text _header, _message, _page;
-        private Button _add, _prev, _next;
+        private Button _add, _prev, _next, _takeRest;
         private int _pageIndex;
 
         /// <param name="building">The window's building.</param>
@@ -60,11 +60,14 @@ namespace VikingColonies.Gui
                 _controls.AddRange(new[] { _labels[i].gameObject, _less[i].gameObject, _more[i].gameObject, _remove[i].gameObject });
             }
             _add = UiKit.TopButton(root, L("$vc_stock_add"), 0f, RowsTop - RowStep * RowCount - 8f, 160f, 32f, OnAdd);
+            // "Couriers take the rest" (1.5, part 3), beside Add… in a colony with a storehouse.
+            _takeRest = UiKit.TopButton(root, "", 95f, RowsTop - RowStep * RowCount - 8f, 210f, 32f, OnTakeRest);
+            UiKit.Fitted(_takeRest.GetComponentInChildren<Text>());
             _message = UiKit.Fitted(UiKit.Label(root, "", RowsTop - RowStep * RowCount - 46f, width - 60f, 24f, 15, false, TextAnchor.MiddleCenter));
             _prev = UiKit.Button(root, L("$vc_prev"), -140f, 70f, 110f, 32f, () => Turn(-1));
             _next = UiKit.Button(root, L("$vc_next"), 140f, 70f, 110f, 32f, () => Turn(1));
             _page = UiKit.Label(root, "", -(height - 86f), 120f, 30f, 16, align: TextAnchor.MiddleCenter);
-            _controls.AddRange(new[] { _add.gameObject, _message.gameObject, _prev.gameObject, _next.gameObject, _page.gameObject });
+            _controls.AddRange(new[] { _add.gameObject, _takeRest.gameObject, _message.gameObject, _prev.gameObject, _next.gameObject, _page.gameObject });
         }
 
         /// <summary>Each opening starts on the first page.</summary>
@@ -108,6 +111,15 @@ namespace VikingColonies.Gui
             }
             bool full = list.Entries.Count >= max;
             _add.interactable = mayManage && !full;
+            bool takeRest = ShowsTakeRest(building);
+            _takeRest.gameObject.SetActive(takeRest);
+            RectTransform addRect = _add.GetComponent<RectTransform>();
+            addRect.anchoredPosition = new Vector2(takeRest ? -110f : 0f, addRect.anchoredPosition.y);
+            if (takeRest)
+            {
+                UiKit.SetLabel(_takeRest, L(stock.CouriersTakeRest ? "$vc_stock_take_rest_on" : "$vc_stock_take_rest_off"));
+                _takeRest.interactable = mayManage;
+            }
             string fullText = string.Format(L("$vc_stock_full"), max, building.IsTownHall ? 1 : building.Level);
             if (full) _message.text = fullText;
             else if (_message.text == fullText) _message.text = "";
@@ -169,6 +181,21 @@ namespace VikingColonies.Gui
             StockList list = stock.List;
             list.Remove(item);
             stock.RequestSet(list);
+        }
+
+        /// <summary>A hut's tab, in a colony with a storehouse: not the Town Hall's, a Builder's Hut's or the storehouse's own.</summary>
+        internal static bool ShowsTakeRest(ColonyBuilding building) =>
+            building != null && CourierRules.HasTakeRestSwitch(building.IsTownHall, building.TypeId == BuildingTypes.BuilderHutId, building.IsStorehouse)
+            && ColonyBuilding.FindStorehouse(building.ColonyId) != null;
+
+        private void OnTakeRest()
+        {
+            ColonyBuilding building = _building();
+            StockModule stock = building != null ? building.Stock : null;
+            if (stock == null) return;
+            bool on = !stock.CouriersTakeRest;
+            stock.RequestSetTakeRest(on);
+            ShowMessage(L(on ? "$vc_stock_take_rest_now_on" : "$vc_stock_take_rest_now_off"));
         }
 
         private void OnAdd()

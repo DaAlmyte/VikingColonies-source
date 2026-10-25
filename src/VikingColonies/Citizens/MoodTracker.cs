@@ -45,7 +45,7 @@ namespace VikingColonies.Citizens
             ColonyBuilding hall = ColonyBuilding.FindTownHall(r.ColonyId);
             TownHallModule module = hall != null ? hall.GetComponent<TownHallModule>() : null;
             SagaLog saga = module != null ? module.Saga : null;   // not loaded here: no news either way
-            bool eat = ColonyConfig.SettlersEat.Value;
+            bool eat = Colony.Creative.SettlersEat(r.ColonyId);
             var inputs = new MoodInputs
             {
                 HasHome = r.HasHome,

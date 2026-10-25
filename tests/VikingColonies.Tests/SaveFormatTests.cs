@@ -338,14 +338,15 @@ namespace VikingColonies.Tests
                 ["Pose"] = "vc_pose", ["PoseTarget"] = "vc_pose_at", ["Doing"] = "vc_doing",
                 ["CairnName"] = "vc_cairn_name", ["CairnJob"] = "vc_cairn_job", ["CairnCause"] = "vc_cairn_cause", ["CairnCauseArg"] = "vc_cairn_cause_arg",
                 ["CairnDay"] = "vc_cairn_day", ["CairnSpawn"] = "vc_cairn_spawn",
-                ["CampLevel"] = "vc_camp_level", ["CampWaits"] = "vc_camp_waits",
+                ["CampLevel"] = "vc_camp_level", ["CampWaits"] = "vc_camp_waits", ["ColonyEatOff"] = "vc_colony_eat_off",
                 ["TownHallType"] = "townhall", ["LumberjackHutType"] = "lumberjack_hut", ["BuilderHutType"] = "builder_hut", ["LonghouseType"] = "longhouse",
                 ["ForagerHutType"] = "forager_hut", ["FarmType"] = "farm", ["TownHallPiece"] = "vc_colony_hall", ["LumberjackHutPiece"] = "vc_hut_lumberjack",
                 ["BuilderHutPiece"] = "vc_hut_builder", ["LonghousePiece"] = "vc_hut_longhouse", ["ForagerHutPiece"] = "vc_hut_forager",
                 ["FarmPiece"] = "vc_hut_farm", ["LumberjackJob"] = "lumberjack", ["BuilderJob"] = "builder", ["ForagerJob"] = "forager", ["FarmerJob"] = "farmer", ["WatchtowerType"] = "watchtower", ["WatchtowerPiece"] = "vc_hut_watchtower", ["GuardJob"] = "guard", ["GuardRole"] = "vc_guard_role", ["GuardOrders"] = "vc_guard_orders", ["GuardPost"] = "vc_guard_post", ["AlarmUntil"] = "vc_alarm_until", ["AlarmAt"] = "vc_alarm_at",
                 ["FieldCrop"] = "vc_field_crop", ["FieldSize"] = "vc_field_size", ["FieldFarm"] = "vc_field_farm", ["FieldsAuto"] = "vc_fields_auto", ["FieldByHand"] = "vc_field_by_hand", ["Keep"] = "vc_keep",
                 ["Unfelled"] = "vc_unfelled", ["WoodLimit"] = "vc_wood_limit",
-                ["FieldMarkerPiece"] = "vc_field_marker",
+                ["FieldMarkerPiece"] = "vc_field_marker", ["StorehouseType"] = "storehouse", ["StorehousePiece"] = "vc_hut_storehouse", ["CourierJob"] = "courier", ["CourierTasks"] = "vc_courier_tasks",
+                ["CouriersLeave"] = "vc_couriers_leave", ["StoreClosing"] = "vc_store_closing", ["StoreFull"] = "vc_store_full",
             };
             var actual = typeof(SaveKeys).GetFields().ToDictionary(f => f.Name, f => (string?)f.GetRawConstantValue() ?? "");
             Assert.Equal(expected.OrderBy(k => k.Key), actual.OrderBy(k => k.Key));

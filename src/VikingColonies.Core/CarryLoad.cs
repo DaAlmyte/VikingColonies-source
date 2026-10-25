@@ -9,7 +9,10 @@ namespace VikingColonies.Core
     {
         private readonly SortedDictionary<string, int> _items = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
-        public int Total => _items.Values.Sum();
+        /// <summary>The most of one item a load holds (no settler carries near it): a count never wraps round.</summary>
+        public const int MaxCount = 1000000;
+
+        public int Total => (int)Math.Min(int.MaxValue, _items.Values.Sum(n => (long)n));
 
         /// <summary>A copy of the item names, so the load can be changed while looping over it.</summary>
         public IEnumerable<string> ItemNames => _items.Keys.ToList();
@@ -20,7 +23,7 @@ namespace VikingColonies.Core
         {
             if (string.IsNullOrEmpty(item)) throw new ArgumentException("Item name is required.", nameof(item));
             if (amount <= 0) return;
-            _items[item] = Count(item) + amount;
+            _items[item] = (int)Math.Min(MaxCount, (long)Count(item) + amount);
         }
 
         /// <returns>How many were actually removed (never more than carried).</returns>
@@ -67,7 +70,8 @@ namespace VikingColonies.Core
             {
                 int colon = part.LastIndexOf(':');
                 if (colon <= 0) continue;
-                if (int.TryParse(part.Substring(colon + 1), out int amount)) load.Add(part.Substring(0, colon), amount);
+                if (int.TryParse(part.Substring(colon + 1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int amount))
+                    load.Add(part.Substring(0, colon), amount);
             }
             return load;
         }

@@ -29,6 +29,9 @@ namespace VikingColonies.Core
         public const int PerLevel = 5, PerLevelHallOrLonghouse = 10;
         private const string Version = "1|";
 
+        /// <summary>The most entries a saved list is read with, far above any list's room (50 at a level-5 Longhouse).</summary>
+        public const int MaxDecoded = 200;
+
         private readonly List<KeepEntry> _entries = new List<KeepEntry>();
 
         public IReadOnlyList<KeepEntry> Entries => _entries;
@@ -46,12 +49,14 @@ namespace VikingColonies.Core
                 return list;
             }
             string body = saved.StartsWith(Version, StringComparison.Ordinal) ? saved.Substring(Version.Length) : saved;
+            var seen = new HashSet<string>(StringComparer.Ordinal);   // not a look through the list per entry (the review round)
             foreach (string part in body.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
+                if (list._entries.Count >= MaxDecoded) break;
                 int eq = part.IndexOf('=');
                 if (eq <= 0) continue;
                 string item = part.Substring(0, eq).Trim();
-                if (item.Length == 0 || list.Kept(item) > 0) continue;
+                if (item.Length == 0 || !seen.Add(item)) continue;
                 if (!int.TryParse(part.Substring(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount)) continue;
                 list._entries.Add(new KeepEntry { Item = item, Amount = Clamp(amount) });
             }
@@ -291,6 +296,7 @@ namespace VikingColonies.Core
         public string BuildingId;
         public GroundPoint At;
         public bool IsTownHall;
+        public bool IsStorehouse;   // 1.5
         public bool HasRoom;
     }
 
@@ -319,6 +325,18 @@ namespace VikingColonies.Core
         /// mixed crops shares its plots among them, rounded up. A bush is planted once and regrows: none kept for it (1.4.3's
         /// review: a field of PlantEverything's raspberry bushes kept 5 Raspberries a plot for good).
         /// </summary>
+        /// <summary>
+        /// A Lumberjack's Hut's (1.5): <paramref name="each"/> of every seed its Trees list replants, so couriers leave its
+        /// worker something to plant.
+        /// </summary>
+        public static Dictionary<string, int> OfLumberjack(IEnumerable<string> replantSeeds, int each = 10)
+        {
+            var working = new Dictionary<string, int>();
+            foreach (string seed in replantSeeds ?? new string[0])
+                if (!string.IsNullOrEmpty(seed)) working[seed] = each;
+            return working;
+        }
+
         public static Dictionary<string, int> OfFarm(IEnumerable<FieldSeeds> fields)
         {
             var working = new Dictionary<string, int>();
@@ -334,14 +352,17 @@ namespace VikingColonies.Core
     }
 
     /// <summary>
-    /// A worker whose hut chest is full takes his load to the Town Hall when it has room, else the nearest colony chest
-    /// with room (worker polish part 2, 0.21); null when every chest is full ("Storage full").
+    /// A worker whose hut chest is full takes the load to the storehouse when it has room (1.5), else the Town Hall when it
+    /// has room, else the nearest colony chest with room (worker polish part 2, 0.21); null when every chest is full
+    /// ("Storage full").
     /// </summary>
     public static class FullChest
     {
         public static string Choose(IReadOnlyList<ChestRoom> chests, GroundPoint me)
         {
             if (chests == null) return null;
+            foreach (ChestRoom chest in chests)
+                if (chest.IsStorehouse && chest.HasRoom) return chest.BuildingId;
             foreach (ChestRoom chest in chests)
                 if (chest.IsTownHall && chest.HasRoom) return chest.BuildingId;
             string nearest = null;

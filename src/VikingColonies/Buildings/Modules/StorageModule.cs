@@ -27,6 +27,9 @@ namespace VikingColonies.Buildings
 
         private ZNetView _nview;
         private Container _container;
+        private const float WorkingSeconds = 5f;
+        private Dictionary<string, int> _working;
+        private float _workingAt;
         private StockModule _stock;
         private int _baseRows = -1;
         private float _levelCheck;
@@ -36,6 +39,20 @@ namespace VikingColonies.Buildings
             ? $"{_container.GetInventory().GetWidth()}x{_container.GetInventory().GetHeight()}" : "";
 
         public int Rows => _container != null && _container.GetInventory() != null ? _container.GetInventory().GetHeight() : 0;
+
+        /// <summary>How full the chest is, 0 to 1, by its slots (couriers, 1.5: three-quarters full is an urgent pickup).</summary>
+        public float Fill
+        {
+            get
+            {
+                Inventory inventory = _container != null ? _container.GetInventory() : null;
+                int slots = inventory != null ? inventory.GetWidth() * inventory.GetHeight() : 0;
+                return slots > 0 ? Mathf.Clamp01(inventory.GetAllItems().Count / (float)slots) : 0f;
+            }
+        }
+
+        /// <summary>A slot is free (couriers put the drop-off away only into a chest with room, 1.5).</summary>
+        public bool HasEmptySlot => _container != null && _container.GetInventory() != null && _container.GetInventory().HaveEmptySlot();
 
         private void Awake()
         {
@@ -78,16 +95,58 @@ namespace VikingColonies.Buildings
         /// Moves as much of the load as fits, holding back <paramref name="keep"/> amounts
         /// (e.g. seeds reserved for replanting). Whatever doesn't fit stays in the load.
         /// </summary>
-        public DepositResult TryDeposit(CarryLoad load, IReadOnlyDictionary<string, int> keep = null)
+        /// <param name="only">That item alone (a courier putting away like with like, 1.5).</param>
+        public DepositResult TryDeposit(CarryLoad load, IReadOnlyDictionary<string, int> keep = null, string only = null)
         {
             if (Claim() != Access.Ready) return DepositResult.Busy;
             var discarded = new List<string>();
-            int leftover = ItemTransfer.Deposit(load, new InventoryStore(_container.GetInventory()), keep, discarded);
+            int leftover = ItemTransfer.Deposit(load, new InventoryStore(_container.GetInventory()), keep, discarded, only);
             foreach (string item in discarded) Log.Warn($"Unknown item '{item}' in a settler's load; discarding it.");
             return leftover == 0 ? DepositResult.Stored : DepositResult.StorageFull;
         }
 
         public bool HasItem(string prefabName) => _container.GetInventory().GetItem(prefabName, -1, true) != null;
+
+        /// <summary>
+        /// Takes up to <paramref name="count"/> of an item at once (a courier's trip, 1.5; its review: a take per item, each
+        /// counting the chest and saving it, stuttered at 150): only what the chest can spare, only what stacks, one claim.
+        /// <paramref name="busy"/>: its owner is handing it over or a player has it open; nothing taken, ask again.
+        /// </summary>
+        public int TakeUpTo(string prefabName, int count, CarryLoad into, out bool busy)
+        {
+            busy = false;
+            if (count <= 0 || string.IsNullOrEmpty(prefabName) || !Carried(prefabName) || Spare(prefabName) <= 0) return 0;
+            if (Claim() != Access.Ready)
+            {
+                busy = true;
+                return 0;
+            }
+            int left = Math.Min(count, Spare(prefabName));   // again on the latest contents
+            int want = left;
+            Inventory inventory = _container.GetInventory();
+            foreach (ItemDrop.ItemData stack in inventory.GetAllItems().Where(i => i.m_dropPrefab != null && i.m_dropPrefab.name == prefabName).ToList())
+            {
+                int take = Math.Min(left, stack.m_stack);
+                if (inventory.RemoveItem(stack, take)) left -= take;
+                if (left <= 0) break;
+            }
+            if (want - left > 0) into.Add(prefabName, want - left);
+            return want - left;
+        }
+
+        /// <summary>How many more of an item fit: room in its stacks and its free slots (couriers' sorting, 1.5).</summary>
+        public int RoomFor(string prefabName)
+        {
+            Inventory inventory = _container != null ? _container.GetInventory() : null;
+            ItemDrop drop = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(prefabName)?.GetComponent<ItemDrop>() : null;
+            if (inventory == null || drop == null) return 0;
+            int stack = Math.Max(1, drop.m_itemData.m_shared.m_maxStackSize);
+            int free = inventory.GetWidth() * inventory.GetHeight() - inventory.GetAllItems().Count;
+            int room = Math.Max(0, free) * stack;
+            foreach (ItemDrop.ItemData item in inventory.GetAllItems().Where(i => i.m_dropPrefab != null && i.m_dropPrefab.name == prefabName))
+                room += Math.Max(0, stack - item.m_stack);
+            return room;
+        }
 
         /// <summary>
         /// Takes every item of <paramref name="cost"/> out of the chest (raising the Town Hall, 1.4), all or nothing; the
@@ -145,8 +204,27 @@ namespace VikingColonies.Buildings
         /// <summary>The building's Keep in stock list (nothing for a chest without one).</summary>
         public StockList Keep => _stock != null ? _stock.List : null;
 
-        /// <summary>What its worker works with, kept back from everyone else (a Farm's seeds, 1.4.3); null for none.</summary>
-        public IReadOnlyDictionary<string, int> Working => GetComponent<FieldsModule>()?.WorkingStock();
+        /// <summary>
+        /// What its worker works with, kept back from everyone else: a Farm's seeds (1.4.3), a Lumberjack's Hut's seeds for
+        /// replanting (1.5, so couriers leave some); null for none.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> Working
+        {
+            get
+            {
+                FieldsModule fields = GetComponent<FieldsModule>();
+                if (fields != null) return fields.WorkingStock();
+                ColonyBuilding hut = GetComponent<ColonyBuilding>();
+                if (hut == null || hut.TypeId != BuildingTypes.LumberjackHutId) return null;
+                // Worked out every few seconds, as a Farm's (its review: the list and the biome looked up on every take).
+                if (_working == null || Time.time - _workingAt >= WorkingSeconds)
+                {
+                    _working = WorkingStock.OfLumberjack(Jobs.ReplantList.For(hut).Where(l => l.Ticked).Select(l => l.Sapling.Seed));
+                    _workingAt = Time.time;
+                }
+                return _working;
+            }
+        }
 
         /// <summary>How many of an item may be taken: all for the building's own use, else what's beyond its kept amount and working stock.</summary>
         public int Spare(string item, bool ownUse = false) => StockRules.Spare(Contents(), ownUse ? null : Keep, item, IsFood, ownUse, Working);

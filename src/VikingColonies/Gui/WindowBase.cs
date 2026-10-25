@@ -18,6 +18,7 @@ namespace VikingColonies.Gui
 
         private GameObject _panel;
         private Text _title;
+        private CreativeBar _creative;
         private Button _close;
         private float _refreshTimer;
 
@@ -39,6 +40,19 @@ namespace VikingColonies.Gui
         /// <summary>Each time the window opens (for this or another building), before its first refresh.</summary>
         protected virtual void Opened() { }
 
+        /// <summary>Creative mode (1.5): the window's creative buttons, added once when it is built.</summary>
+        protected virtual void BuildCreative(CreativeBar bar) { }
+
+        /// <summary>The creative buttons show: in creative, to a player who may manage the colony of a colony building.</summary>
+        private bool CreativeShown => Building != null && Colony.Creative.LocalIsCreative() && ColonyPermissions.LocalMayManage(Building);
+
+        private void RefreshCreative()
+        {
+            bool shown = CreativeShown;
+            _creative?.Refresh(shown);
+            if (_title != null) _title.text = L(Title) + (shown ? "  ·  " + L("$vc_creative_tag") : "");
+        }
+
         protected static string L(string token) => Localization.instance.Localize(token);
 
         /// <summary>The Close button's words for this opening (the feedback ask's "Not now", 1.4.2); call from <see cref="Opened"/>.</summary>
@@ -58,6 +72,8 @@ namespace VikingColonies.Gui
                 _panel = UiKit.Panel(GetType().Name, Width, Height);
                 _title = UiKit.Label(_panel.transform, "", -20f, Width - 40f, 34f, 24, true, TextAnchor.MiddleCenter);
                 Build(_panel.transform);
+                _creative = CreativeBar.Attach(_panel.transform, Height);
+                BuildCreative(_creative);
                 _close = UiKit.Button(_panel.transform, L("$vc_close"), CloseX, 25f, 140f, 36f, Close);
                 _panel.AddComponent<WindowDriver>().Window = this;
             }
@@ -65,6 +81,7 @@ namespace VikingColonies.Gui
             _title.text = L(Title);   // per building: one window serves every hut
             Opened();
             Refresh();
+            RefreshCreative();
             if (!_panel.activeSelf)
             {
                 _panel.SetActive(true);
@@ -110,6 +127,7 @@ namespace VikingColonies.Gui
             if (_refreshTimer > 0f) return;
             _refreshTimer = RefreshSeconds;
             Refresh();
+            RefreshCreative();
         }
 
         /// <summary>Test tool (vc_ui): every line the window shows, its buttons and ticks with whether they can be used.</summary>

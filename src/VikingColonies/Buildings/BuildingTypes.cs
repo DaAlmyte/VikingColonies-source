@@ -31,6 +31,7 @@ namespace VikingColonies.Buildings
         public const string ForagerHutId = SaveKeys.ForagerHutType;
         public const string FarmId = SaveKeys.FarmType;
         public const string WatchtowerId = SaveKeys.WatchtowerType;
+        public const string StorehouseId = SaveKeys.StorehouseType;
 
         // The Town Hall keeps v1's prefab name so existing worlds load it.
         public static readonly BuildingType TownHall = new BuildingType(TownHallId, SaveKeys.TownHallPiece, "$vc_town_hall", null);
@@ -48,7 +49,10 @@ namespace VikingColonies.Buildings
         /// <summary>Its guard keeps monsters off the colony, and it pushes the colony's border out (1.1).</summary>
         public static readonly BuildingType Watchtower = new BuildingType(WatchtowerId, SaveKeys.WatchtowerPiece, "$vc_hut_watchtower", SaveKeys.GuardJob);
 
-        private static readonly BuildingType[] s_types = { TownHall, LumberjackHut, BuilderHut, Longhouse, ForagerHut, Farm, Watchtower };
+        /// <summary>The colony's store: its own chest and every chest standing inside it, and its couriers (1.5).</summary>
+        public static readonly BuildingType Storehouse = new BuildingType(StorehouseId, SaveKeys.StorehousePiece, "$vc_hut_storehouse", SaveKeys.CourierJob);
+
+        private static readonly BuildingType[] s_types = { TownHall, LumberjackHut, BuilderHut, Longhouse, ForagerHut, Farm, Watchtower, Storehouse };
 
         public static IReadOnlyList<BuildingType> All => s_types;
 

@@ -17,7 +17,7 @@ namespace VikingColonies.DevTools
         public override string Name => "vc_pose";
         public override string Help => "VikingColonies (test worlds): 'vc_pose [name] seat|bed|ground|stand|list|where', 'vc_pose [name] trigger <animation>', " +
                                        "'vc_pose [name] bool <animation> on|off'. The settler's own brain pauses for a minute; seat and bed use one within 15 m, " +
-                                       "or place a bench or a bed in front of him.";
+                                       "or place a bench or a bed in front of them.";
         public override bool IsCheat => true;
 
         /// <summary>The settler the last pose was given to: 'look' looks at him.</summary>

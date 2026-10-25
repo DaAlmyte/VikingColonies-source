@@ -14,13 +14,17 @@ namespace VikingColonies.Core
 
     public static class ItemTransfer
     {
-        /// <summary>Moves a settler's load into a store, keeping <paramref name="keep"/> amounts back.</summary>
+        /// <summary>
+        /// Moves a settler's load into a store, keeping <paramref name="keep"/> amounts back; with <paramref name="only"/>,
+        /// that item alone (a courier putting away like with like, 1.5).
+        /// </summary>
         /// <returns>How many items should have moved but didn't fit (0 means everything was stored).</returns>
-        public static int Deposit(CarryLoad load, IItemStore store, IReadOnlyDictionary<string, int> keep, ICollection<string> discarded)
+        public static int Deposit(CarryLoad load, IItemStore store, IReadOnlyDictionary<string, int> keep, ICollection<string> discarded, string only = null)
         {
             int leftover = 0;
             foreach (string item in load.ItemNames)
             {
+                if (only != null && item != only) continue;
                 if (!store.Accepts(item))
                 {
                     discarded?.Add(item);
