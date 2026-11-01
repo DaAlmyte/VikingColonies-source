@@ -27,6 +27,7 @@ namespace VikingColonies.Core
             kept.Mood = global::VikingColonies.Core.Mood.Unknown;
             kept.WhyMood = "";
             kept.LastMeals = new List<string>();
+            kept.LastPastimes = new List<string>();
             kept.EveningDay = CitizenRecord.NoDay;
             kept.EveningCompany = false;
             kept.HitDay = CitizenRecord.NoDay;

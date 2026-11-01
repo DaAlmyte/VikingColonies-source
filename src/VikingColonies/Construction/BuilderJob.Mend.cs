@@ -91,6 +91,7 @@ namespace VikingColonies.Construction
             float before = target != null ? target.GetHealthPercentage() : 1f;
             if (target == null || !target.Repair()) return false;
             if (RepairRules.CountsForSaga(before)) _mendedHere++;   // rain's wear doesn't make a Saga line (its review)
+            Colony.Deeds.Count(Citizen.ColonyId, DeedKinds.Mended);   // the colony's deeds (1.5.1): every piece, rain's wear too
             Log.Info($"{Citizen.CitizenName} mended the {Utils.GetPrefabName(target.gameObject)} at {target.transform.position}");
             if (_mend == target) _mend = null;
             return true;

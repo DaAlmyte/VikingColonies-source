@@ -27,6 +27,39 @@ namespace VikingColonies.Tests
             Assert.Null(Meals.Choose(new[] { new FoodStock("Raspberry", 0, 7f), new FoodStock("Resin", 4, 0f) }));
         }
 
+        // The cook (1.6): a hot food not had lately comes first, so the colony eats what the cook roasted.
+        private static readonly System.Func<string, bool> s_cookedMeatIsHot = item => item == "CookedMeat";
+
+        [Fact]
+        public void A_hot_food_not_had_lately_comes_before_plainer_cold_food()
+        {
+            var stock = new[] { new FoodStock("Raspberry", 5, 1f), new FoodStock("CookedMeat", 5, 3f) };
+            Assert.Equal("CookedMeat", Meals.Choose(stock, new string[0], s_cookedMeatIsHot));
+            Assert.Equal("CookedMeat", Meals.Choose(stock, null, s_cookedMeatIsHot));
+        }
+
+        [Fact]
+        public void The_plainest_hot_food_comes_first()
+        {
+            var stock = new[] { new FoodStock("Raspberry", 5, 1f), new FoodStock("DeerStew", 5, 9f), new FoodStock("CookedMeat", 5, 3f) };
+            Assert.Equal("CookedMeat", Meals.Choose(stock, new string[0], i => i == "CookedMeat" || i == "DeerStew"));
+        }
+
+        [Fact]   // the varied-meals mood kept
+        public void A_hot_food_had_lately_gives_way_to_a_cold_one_not_had()
+        {
+            var stock = new[] { new FoodStock("Raspberry", 5, 1f), new FoodStock("CookedMeat", 5, 3f) };
+            Assert.Equal("Raspberry", Meals.Choose(stock, new[] { "CookedMeat", "CookedMeat", "CookedMeat" }, s_cookedMeatIsHot));
+        }
+
+        [Fact]
+        public void Without_hot_food_the_choice_is_as_before()
+        {
+            var stock = new[] { new FoodStock("CookedMeat", 10, 30f), new FoodStock("Raspberry", 3, 7f), new FoodStock("Honey", 5, 8f) };
+            foreach (string[]? recent in new[] { null, new string[0], new[] { "Raspberry" }, new[] { "Raspberry", "Honey", "CookedMeat" } })
+                Assert.Equal(Meals.Choose(stock, recent), Meals.Choose(stock, recent, i => false));
+        }
+
         [Fact]
         public void A_meal_a_day_at_dawn()
         {

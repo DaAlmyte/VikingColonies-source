@@ -57,9 +57,18 @@ namespace VikingColonies.Citizens
         public double LastMonsterHitTime { get; private set; } = double.NegativeInfinity;
         /// <summary>How far off the monster that last hit them stood (1.5.0: hit from afar, a stone or an arrow, they run).</summary>
         public float LastMonsterHitDistance { get; private set; } = float.PositiveInfinity;
+        /// <summary>Where the monster that last hit them stood (1.5.1: at a hut's door, they stay in).</summary>
+        public Vector3 LastMonsterHitFrom { get; private set; }
 
-        /// <summary>Self-test: as if a monster had just hit him.</summary>
-        internal void NoteMonsterHitForTest() => LastMonsterHitTime = Time.time;
+        /// <summary>Self-test: as if a monster right beside him had just hit him.</summary>
+        internal void NoteMonsterHitForTest() => NoteMonsterHitForTest(transform.position);
+
+        /// <summary>vc_walktest: as if a monster standing there had just hit him.</summary>
+        internal void NoteMonsterHitForTest(Vector3 from)
+        {
+            LastMonsterHitTime = Time.time;
+            LastMonsterHitFrom = from;
+        }
 
         /// <summary>When this settler last took damage (Time.time); negative infinity if never. Set on the owner.</summary>
         public double LastDamageTime { get; private set; } = double.NegativeInfinity;
@@ -88,6 +97,15 @@ namespace VikingColonies.Citizens
 
         /// <summary>What he does in free time and with whom (<see cref="ActivityWords.Encode"/>); "" when not in free time. Every computer reads it.</summary>
         public string Doing => Zdo != null ? Zdo.GetString(SaveKeys.Doing, "") : "";
+
+        /// <summary>A builder's note of the site they left for now (<see cref="Core.AwayNote"/>); "" for none. Every computer reads it.</summary>
+        public string AwayNote => Zdo != null ? Zdo.GetString(SaveKeys.BuilderAway, "") : "";
+
+        /// <summary>Owner: notes the site a builder left for now ("" clears it).</summary>
+        internal void SetAwayNote(string note)
+        {
+            if (IsOwner && Zdo != null && AwayNote != (note ?? "")) Zdo.Set(SaveKeys.BuilderAway, note ?? "");
+        }
 
         /// <summary>A $vc_status_* token, shown when players hover over the settler. Only the owner can set it.</summary>
         public string Status
@@ -230,6 +248,7 @@ namespace VikingColonies.Citizens
             if (attacker == null || attacker.IsPlayer() || attacker.GetComponent<Citizen>() != null) return;
             LastMonsterHitTime = Time.time;
             LastMonsterHitDistance = Vector3.Distance(transform.position, attacker.transform.position);
+            LastMonsterHitFrom = attacker.transform.position;
             int today = Today();
             // A computer that has just taken him over reads his record first, so an old copy is never saved (review I4).
             if (!PrepareOwnerChange() || _record.HitDay == today) return;
@@ -300,6 +319,19 @@ namespace VikingColonies.Citizens
         /// <summary>His trait (0.16), from his record; from his id for a settler from before.</summary>
         public Trait TraitKind => Traits.Parse(Record.Trait, Traits.FromId(Id));
 
+        /// <summary>
+        /// A new settler's id: random; in a test run with a seed (vc_seed), from the seed, so their trait and every choice keyed
+        /// on their id come back with it. Never one a body in the world already has (the same seed run again in a kept world).
+        /// </summary>
+        private static string NewId()
+        {
+            string seeded = ColonyRandom.NewId();
+            if (seeded == null) return Guid.NewGuid().ToString("N");
+            if (!BodyKnown(seeded)) return seeded;
+            Log.Event("vc_seed: a settler id from the seed is taken in this world (this seed ran here before): this settler's id is random, so their choices aren't replayed");
+            return Guid.NewGuid().ToString("N");
+        }
+
         /// <summary>Called once, right after spawning, by the computer that spawned the citizen (its owner).</summary>
         /// <param name="calling">The trade he's good at (0.16); null: one picked for him.</param>
         public void InitNew(string colonyId, Vector3 colonyPos, System.Random rng, string calling = null)
@@ -308,7 +340,7 @@ namespace VikingColonies.Citizens
             var taken = new HashSet<string>(s_all.Where(c => c != null && c != this && c.ColonyId == colonyId).Select(c => c.CitizenName));
             _record = new CitizenRecord
             {
-                Id = Guid.NewGuid().ToString("N"),
+                Id = NewId(),
                 Name = NorseNames.PickUnused(rng, model == 1, taken),
                 Model = model,
                 Hair = PickCustomization("Hair", rng),
@@ -475,6 +507,14 @@ namespace VikingColonies.Citizens
             if (_record.EveningDay == day && (_record.EveningCompany || !company)) return;
             _record.EveningCompany = company || _record.EveningDay == day && _record.EveningCompany;
             _record.EveningDay = day;
+            Save();
+        }
+
+        /// <summary>Owner only (1.6): a pastime done today, for the varied free time and the favourite in the mood.</summary>
+        public void NotePastime(Pastime pastime, int day)
+        {
+            if (!IsOwner || _record == null || pastime == Pastime.None) return;
+            _record.LastPastimes = PastimeMemory.Add(_record.LastPastimes, pastime, day);
             Save();
         }
 
@@ -660,6 +700,7 @@ namespace VikingColonies.Citizens
 
         private void RPC_JoinColony(long sender, string colonyId, Vector3 hallPos)
         {
+            if (!RecordCodec.IsFinite(hallPos.x, hallPos.y, hallPos.z)) return;   // no real place (the security sweep of 27 Oct 2026)
             if (!PrepareOwnerChange() || !ColonyRules.CanJoinColony(_record, colonyId)) return;
             _record.ColonyId = colonyId;
             _record.ColonyPos = ToFloats(hallPos);

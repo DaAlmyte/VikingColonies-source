@@ -58,18 +58,13 @@ namespace VikingColonies.Tests
         private static PieceBox Box(float x0, float y0, float z0, float x1, float y1, float z1) =>
             new PieceBox(new Vec3(x0, y0, z0), new Vec3(x1, y1, z1));
 
-        [Fact]   // its review (1.5): a player's chest inside blocked every upgrade, against the spec
-        public void A_players_chest_inside_stays_through_an_upgrade_unless_the_new_level_needs_its_place()
+        [Fact]   // its review (1.5); since 1.6 the player's own pieces' rule (OwnPieceRules) decides the rest
+        public void A_new_piece_runs_through_a_chest_only_when_it_needs_its_place()
         {
             PieceBox chest = Box(0, 0.5f, 0, 1.5f, 1.5f, 0.8f);
             PieceBox floor = Box(-1, 0.3f, -1, 2, 0.5f, 2);
             PieceBox wallThrough = Box(0.5f, 0.5f, -1, 0.7f, 3f, 2);
             PieceBox wallBeside = Box(-1, 0.5f, 0.9f, 2, 3f, 1.1f);
-            PieceBox floorElsewhere = Box(5, 0.3f, 5, 7, 0.5f, 7);
-            Assert.True(StorehouseRules.ChestStaysThroughUpgrade(chest, new[] { floor, wallBeside }, onGround: false));
-            Assert.False(StorehouseRules.ChestStaysThroughUpgrade(chest, new[] { floor, wallThrough }, onGround: false));   // a wall goes there
-            Assert.False(StorehouseRules.ChestStaysThroughUpgrade(chest, new[] { floorElsewhere }, onGround: false));      // nothing holds it up
-            Assert.True(StorehouseRules.ChestStaysThroughUpgrade(chest, new[] { floorElsewhere }, onGround: true));
             Assert.Equal(1, StorehouseRules.InTheWayOf(chest, new[] { floor, wallThrough }));   // which one, for the log
             Assert.Equal(-1, StorehouseRules.InTheWayOf(chest, new[] { floor, wallBeside }));
         }

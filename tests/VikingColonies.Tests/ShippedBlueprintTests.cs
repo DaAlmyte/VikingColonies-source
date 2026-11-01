@@ -14,11 +14,12 @@ namespace VikingColonies.Tests
     /// </summary>
     public class ShippedBlueprintTests
     {
-        private static readonly string[] Huts = { "builder_hut", "lumberjack_hut", "forager_hut", "farm", "longhouse", "watchtower", "townhall", "storehouse" };
+        private static readonly string[] Huts = { "builder_hut", "lumberjack_hut", "forager_hut", "farm", "longhouse", "watchtower", "townhall", "storehouse", "meadhall" };
         private static readonly Dictionary<string, string> Chests = new Dictionary<string, string>
         {
             { "builder_hut", "vc_hut_builder" }, { "lumberjack_hut", "vc_hut_lumberjack" }, { "forager_hut", "vc_hut_forager" },
             { "farm", "vc_hut_farm" }, { "longhouse", "vc_hut_longhouse" }, { "watchtower", "vc_hut_watchtower" }, { "storehouse", "vc_hut_storehouse" },
+            { "meadhall", SaveKeys.MeadHallPiece },
             { "townhall", SaveKeys.TownHallPiece },
         };
 

@@ -38,6 +38,20 @@ namespace VikingColonies.Tests
             Assert.Equal(0, Gathering.Place(fires.Where(f => f.Id != "roofed").ToList(), Hall, 50f));
         }
 
+        // 1.6: a fire with the cook's station over it, in the Mead Hall (one the player laid there, not the hall's own
+        // hearth), drew the evening onto the long table and benches, as free time did before the Mead Hall's change.
+        [Fact]
+        public void A_cooks_fire_is_not_the_colonys_evening_fire()
+        {
+            var fires = new[]
+            {
+                new GatheringFire("cooks", new GroundPoint(5, 0), burning: true, roofed: true, cooks: true),
+                new GatheringFire("open", new GroundPoint(30, 0), burning: true, roofed: false),
+            };
+            Assert.Equal(1, Gathering.Place(fires, Hall, 50f));
+            Assert.Equal(-1, Gathering.Place(fires.Take(1).ToList(), Hall, 50f));   // only the cook's: at the camp
+        }
+
         // 1.4.1: the Longhouse's fire pit (under its roof) drew the colony's evening indoors, where the places round it fall
         // among the walls and beds and nobody sat. A hut's own hearth is its own; the colony gathers elsewhere.
         [Fact]
@@ -150,6 +164,29 @@ namespace VikingColonies.Tests
             Assert.Equal("store", Breakfast.Chest(chests, me));
             chests[1] = new BreakfastChest("store", new GroundPoint(30, 0), townHall: false, hasFood: false, storehouse: true);
             Assert.Equal("hall", Breakfast.Chest(chests, me));
+        }
+        [Fact]   // the cook (1.6): breakfast at the Mead Hall's table when its chest has the food
+        public void Breakfast_goes_to_the_Mead_Hall_when_it_has_the_food()
+        {
+            var me = new GroundPoint(0, 0);
+            var chests = new[]
+            {
+                new BreakfastChest("store", new GroundPoint(5, 0), townHall: false, hasFood: true, storehouse: true),
+                new BreakfastChest("mead", new GroundPoint(40, 0), townHall: false, hasFood: true, meadHall: true),
+            };
+            Assert.Equal("mead", Breakfast.Chest(chests, me));
+        }
+
+        [Fact]
+        public void A_Mead_Hall_without_the_food_is_passed_over()
+        {
+            var me = new GroundPoint(0, 0);
+            var chests = new[]
+            {
+                new BreakfastChest("store", new GroundPoint(5, 0), townHall: false, hasFood: true, storehouse: true),
+                new BreakfastChest("mead", new GroundPoint(40, 0), townHall: false, hasFood: false, meadHall: true),
+            };
+            Assert.Equal("store", Breakfast.Chest(chests, me));
         }
     }
 

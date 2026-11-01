@@ -113,6 +113,7 @@ namespace VikingColonies.Buildings
         private void RPC_SetPost(long sender, Vector3 at)
         {
             if (!_nview.IsOwner() || !ColonyPermissions.SenderMayManage(_building, sender)) return;
+            if (!RecordCodec.IsFinite(at.x, at.y, at.z)) return;   // no real place (the security sweep of 27 Oct 2026; DistanceXZ skips y)
             float from = Utils.DistanceXZ(at, transform.position);
             if (!GuardPosts.MayPost(from, Radius))
             {

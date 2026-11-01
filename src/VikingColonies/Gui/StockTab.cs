@@ -39,18 +39,20 @@ namespace VikingColonies.Gui
 
         public IReadOnlyList<GameObject> Controls => _controls;
 
-        public void Build(Transform root, float width, float height)
+        /// <param name="top">Moves the tab down (the camp's window, 1.5.1: under its Levels and Keep in stock buttons).</param>
+        public void Build(Transform root, float width, float height, float top = 0f)
         {
             _controls.Clear();   // built again after a scene change
-            _header = UiKit.Label(root, "", -105f, width - 60f, 28f, 20);
-            Text hint = UiKit.Label(root, L("$vc_stock_hint"), -137f, width - 60f, 46f, 15);
+            float rowsTop = RowsTop + top;
+            _header = UiKit.Label(root, "", -105f + top, width - 60f, 28f, 20);
+            Text hint = UiKit.Label(root, L("$vc_stock_hint"), -137f + top, width - 60f, 46f, 15);
             _controls.Add(_header.gameObject);
             _controls.Add(hint.gameObject);
             float right = width / 2f - 30f;
             for (int i = 0; i < RowCount; i++)
             {
                 int row = i;
-                float y = RowsTop - RowStep * i;
+                float y = rowsTop - RowStep * i;
                 _labels[i] = UiKit.Label(root, "", y - 2f, width - 210f, 30f, 15);
                 RectTransform rect = _labels[i].GetComponent<RectTransform>();
                 rect.anchoredPosition = new Vector2(rect.anchoredPosition.x - 75f, rect.anchoredPosition.y);
@@ -59,11 +61,11 @@ namespace VikingColonies.Gui
                 _remove[i] = UiKit.TopButton(root, "×", right - 18f, y, 40f, 30f, () => Remove(row));
                 _controls.AddRange(new[] { _labels[i].gameObject, _less[i].gameObject, _more[i].gameObject, _remove[i].gameObject });
             }
-            _add = UiKit.TopButton(root, L("$vc_stock_add"), 0f, RowsTop - RowStep * RowCount - 8f, 160f, 32f, OnAdd);
+            _add = UiKit.TopButton(root, L("$vc_stock_add"), 0f, rowsTop - RowStep * RowCount - 8f, 160f, 32f, OnAdd);
             // "Couriers take the rest" (1.5, part 3), beside Add… in a colony with a storehouse.
-            _takeRest = UiKit.TopButton(root, "", 95f, RowsTop - RowStep * RowCount - 8f, 210f, 32f, OnTakeRest);
+            _takeRest = UiKit.TopButton(root, "", 95f, rowsTop - RowStep * RowCount - 8f, 210f, 32f, OnTakeRest);
             UiKit.Fitted(_takeRest.GetComponentInChildren<Text>());
-            _message = UiKit.Fitted(UiKit.Label(root, "", RowsTop - RowStep * RowCount - 46f, width - 60f, 24f, 15, false, TextAnchor.MiddleCenter));
+            _message = UiKit.Fitted(UiKit.Label(root, "", rowsTop - RowStep * RowCount - 46f, width - 60f, 24f, 15, false, TextAnchor.MiddleCenter));
             _prev = UiKit.Button(root, L("$vc_prev"), -140f, 70f, 110f, 32f, () => Turn(-1));
             _next = UiKit.Button(root, L("$vc_next"), 140f, 70f, 110f, 32f, () => Turn(1));
             _page = UiKit.Label(root, "", -(height - 86f), 120f, 30f, 16, align: TextAnchor.MiddleCenter);

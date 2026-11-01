@@ -30,6 +30,8 @@ namespace VikingColonies.Buildings
         private const float WorkingSeconds = 5f;
         private Dictionary<string, int> _working;
         private float _workingAt;
+        private Dictionary<string, int> _orderHold;
+        private float _orderHoldAt = float.NegativeInfinity;
         private StockModule _stock;
         private int _baseRows = -1;
         private float _levelCheck;
@@ -179,11 +181,12 @@ namespace VikingColonies.Buildings
         /// building's own use (its worker, the Town Hall feeding newcomers): false when nothing is spare.
         /// </summary>
         /// <param name="toBuildWith">For the builder: anything a piece is built from, even what doesn't stack (StockRules.MayTake).</param>
-        public bool TryTakeItem(string prefabName, CarryLoad into, bool ownUse = false, bool toBuildWith = false)
+        /// <param name="forOwnOrder">For the builder of this building's own order: what the chest holds for it is theirs (1.5.1).</param>
+        public bool TryTakeItem(string prefabName, CarryLoad into, bool ownUse = false, bool toBuildWith = false, bool forOwnOrder = false)
         {
-            if (!ownUse && Spare(prefabName) <= 0) return false;   // on the copy here first: no hand-over for nothing (0.24)
+            if (!ownUse && Spare(prefabName, false, forOwnOrder) <= 0) return false;   // on the copy here first: no hand-over for nothing (0.24)
             if (Claim() != Access.Ready) return false;
-            if (!ownUse && Spare(prefabName) <= 0) return false;   // again on the latest contents
+            if (!ownUse && Spare(prefabName, false, forOwnOrder) <= 0) return false;   // again on the latest contents
             Inventory inventory = _container.GetInventory();
             ItemDrop.ItemData item = inventory.GetItem(prefabName, -1, true);
             if (item == null || !StockRules.MayTake(item.m_shared.m_maxStackSize, toBuildWith) || !inventory.RemoveItem(item, 1)) return false;
@@ -203,6 +206,31 @@ namespace VikingColonies.Buildings
 
         /// <summary>The building's Keep in stock list (nothing for a chest without one).</summary>
         public StockList Keep => _stock != null ? _stock.List : null;
+
+        /// <summary>
+        /// What the hut's own open build order still needs, left for that order's builder on top of what the chest keeps
+        /// (1.5.1); empty for none.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> Ordered => OrderHold();
+
+        /// <summary>
+        /// What the hut's own open build order still needs (1.5.1: the build-through saw a builder on the Forager's Hut take
+        /// the Resin the Lumberjack's Hut's chest held for its own level 2, and that level waited for the player again).
+        /// Not for the camp's or the storehouse's chests (the colony's stores), nor an order set aside; looked at every few
+        /// seconds, as the working stock.
+        /// </summary>
+        private IReadOnlyDictionary<string, int> OrderHold()
+        {
+            if (_orderHold != null && Time.time - _orderHoldAt < WorkingSeconds) return _orderHold;
+            _orderHoldAt = Time.time;
+            _orderHold = new Dictionary<string, int>();
+            ColonyBuilding building = GetComponent<ColonyBuilding>();
+            if (building == null || !building.IsValid || !WorkingStock.HoldsOrder(building.IsTownHall, building.IsStorehouse)) return _orderHold;
+            Construction.ConstructionModule site = building.GetComponent<Construction.ConstructionModule>();
+            if (site == null || !site.IsValid || site.Order == null || site.Order.Paused) return _orderHold;
+            _orderHold = site.RemainingNeeds();
+            return _orderHold;
+        }
 
         /// <summary>
         /// What its worker works with, kept back from everyone else: a Farm's seeds (1.4.3), a Lumberjack's Hut's seeds for
@@ -227,19 +255,23 @@ namespace VikingColonies.Buildings
         }
 
         /// <summary>How many of an item may be taken: all for the building's own use, else what's beyond its kept amount and working stock.</summary>
-        public int Spare(string item, bool ownUse = false) => StockRules.Spare(Contents(), ownUse ? null : Keep, item, IsFood, ownUse, Working);
+        /// <param name="forOwnOrder">For the builder of this building's own order: what the chest holds for it is spare to them (1.5.1).</param>
+        public int Spare(string item, bool ownUse = false, bool forOwnOrder = false) =>
+            StockRules.Spare(Contents(), ownUse ? null : Keep, item, IsFood, ownUse, Working, forOwnOrder ? null : Ordered);
 
         /// <summary>What the chest can spare, by item (items with none spare left out).</summary>
-        public Dictionary<string, int> SpareContents(bool ownUse = false)
+        /// <param name="forOwnOrder">For the builder of this building's own order (1.5.1).</param>
+        public Dictionary<string, int> SpareContents(bool ownUse = false, bool forOwnOrder = false)
         {
             Dictionary<string, int> contents = Contents();
             if (ownUse) return contents;
             StockList keep = Keep;
             IReadOnlyDictionary<string, int> working = Working;
+            IReadOnlyDictionary<string, int> ordered = forOwnOrder ? null : Ordered;
             var spare = new Dictionary<string, int>();
             foreach (KeyValuePair<string, int> item in contents)
             {
-                int n = StockRules.Spare(contents, keep, item.Key, IsFood, false, working);
+                int n = StockRules.Spare(contents, keep, item.Key, IsFood, false, working, ordered);
                 if (n > 0) spare[item.Key] = n;
             }
             return spare;

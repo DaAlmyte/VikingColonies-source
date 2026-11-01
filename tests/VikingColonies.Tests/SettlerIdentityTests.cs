@@ -79,9 +79,33 @@ namespace VikingColonies.Tests
             Assert.Equal(1.1f, Traits.WorkFactor(Trait.Hardworking), 3);
             Assert.Equal(0.9f, Traits.WorkFactor(Trait.Lazy), 3);
             Assert.Equal(1f, Traits.WorkFactor(Trait.Cheerful), 3);
-            Assert.Equal(6f, Traits.FleeRange(Trait.Brave, 12f), 3);
+            Assert.Equal(9f, Traits.FleeRange(Trait.Brave, 12f), 3);   // 1.5.1 (the player's pick): 6 m was a Troll's reach
             Assert.Equal(20f, Traits.FleeRange(Trait.Timid, 12f), 3);
             Assert.Equal(12f, Traits.FleeRange(Trait.Quiet, 12f), 3);
+            // A strong monster (not weak for the colony) within the usual distance: the brave run at it too (1.5.1, 2026-10-25:
+            // a brave settler who started at 7.2 m from a Troll was caught and died).
+            Assert.Equal(12f, Traits.FleeRange(Trait.Brave, 12f, nearestStrong: 12f), 3);
+            Assert.Equal(9f, Traits.FleeRange(Trait.Brave, 12f, nearestStrong: 12.5f), 3);
+            Assert.Equal(9f, Traits.FleeRange(Trait.Brave, 12f, nearestStrong: float.PositiveInfinity), 3);
+            Assert.Equal(20f, Traits.FleeRange(Trait.Timid, 12f, nearestStrong: 5f), 3);
+            Assert.Equal(12f, Traits.FleeRange(Trait.Quiet, 12f, nearestStrong: 5f), 3);
+        }
+
+        /// <summary>
+        /// Several monsters at once: a brave settler runs when a strong one is within 12 m, or any at all within 9 m, whichever
+        /// is the nearest (the review of 1.5.1: a weak one nearer than a Troll had them wait for 9 m).
+        /// </summary>
+        [Theory]
+        [InlineData(10f, 11.5f, true)]                      // a Greydwarf coming at 10 m, a Troll at 11.5 m behind it
+        [InlineData(10f, 15f, false)]                       // the Troll still beyond 12 m: the weak one counts from 9 m
+        [InlineData(9f, float.PositiveInfinity, true)]      // a weak one alone at 9 m
+        [InlineData(12f, 12f, true)]                        // a Troll alone at 12 m
+        [InlineData(12.5f, 12.5f, false)]                   // a Troll alone at 12.5 m
+        public void A_brave_settler_runs_from_a_strong_monster_at_12_m_and_from_any_at_9_m(float nearest, float nearestStrong, bool runs)
+        {
+            var brave = new FleeTracker();
+            Assert.Equal(runs, brave.Update(nearest, double.NegativeInfinity, 0,
+                startDistance: Traits.FleeRange(Trait.Brave, FleeTracker.StartDistance, nearestStrong)));
         }
 
         [Fact]

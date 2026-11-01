@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using VikingColonies.Citizens;
 using VikingColonies.Colony;
+using VikingColonies.Config;
 using VikingColonies.Core;
 
 namespace VikingColonies.AI
@@ -17,16 +18,15 @@ namespace VikingColonies.AI
     {
         /// <summary>The settlers in free time on this computer (chat partners come from here).</summary>
         private static readonly List<FreeTimeRoutine> s_active = new List<FreeTimeRoutine>();
-        private static readonly System.Random s_rng = new System.Random();
+        /// <summary>This settler's draws for free time (seeded in a test run: vc_seed).</summary>
+        private System.Random Rng => ColonyRandom.For("pastime", _citizen.CitizenName);
         private static readonly string[] TalkGestures =
             { "emote_point", "emote_shrug", "emote_laugh", "emote_thumbsup", "emote_comehere", "emote_nonono", "emote_cheer" };
         /// <summary>Not there after this long: something is in the way; he picks something else.</summary>
         private const float ReachSeconds = 30f;
-        /// <summary>He sits down from this near the seat's point (a player can from 2 m).</summary>
-        private const float SitFrom = 1.3f;
         /// <summary>A seat he couldn't get to is passed over this long.</summary>
         private const double SkipSeatSeconds = 300;
-        private readonly TargetBlacklist _skippedSeats = new TargetBlacklist(SkipSeatSeconds);
+        private TargetBlacklist _skippedSeats = new TargetBlacklist(SkipSeatSeconds);
         private readonly TargetBlacklist _skippedFires = new TargetBlacklist(SkipSeatSeconds);
         /// <summary>The seat he last got up from: picked last next time (review of 0.14: he stood up and sat straight back down).</summary>
         private string _lastSeatId = "";
@@ -37,10 +37,14 @@ namespace VikingColonies.AI
 
         private Leisure _doing = Leisure.None;
         private float _chooseAt;
+        /// <summary>When he last chose (<see cref="FreeTimeRules.MayChooseAgain"/>).</summary>
+        private float _choseAt = -1000f;
         private float _startedAt;
         private float _doUntil;
         private bool _arrived;
         private SeatPlace _seat;
+        /// <summary>From how far he may sit down on <see cref="_seat"/> (across a table in front of it).</summary>
+        private float _seatReach = FreeTimeRules.SitFrom;
         private FirePlace _fire;
         private Vector3 _spot;
         private FreeTimeRoutine _partner;
@@ -87,6 +91,29 @@ namespace VikingColonies.AI
             _chooseAt = 0f;
         }
 
+        /// <summary>
+        /// vc_seattest: he sits down next, on this seat (a Mead Hall's bench at its table, 1.6), and keeps going back to
+        /// it until <see cref="ClearSeatForTest"/>: someone passing close by on his way makes him choose again, and the
+        /// test measures whether the seat can be reached, not whether another was nearer then.
+        /// </summary>
+        internal void ForceSeatForTest(Chair chair)
+        {
+            _forcedSeatForTest = chair;
+            _skippedSeats = new TargetBlacklist(SkipSeatSeconds);   // a seat given up on before is tried again
+            ForceForTest(Leisure.Seat);
+        }
+
+        /// <summary>vc_seattest: this seat's test is over; his free time is his own again.</summary>
+        internal void ClearSeatForTest() => _forcedSeatForTest = null;
+
+        /// <summary>
+        /// vc_seattest: these seats (the tested hut's) are no one's in free time but the test's sitter, so what is tested is
+        /// the way to each seat, not the colony's other settlers on it or crowding round it; null when the test is over.
+        /// </summary>
+        internal static HashSet<Chair> SeatsHeldForTest;
+
+        private Chair _forcedSeatForTest;
+
         public void Tick(Vector3 anchor)
         {
             float now = Time.time;
@@ -99,8 +126,11 @@ namespace VikingColonies.AI
             // A new anchor far away (hired at another hut): he goes there now, not after this activity (review of 0.14).
             if (Utils.DistanceXZ(anchor, _anchor) > FreeTimeRules.Radius) _chooseAt = now;
             _anchor = anchor;
-            if (_doing == Leisure.None || now >= _chooseAt || TooLongOnTheWay(now)) Choose(now);
-            if (_arrived && _doing != Leisure.Chat && _pose.Current == SettlerPose.Kind.None) LookAtPlayerNear();
+            // Kept to vc_seattest's seat, at most once a second (run 10: given up in the doorway and given back, every tick).
+            if (FreeTimeRules.MayChooseAgain(now - _choseAt, _forcedSeatForTest != null && _doing == Leisure.Seat)
+                && (_doing == Leisure.None || now >= _chooseAt || TooLongOnTheWay(now))) Choose(now);
+            // At a pastime they look at what they play (1.6), not round at a player.
+            if (_arrived && _doing != Leisure.Chat && _doing != Leisure.Pastime && _pose.Current == SettlerPose.Kind.None) LookAtPlayerNear();
             switch (_doing)
             {
                 case Leisure.Seat: TickSeat(now); break;
@@ -110,6 +140,7 @@ namespace VikingColonies.AI
                 case Leisure.SitDown: TickSitDown(now); break;
                 case Leisure.TendFire: TickTend(now); break;
                 case Leisure.CarryStock: TickCarry(now); break;
+                case Leisure.Pastime: TickPastime(now); break;
                 default: _ai.Idle(); break;
             }
         }
@@ -125,6 +156,9 @@ namespace VikingColonies.AI
             _partner = null;
             _seat = null;
             _fire = null;
+            ClearPastime();   // another computer's party, if any, is that computer's
+            _danceUntil = 0f;
+            PutAwayLeftoverBow();
             _doing = Leisure.None;
             _savedDoing = null;   // unknown here: the next save writes
             SaveDoing("", "");
@@ -148,11 +182,13 @@ namespace VikingColonies.AI
             if (_fire != null) _skippedFires.Add(_fire.Id, now);
             if (_tendFire != null) _skippedFires.Add(_tendFire.Id, now);
             if (_run != null) _skippedRuns.Add(_runKey, now);
+            SkipPastimePlace(now);
             return true;
         }
 
         private void Choose(float now)
         {
+            _choseAt = now;
             StopActivity();
             string colony = _citizen.ColonyId;
             Vector3 me = _citizen.transform.position;
@@ -160,40 +196,68 @@ namespace VikingColonies.AI
             List<SeatPlace> seats = ColonyPlaces.Seats(colony)
                 .Where(s => s.Valid && Utils.DistanceXZ(s.Point, _anchor) <= FreeTimeRules.Radius && (!wet || s.Roofed)
                             && !_skippedSeats.IsBlocked(s.Id, now)
-                            && !FreeTimeClaims.TakenByOther(s.Id, s.Point, _citizen.Id) && !ColonyPlaces.Taken(s, _citizen))
+                            && !FreeTimeClaims.TakenByOther(s.Id, s.Point, _citizen.Id) && !ColonyPlaces.Taken(s, _citizen)
+                            && (SeatsHeldForTest == null || !SeatsHeldForTest.Contains(s.Chair)))
                 .ToList();
             List<FirePlace> fires = ColonyPlaces.Fires(colony)
-                .Where(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach && (!wet || f.Roofed)
+                .Where(f => f.Valid && f.Burning && !f.Cooks && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach && (!wet || f.Roofed)
                             && !_skippedFires.IsBlocked(f.Id, now))
                 .ToList();
+            Chair forcedSeat = _forcedSeatForTest;
+            if (forcedSeat != null)
+            {
+                // vc_seattest's seat, whoever passes by it or claimed it last: he goes (back) to it.
+                SeatPlace forced = ColonyPlaces.Seats(colony).FirstOrDefault(s => s.Valid && s.Chair == forcedSeat);
+                if (forced != null)
+                {
+                    if (!seats.Contains(forced)) seats.Add(forced);
+                    _forcedForTest = Leisure.Seat;
+                }
+            }
             List<FreeTimeRoutine> partners = FindPartners(me);
             FreeTimeRoutine partner = partners.FirstOrDefault();
             // Nothing to sit on or by at all (not merely taken, or out in the rain): Hugin says so, once.
             if (!ColonyPlaces.Seats(colony).Any(s => s.Valid && Utils.DistanceXZ(s.Point, _anchor) <= FreeTimeRules.Radius)
-                && !ColonyPlaces.Fires(colony).Any(f => f.Valid && f.Burning && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach))
+                && !ColonyPlaces.Fires(colony).Any(f => f.Valid && f.Burning && !f.Cooks && Utils.DistanceXZ(f.Position, _anchor) <= FreeTimeRules.FireReach))
                 Gui.HuginTips.ShowNear(_anchor, Gui.HuginTips.FreeTime);
             FirePlace tend = FireToTend(now, out string fuelItem, out int fuelWant, out string fuelChest);
             StockRun carry = StockToCarry(now);   // 0.21
             var choices = new LeisureChoices(seats.Count > 0, fires.Count > 0, partner != null, wet, tend != null, carry != null);
-            Leisure pick = _forcedForTest != Leisure.None && FreeTimeRules.Weight(_forcedForTest, choices) > 0
-                ? _forcedForTest : FreeTimeRules.Pick(choices, s_rng.NextDouble(), _citizen.TraitKind);   // by his nature (0.16)
+            // The pastimes (1.6) join the choice: one roll over today's activities and them, by his nature (0.16).
+            var props = new List<PropPlace>();
+            PastimeChoices atHand = PastimesAtHand(colony, wet, fires, partner != null, now, props);
+            Pastime pastime = Pastime.None;
+            Leisure pick;
+            if (_forcedPastime != Pastime.None && ColonyConfig.Pastimes.Value && PastimeRules.Weight(_forcedPastime, atHand) > 0)
+            {
+                pick = Leisure.Pastime;
+                pastime = _forcedPastime;
+            }
+            else if (_forcedForTest != Leisure.None && FreeTimeRules.Weight(_forcedForTest, choices) > 0) pick = _forcedForTest;
+            else pick = PastimeRules.PickFreeTime(choices, atHand, ColonyConfig.Pastimes.Value, Rng.NextDouble(), _citizen.TraitKind, out pastime);
             if (pick == Leisure.None) pick = Leisure.Stroll;   // a lazy one in the rain with nowhere to sit: a short walk all the same
             if (_forcedForTest != Leisure.None && pick != _forcedForTest)
                 Log.Info($"{_citizen.CitizenName}'s free time: the test asked for {_forcedForTest}, not possible now ({seats.Count} seats, {fires.Count} fires, partner {partner != null})");
+            if (_forcedPastime != Pastime.None && pastime != _forcedPastime)
+                Log.Info($"{_citizen.CitizenName}'s free time: the test asked for {_forcedPastime}, not possible now ({props.Count} pieces with room, {fires.Count} fires, " +
+                         $"partner {partner != null}{(wet ? ", wet" : "")})");
             _forcedForTest = Leisure.None;
+            _forcedPastime = Pastime.None;
             Begin(pick, now);
-            _chooseAt = now + FreeTimeRules.ChoiceSeconds(s_rng.NextDouble());
+            _chooseAt = now + FreeTimeRules.ChoiceSeconds(Rng.NextDouble());
             List<string> askable = partners.Select(p => p._citizen.CitizenName).ToList();
-            Log.Info($"{_citizen.CitizenName}'s free time: {pick} ({seats.Count} seats, {fires.Count} fires, partners {ChatPairing.Names(askable)}{(wet ? ", wet" : "")})");
+            if (pick != Leisure.Pastime)   // a pastime says where and with whom as it starts
+                Log.Info($"{_citizen.CitizenName}'s free time: {pick} ({seats.Count} seats, {fires.Count} fires, partners {ChatPairing.Names(askable)}{(wet ? ", wet" : "")})");
             switch (pick)
             {
                 case Leisure.Seat:
                     // One near a burning fire first, then the nearest.
-                    _seat = seats.OrderBy(s => s.Id == _lastSeatId ? 1 : 0)   // not straight back onto the one he left
+                    _seat = seats.OrderBy(s => forcedSeat != null && s.Chair == forcedSeat ? 0 : 1)   // vc_seattest's
+                                 .ThenBy(s => s.Id == _lastSeatId ? 1 : 0)   // not straight back onto the one he left
                                  .ThenBy(s => fires.Any(f => Vector3.Distance(f.Position, s.Point) <= FreeTimeRules.FireNearSeat) ? 0 : 1)
                                  .ThenBy(s => Vector3.Distance(s.Point, me)).First();
                     FreeTimeClaims.TryClaim(_seat.Id, _seat.Point, _citizen.Id);
-                    _spot = SeatApproach(_seat);
+                    _spot = SeatApproach(_seat, out _seatReach);
                     SaveDoing(ActivityWords.Token(Leisure.Seat), "");
                     break;
                 case Leisure.Fire:
@@ -232,6 +296,13 @@ namespace VikingColonies.AI
                 case Leisure.CarryStock:
                     StartCarrying(carry);
                     break;
+                case Leisure.Pastime:
+                    if (StartPastime(pastime, now, props, fires, partners)) break;
+                    StopActivity();
+                    Begin(Leisure.Stroll, now);
+                    _spot = StrollSpot(me);
+                    SaveDoing(ActivityWords.Token(Leisure.Stroll), "");
+                    break;
             }
         }
 
@@ -242,11 +313,13 @@ namespace VikingColonies.AI
             _startedAt = now;
             _arrived = false;
             _doUntil = float.MaxValue;
+            _stepsSince = -1f;   // the last steps to a seat, timed afresh
         }
 
         private void StopActivity()
         {
             _pose?.Stand();
+            StopPastime();
             StopTending();
             StopCarrying();
             if (_seat != null)
@@ -280,6 +353,7 @@ namespace VikingColonies.AI
             // Gone, or taken: on his way, anyone at it; once seated, only a player sitting right on it (one beside him is fine).
             if (_seat == null || !_seat.Valid || look && (_arrived ? ColonyPlaces.PlayerSitsOn(_seat) : ColonyPlaces.Taken(_seat, _citizen)))
             {
+                SeatGivenUp(_seat == null || !_seat.Valid ? "gone" : "taken by " + (ColonyPlaces.TakenBy(_seat, _citizen) ?? "a player sitting on it"));
                 _chooseAt = now;
                 return;
             }
@@ -288,16 +362,28 @@ namespace VikingColonies.AI
                 // To the open side of the seat, then onto it, as a player sits down from beside it: from close by only
                 // on the same floor with nothing between (review of 0.14: through a ceiling or a wall otherwise).
                 Vector3 me = _citizen.transform.position, point = _seat.Point;
-                bool close = Utils.DistanceXZ(me, point) <= SitFrom && Mathf.Abs(me.y - point.y) <= 1f && _ai.NothingBetween(point);
-                if (!close && !_ai.GoTo(_spot, 0.4f)) return;
+                bool close = CanSitFrom(_ai, me, _seat, _seatReach);
+                // On the last steps, straight on: the game's path, worked out anew, could pull him back meanwhile (their review).
+                if (!close && _stepsSince < 0f && !_ai.GoTo(_spot, 0.4f)) return;
                 _ai.Idle();
-                if (ColonyPlaces.Taken(_seat, _citizen))   // a player sat down there just now
+                if (!close && CantSitFromWalksEnd(_ai, me, _seat, _seatReach))
                 {
+                    // Short of the spot (the game's paths ended just inside a door): the last steps straight on first.
+                    if (LastStepsToSeat(me, now)) return;
+                    SeatGivenUp($"the walk ended where they can't sit from ({Utils.DistanceXZ(me, _seat.Point):0.0} m off, {me.y - _seat.Point.y:0.0} m up)");
+                    _skippedSeats.Add(_seat.Id, now);
+                    _chooseAt = now;
+                    return;
+                }
+                if (ColonyPlaces.TakenBy(_seat, _citizen) is string by)   // a player sat down there just now
+                {
+                    SeatGivenUp("taken by " + by + " as they came");
                     _chooseAt = now;
                     return;
                 }
                 if (!_pose.SitOn(_seat.Chair))
                 {
+                    SeatGivenUp("the pose wouldn't sit them");
                     _chooseAt = now;
                     return;
                 }
@@ -307,6 +393,46 @@ namespace VikingColonies.AI
             // No gestures while seated: the game never plays one on a seated character (review of 0.14).
             _ai.Idle();
             if (now >= _doUntil) _chooseAt = now;
+        }
+
+        private float _stepsSince = -1f, _stepsClosest, _stepsCloserAt;
+        private string _seatGivenUp = "";
+
+        /// <summary>
+        /// Why a walk to a seat stopped, in the log once for each seat and reason (v16's meadhall.txt, 27 Oct: a settler chose
+        /// the seat test's seat once a second for 40 s and never sat, and nothing said why).
+        /// </summary>
+        private void SeatGivenUp(string why)
+        {
+            string key = (_seat != null ? _seat.Id : "") + "|" + why;
+            if (key == _seatGivenUp) return;
+            _seatGivenUp = key;
+            Log.Info($"{_citizen.CitizenName}'s free time: gave up on the seat {(_seat != null ? _seat.Id : "?")}: {why}");
+        }
+
+        /// <summary>The walk to the seat ended short of its spot: a straight step towards it while that helps (<see cref="FreeTimeRules.WalkOnToSeatSpot"/>).</summary>
+        private bool LastStepsToSeat(Vector3 me, float now)
+        {
+            float toSpot = Utils.DistanceXZ(me, _spot);
+            bool starting = _stepsSince < 0f;
+            if (starting)
+            {
+                _stepsSince = _stepsCloserAt = now;
+                _stepsClosest = toSpot;
+            }
+            else if (toSpot < _stepsClosest - 0.1f)
+            {
+                _stepsClosest = toSpot;
+                _stepsCloserAt = now;
+            }
+            if (!FreeTimeRules.WalkOnToSeatSpot(toSpot, _spot.y - me.y, _ai.NothingBetween(_spot), now - _stepsSince, now - _stepsCloserAt))
+            {
+                if (!starting) Log.Info($"{_citizen.CitizenName}'s free time: the last steps to their seat ended {toSpot:0.0} m from its spot; they pass it over");
+                return false;
+            }
+            if (starting) Log.Info($"{_citizen.CitizenName}'s free time: their way ended {toSpot:0.0} m short of their seat's spot; they walk the last steps straight on");
+            _ai.StepTowards(_spot);
+            return true;
         }
 
         // ---- Fires ----
@@ -322,6 +448,10 @@ namespace VikingColonies.AI
             {
                 if (!_ai.GoTo(_spot, 0.5f)) return;
                 _ai.Idle();
+                // Where they stop, against their spot (v16's life.txt, 27 Oct: one sat 1.2 m from a fire pit, the spot 2-2.5 m out).
+                Vector3 me = _citizen.transform.position;
+                Log.Info($"{_citizen.CitizenName}'s free time: by the fire, {Utils.DistanceXZ(me, _fire.Position):0.0} m from it " +
+                         $"(their spot {Utils.DistanceXZ(_spot, _fire.Position):0.0} m out, {Utils.DistanceXZ(me, _spot):0.0} m from them)");
                 Arrive(now, Leisure.Fire);
                 return;
             }
@@ -345,7 +475,7 @@ namespace VikingColonies.AI
             if (away.sqrMagnitude < 0.01f) away = Vector3.forward;
             away.Normalize();
             // Aimed at the nearer half: a walk stops up to half a metre short (the 0.14 test: 3.4 m from a 3 m spot).
-            float radius = Random.Range(FreeTimeRules.FireSitMin, (FreeTimeRules.FireSitMin + FreeTimeRules.FireSitMax) / 2f);
+            float radius = ModRandom.Range("spot", _citizen.CitizenName, FreeTimeRules.FireSitMin, (FreeTimeRules.FireSitMin + FreeTimeRules.FireSitMax) / 2f);
             foreach (float turn in new[] { 0f, 35f, -35f, 70f, -70f, 105f, -105f, 140f, -140f, 180f })
             {
                 Vector3 at = fire + Quaternion.Euler(0f, turn, 0f) * away * radius;
@@ -359,7 +489,7 @@ namespace VikingColonies.AI
             foreach (Citizen c in Citizen.All)
                 if (c != null && c != _citizen && Utils.DistanceXZ(c.transform.position, at) < FreeTimeRules.FireSpacing) return true;
             foreach (FreeTimeRoutine r in s_active)
-                if (r != this && r._doing == Leisure.Fire && Utils.DistanceXZ(r._spot, at) < FreeTimeRules.FireSpacing) return true;
+                if (r != this && (r._doing == Leisure.Fire || r._doing == Leisure.Pastime) && Utils.DistanceXZ(r._spot, at) < FreeTimeRules.FireSpacing) return true;
             return false;
         }
 
@@ -371,7 +501,8 @@ namespace VikingColonies.AI
             s_active.RemoveAll(r => r._citizen == null);   // a settler removed while in free time
             var candidates = s_active.Where(r => r != this && r._citizen != null && r._citizen.ColonyId == _citizen.ColonyId)
                 .Select(r => new ChatCandidate(r._citizen.Id, Ground(r._citizen.transform.position),
-                    r._partner == null && (r._doing == Leisure.None || r._doing == Leisure.Stroll)))
+                    r._partner == null && (r._doing == Leisure.None || r._doing == Leisure.Stroll)
+                    && r._forcedForTest == Leisure.None && r._forcedPastime == Pastime.None))   // a test's order waits for none
                 .ToList();
             return ChatPairing.ToAsk(_citizen.Id, Ground(me), candidates)
                 .Select(id => s_active.FirstOrDefault(r => r._citizen != null && r._citizen.Id == id))
@@ -389,8 +520,9 @@ namespace VikingColonies.AI
         }
 
         /// <summary>
-        /// The first meeting place clear of doors (1.5.0) with no wall between its two spots, both checked at one height
-        /// (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall or a door (the life test checks the wall).
+        /// The first meeting place clear of doors (1.5.0) and of the seats vc_seattest holds, with no wall between its two
+        /// spots, both checked at one height (<see cref="ChatPairing.MeetingHeight"/>); false when every one has a wall or a
+        /// door (the life test checks the wall).
         /// </summary>
         internal static bool ChooseMeeting(Vector3 mine, Vector3 theirs, out ChatMeeting meeting)
         {
@@ -401,11 +533,13 @@ namespace VikingColonies.AI
             var doors = new List<GroundPoint>();
             foreach (Door door in Jobs.WorldScan.Doors())
                 if (door != null && Utils.DistanceXZ(door.transform.position, middle) <= near) doors.Add(Ground(door.transform.position));
+            // Not round the seats vc_seattest holds (26 Oct: two met on the bench beside the seat under test).
+            List<GroundPoint> held = SeatsHeldForTest?.Where(c => c != null && c.m_attachPoint != null).Select(c => Ground(c.m_attachPoint.position)).ToList();
             for (int i = 0; i < places.Count; i++)
             {
                 float y = ChatPairing.MeetingHeight(i, mine.y, theirs.y);
                 ChatMeeting place = places[i];
-                if (!ChatPairing.ClearOfDoors(place, doors)) continue;
+                if (!ChatPairing.ClearOfDoors(place, doors) || !ChatPairing.ClearOfHeldSeats(place, held)) continue;
                 if (WallBetween(new Vector3(place.First.X, y, place.First.Z), new Vector3(place.Second.X, y, place.Second.Z))) continue;
                 meeting = place;
                 return true;
@@ -433,7 +567,7 @@ namespace VikingColonies.AI
             // Both start afresh: a stroller's end time left over would end the chat as they meet (review of 0.14).
             Begin(Leisure.Chat, now);
             partner.Begin(Leisure.Chat, now);
-            float length = FreeTimeRules.DoSeconds(Leisure.Chat, s_rng.NextDouble());
+            float length = FreeTimeRules.DoSeconds(Leisure.Chat, Rng.NextDouble());
             _chooseAt = partner._chooseAt = now + ReachSeconds + length;
             _spot = Spot(meeting.First, _citizen.transform.position);
             partner._spot = Spot(meeting.Second, partner._citizen.transform.position);
@@ -481,24 +615,78 @@ namespace VikingColonies.AI
             }
             if (_myTurn && now >= _nextGestureAt)
             {
-                _pose.Gesture(TalkGestures[s_rng.Next(TalkGestures.Length)]);
+                _pose.Gesture(TalkGestures[Rng.Next(TalkGestures.Length)]);
                 _myTurn = false;
                 partner._myTurn = true;
-                partner._nextGestureAt = now + FreeTimeRules.GestureEverySeconds(s_rng.NextDouble());
+                partner._nextGestureAt = now + FreeTimeRules.GestureEverySeconds(Rng.NextDouble());
             }
         }
 
-        /// <summary>Where he walks to before he sits: in front of the seat (the way its sitter faces), on the ground.</summary>
-        internal static Vector3 SeatApproach(SeatPlace seat)
+        /// <summary>
+        /// Where he walks to sit on a seat: in front of it, past a table or bench pushed up to it to the first clear spot
+        /// (the Mead Hall's long table, 1.6; <see cref="FreeTimeRules.ChooseSeatSpot"/>), and from how far he may then sit
+        /// down, across that furniture.
+        /// </summary>
+        internal static Vector3 SeatApproach(SeatPlace seat, out float reach)
         {
             Transform point = seat.Chair.m_attachPoint;
             Vector3 front = point.forward;
             front.y = 0f;
             front = front.sqrMagnitude > 0.01f ? front.normalized : Vector3.forward;
-            Vector3 at = point.position + front * 0.7f;
-            if (ZoneSystem.instance != null && ZoneSystem.instance.GetSolidHeight(at, out float solid, 1000)) at.y = Mathf.Min(point.position.y, solid);
+            Piece own = seat.Chair.GetComponentInParent<Piece>();
+            Vector3 from = point.position;
+            float spot = FreeTimeRules.ChooseSeatSpot(d => SpotKind(from, from + front * d, own), out reach);
+            Vector3 at = from + front * spot;
+            if (ZoneSystem.instance != null && ZoneSystem.instance.GetSolidHeight(at, out float solid, 1000)) at.y = Mathf.Min(from.y, solid);
             return at;
         }
+
+        private static readonly Collider[] s_spotHits = new Collider[16];
+        private static int s_spotMask;
+
+        /// <summary>
+        /// What stands on a spot in front of a seat whose point is <paramref name="seat"/> (at the seat's floor): furniture
+        /// from 35 cm up (above any floor; a table's top is 75-80 cm), or a piece of any other kind there or on the way to
+        /// it, or the ground falling away (a balcony's edge).
+        /// </summary>
+        private static SeatSpotKind SpotKind(Vector3 seat, Vector3 at, Piece own)
+        {
+            if (s_spotMask == 0) s_spotMask = LayerMask.GetMask("piece", "piece_nonsolid");
+            if (!CitizenAI.OnlyFurnitureBetween(seat, at, own)) return SeatSpotKind.Solid;
+            if (ZoneSystem.instance != null && ZoneSystem.instance.GetSolidHeight(at, out float ground, 1000) && ground < seat.y - 1f)
+                return SeatSpotKind.Solid;
+            Vector3 low = new Vector3(at.x, seat.y + 0.35f, at.z), high = new Vector3(at.x, seat.y + 1.0f, at.z);
+            int count = Physics.OverlapCapsuleNonAlloc(low, high, 0.25f, s_spotHits, s_spotMask, QueryTriggerInteraction.Ignore);
+            SeatSpotKind kind = SeatSpotKind.Clear;
+            for (int i = 0; i < count; i++)
+            {
+                Piece piece = s_spotHits[i] != null ? s_spotHits[i].GetComponentInParent<Piece>() : null;
+                if (piece == null || piece == own) continue;
+                if (piece.m_category != Piece.PieceCategory.Furniture) return SeatSpotKind.Solid;
+                kind = SeatSpotKind.Furniture;
+            }
+            return kind;
+        }
+
+        /// <summary>
+        /// He can sit down on the seat from where he stands: from beside it with nothing between, or from up to
+        /// <paramref name="reach"/> away (past a table in front of it) with nothing but furniture between; on its floor.
+        /// </summary>
+        internal static bool CanSitFrom(CitizenAI ai, Vector3 me, SeatPlace seat, float reach)
+        {
+            Vector3 point = seat.Point;
+            if (Mathf.Abs(me.y - point.y) > 1f) return false;
+            float d = Utils.DistanceXZ(me, point);
+            if (d <= FreeTimeRules.SitFrom && ai.NothingBetween(point)) return true;
+            return reach > FreeTimeRules.SitFrom && d <= reach && CitizenAI.OnlyFurnitureBetween(me, point, seat.Chair.GetComponentInParent<Piece>());
+        }
+
+        /// <summary>
+        /// At the walk's end, a seat sat on from across a table needs the check too (the review of the change: the end of a
+        /// walk can be short of the spot, or round a corner of it); one sat on from in front of it, as always, doesn't.
+        /// </summary>
+        internal static bool CantSitFromWalksEnd(CitizenAI ai, Vector3 me, SeatPlace seat, float reach) =>
+            reach > FreeTimeRules.SitFrom && !CanSitFrom(ai, me, seat, reach);
 
         /// <summary>His side of the meeting, at the height he stands (the game's paths find the ground).</summary>
         private static Vector3 Spot(GroundPoint p, Vector3 from) => new Vector3(p.X, from.y, p.Z);
@@ -528,10 +716,10 @@ namespace VikingColonies.AI
             IReadOnlyList<Door> doors = Jobs.WorldScan.Doors();
             for (int i = 0; i < 8; i++)
             {
-                Vector2 off = Random.insideUnitCircle * FreeTimeRules.Radius;
+                Vector2 off = ModRandom.InsideUnitCircle("spot", _citizen.CitizenName) * FreeTimeRules.Radius;
                 var at = new Vector3(_anchor.x + off.x, me.y, _anchor.z + off.y);
                 if (ZoneSystem.instance != null) at.y = ZoneSystem.instance.GetGroundHeight(at);
-                if (Physics.Raycast(at + Vector3.up * 0.5f, Vector3.up, 20f, s_roofMask)) continue;   // under a roof: indoors
+                if (UnderARoof(at, me)) continue;   // indoors
                 float[] hall = _citizen.Record.ColonyPos;
                 if (hall != null && hall.Length == 3
                     && Utils.DistanceXZ(at, Citizen.ToVector3(hall)) > Buildings.HallRules.RadiusOf(_citizen.ColonyId) - 2f) continue;   // inside the colony
@@ -540,8 +728,48 @@ namespace VikingColonies.AI
                 if (Walls.StructureBetween(me, at)) continue;   // a wall between: the way there would go round or through a door
                 if (_ai.CanWalkTo(at)) return at;
             }
-            return me;
+            return StepClearOfDoor(me, doors) ?? me;
         }
+
+        /// <summary>
+        /// With nowhere to stroll, one by a door steps clear of it rather than stand there (the 1.6.0 self-test a6d3: put in
+        /// front of the storehouse's door as it went up at once, a jobless settler "strolled" on the spot for minutes and its
+        /// courier gave up at the door 26 times). Only a step the walking map has a way to: off that map she couldn't walk
+        /// it anyway (the review). Null when not by a door, or no step fits; then she stays, as before.
+        /// </summary>
+        private Vector3? StepClearOfDoor(Vector3 me, IReadOnlyList<Door> doors)
+        {
+            Door door = doors.Where(d => d != null && Utils.DistanceXZ(d.transform.position, me) < StrollDoorClearance
+                                         && Mathf.Abs(d.transform.position.y - me.y) < 3f)
+                             .OrderBy(d => Utils.DistanceXZ(d.transform.position, me)).FirstOrDefault();
+            if (door == null) return null;
+            Vector3? step = null;
+            foreach (GroundPoint p in FreeTimeRules.StepsClearOfDoor(new GroundPoint(me.x, me.z),
+                         new GroundPoint(door.transform.position.x, door.transform.position.z), StrollDoorClearance))
+            {
+                var at = new Vector3(p.X, me.y, p.Z);
+                if (ZoneSystem.instance != null) at.y = ZoneSystem.instance.GetGroundHeight(at);
+                if (UnderARoof(at, me)) continue;   // indoors (the hut's side of a door along its wall)
+                if (doors.Any(d => d != null && Utils.DistanceXZ(d.transform.position, at) < StrollDoorClearance)) continue;
+                if (NearFire(at) || Walls.StructureBetween(me, at)) continue;
+                if (_ai.CanWalkTo(at))
+                {
+                    step = at;
+                    break;
+                }
+            }
+            if (step.HasValue)
+                Log.Info($"{_citizen.CitizenName} steps clear of the {Utils.GetPrefabName(door.gameObject)} at ({door.transform.position.x:0}, {door.transform.position.z:0}) " +
+                         $"with nowhere else to stroll, to ({step.Value.x:0.0}, {step.Value.z:0.0})");
+            return step;
+        }
+
+        /// <summary>
+        /// A roof over the spot: indoors. Looked for from the higher of the spot's ground and where he stands, so a porch or a
+        /// doorstep he stands on isn't taken for a roof over the ground beneath it (the review of a6d3's fix).
+        /// </summary>
+        private static bool UnderARoof(Vector3 at, Vector3 me) =>
+            Physics.Raycast(new Vector3(at.x, Mathf.Max(at.y, me.y) + 0.5f, at.z), Vector3.up, 20f, s_roofMask);
 
         private void TickStroll(float now)
         {
@@ -578,7 +806,7 @@ namespace VikingColonies.AI
         {
             _arrived = true;
             _arrivedAt = now;
-            _doUntil = now + FreeTimeRules.DoSeconds(leisure, s_rng.NextDouble());
+            _doUntil = now + FreeTimeRules.DoSeconds(leisure, Rng.NextDouble());
             _chooseAt = Mathf.Max(_chooseAt, _doUntil);
         }
 

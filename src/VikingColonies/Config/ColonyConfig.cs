@@ -12,13 +12,18 @@ namespace VikingColonies.Config
         public static ConfigEntry<bool> HuginTips;
         public static ConfigEntry<bool> AskForFeedback;
         public static ConfigEntry<bool> WordsAboveHeads;
+        public static ConfigEntry<float> WindowScale;
         public static ConfigEntry<bool> SmallTalk;
         public static ConfigEntry<bool> FreeTime;
+        public static ConfigEntry<bool> Pastimes;
         public static ConfigEntry<bool> EveningGathering;
         public static ConfigEntry<bool> SleepInBeds;
         public static ConfigEntry<bool> TendFires;
         public static ConfigEntry<bool> CarryToStock;
         public static ConfigEntry<bool> NewcomersWalkIn;
+        /// <summary>The fallen return (1.5.1): dead settlers come back after a few days.</summary>
+        public static ConfigEntry<bool> FallenReturn;
+        public static ConfigEntry<int> FallenReturnDays;
         public static ConfigEntry<float> CallingBonus;
         public static ConfigEntry<bool> Mood;
         public static ConfigEntry<int> HallWoodCost;
@@ -63,7 +68,13 @@ namespace VikingColonies.Config
         public static ConfigEntry<int> StorehouseWoodCost;
         public static ConfigEntry<int> CourierCarry;
         public static ConfigEntry<int> CourierCarryPerLevel;
+        public static ConfigEntry<int> MeadHallWoodCost;   // 1.6, the cook
+        public static ConfigEntry<int> CookCarryCapacity;
         public static ConfigEntry<int> FieldWoodCost;
+        /// <summary>The memorial stone's cost in Stone (1.5.1).</summary>
+        public static ConfigEntry<int> MemorialStoneCost;
+        /// <summary>The scarecrow (custom assets' first test, 27 Oct 2026): in the hammer or not; off until it ships.</summary>
+        public static ConfigEntry<bool> ScarecrowEnabled;
         public static ConfigEntry<int> FarmerCarryCapacity;
         public static ConfigEntry<float> ForagerWorkRadius;
         public static ConfigEntry<float> ForagerRadiusPerLevel;
@@ -95,47 +106,47 @@ namespace VikingColonies.Config
         public static void Bind(ConfigFile config)
         {
             HallWoodCost = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.WoodCost, 20,
-                "Wood needed to build a Town Hall (on a server, the server's).",
+                "Wood needed to raise a Chieftain's Camp (on a server, the server's).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
             HallStoneCost = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.StoneCost, 10,
-                "Stone needed to build a Town Hall (on a server, the server's).",
+                "Stone needed to raise a Chieftain's Camp (on a server, the server's).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
             // Town Hall levels (1.4): the Hall of Trophies.
             HallLevels = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.Levels, true,
-                "The Town Hall has levels (1-5), each raised by showing it the trophies of the Forsaken met since the level before and " +
+                "The Chieftain's Camp has levels (1-5), each raised by showing it the trophies of the Forsaken met since the level before and " +
                 "paying materials from its chest; each level widens the colony's area, makes room for more settlers and opens the next " +
-                "age of huts (huts go as high as the hall). " +
+                "age of huts (huts go as high as the camp). " +
                 "Off: as before 1.4 (area Colony.ColonyRadius, settlers up to Colony.MaxSettlers, huts limited by the Builder's Hut only).",
                 synced: true);
             HallBeatenBossesCount = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.BeatenBossesCount, true,
-                "A Forsaken this world has already beaten counts for the Town Hall as if its trophy were shown (a trophy hung on " +
-                "the sacrificial stones can't be taken back). Off: only trophies shown at the hall count.",
+                "A Forsaken this world has already beaten counts for the camp as if its trophy were shown (a trophy hung on " +
+                "the sacrificial stones can't be taken back). Off: only trophies shown at the camp count.",
                 synced: true);
             HallRadiusPerLevel = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.RadiusPerLevel, 10f,
-                "Metres added to the colony's area (around the Town Hall) per Town Hall level above 1.",
+                "Metres added to the colony's area (around the camp) per camp level above 1.",
                 synced: true, acceptableValues: new AcceptableValueRange<float>(0f, 50f));
             SettlersAtLevel1 = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.SettlersAtLevel1, 10,
-                "How many settlers a colony with a level-1 Town Hall grows to (never past Colony.MaxSettlers).",
+                "How many settlers a colony with a level-1 camp grows to (never past Colony.MaxSettlers).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(1, 100));
             SettlersPerLevel = config.BindConfig(ConfigNames.TownHallSection, ConfigNames.SettlersPerLevel, 5,
-                "More settlers per Town Hall level above 1 (never past Colony.MaxSettlers).",
+                "More settlers per camp level above 1 (never past Colony.MaxSettlers).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 50));
             string[] costNames = { ConfigNames.Level2Cost, ConfigNames.Level3Cost, ConfigNames.Level4Cost, ConfigNames.Level5Cost };
             s_levelCosts = new ConfigEntry<string>[costNames.Length];
             for (int i = 0; i < costNames.Length; i++)
                 s_levelCosts[i] = config.BindConfig(ConfigNames.TownHallSection, costNames[i], TownHallLevels.DefaultCost(i + 2),
-                    $"Materials raising the Town Hall to level {i + 2} uses up from its chest, as Prefab:count by commas (the items' " +
+                    $"Materials raising the camp to level {i + 2} uses up from its chest, as Prefab:count by commas (the items' " +
                     "prefab names, as the game's spawn command takes them). Empty: only the trophies.",
                     synced: true);
             StartingCitizens = config.BindConfig(ConfigNames.ColonySection, ConfigNames.StartingCitizens, 4,
-                "Citizens who arrive when a Town Hall is built.",
+                "Citizens who arrive when a Chieftain's Camp is raised.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 10));
             ColonyRadius = config.BindConfig(ConfigNames.ColonySection, ConfigNames.ColonyRadius, 50f,
-                "How far from a level-1 Town Hall (metres) colony buildings can be built. Each Town Hall level above 1 adds " +
+                "How far from a level-1 camp (metres) colony buildings can be built. Each camp level above 1 adds " +
                 "Town Hall › RadiusPerLevel, and each Watchtower adds a circle of its own (within Colony › MaxReach).",
                 synced: true, acceptableValues: new AcceptableValueRange<float>(20f, 150f));
             MaxReach = config.BindConfig(ConfigNames.ColonySection, ConfigNames.MaxReach, 150f,
-                "How far from the Town Hall (metres) the colony may reach with its Watchtowers: of a tower near it only the part of " +
+                "How far from the camp (metres) the colony may reach with its Watchtowers: of a tower near it only the part of " +
                 "its area within reach counts (its guard still keeps watch).",
                 synced: true, acceptableValues: new AcceptableValueRange<float>(50f, 500f));
             WatchtowerWoodCost = config.BindConfig(ConfigNames.WatchtowerSection, ConfigNames.WoodCost, 20,
@@ -174,8 +185,8 @@ namespace VikingColonies.Config
                 "out before it bites. Off: settlers run and guards wait for an attack, as before 1.5.0.",
                 synced: true);
             TownHallGraceDays = config.BindConfig(ConfigNames.ColonySection, ConfigNames.TownHallGraceDays, 3,
-                "In-game days a colony lives on after losing its Town Hall: a new Town Hall built among its huts in that time takes " +
-                "it over. 0 = the colony ends 30 seconds after its Town Hall is gone.",
+                "In-game days a colony lives on after losing its Chieftain's Camp: a new camp raised among its huts in that time takes " +
+                "it over. 0 = the colony ends 30 seconds after its camp is gone.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, ColonyGrace.MaxDays));
             SettlersEat = config.BindConfig(ConfigNames.ColonySection, ConfigNames.SettlersEat, true,
                 "Settlers eat once a day from the colony's chests (the plainest food first); one who finds nothing is hungry and works slower.",
@@ -184,18 +195,23 @@ namespace VikingColonies.Config
                 "How fast a hungry settler works (1 = as fast as a fed one).",
                 synced: true, acceptableValues: new AcceptableValueRange<float>(0.1f, 1f));
             NewcomersPerDay = config.BindConfig(ConfigNames.ColonySection, ConfigNames.NewcomersPerDay, 1,
-                "Newcomers who may arrive at the Town Hall each day, while the colony has a free bed and food (0 = none).",
+                "Newcomers who may arrive at the camp each day, while the colony has a free bed and food (0 = none).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 5));
             NewcomerFood = config.BindConfig(ConfigNames.ColonySection, ConfigNames.NewcomerFood, 5,
-                "Food items in the Town Hall's chest a newcomer needs, and eats when they arrive.",
+                "Food items in the camp's chest a newcomer needs, and eats when they arrive.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 50));
             FreeTime = config.BindConfig(ConfigNames.ColonySection, ConfigNames.FreeTime, true,
                 "Settlers with nothing to do sit on benches and chairs, sit by burning fires, chat and stroll near their hut or the " +
-                "Town Hall (off: they wait standing, as before 0.14).",
+                "camp (off: they wait standing, as before 0.14).",
+                synced: true);
+            Pastimes = config.BindConfig(ConfigNames.ColonySection, ConfigNames.Pastimes, true,
+                "In free time settlers also take pastimes: archery at a target, practice at a training dummy, board games and toasts " +
+                "at a table with chairs, dancing round a banner pole or maypole, stories at a fire, admiring trophies, the map table, " +
+                "stretching, sparring, naps and petting tame animals (off: free time as before 1.6).",
                 synced: true);
             EveningGathering = config.BindConfig(ConfigNames.ColonySection, ConfigNames.EveningGathering, true,
                 "In the evening, before night, settlers stop work and gather round the colony's fire (the burning campfire or hearth " +
-                "nearest the Town Hall; the Town Hall with none), then go indoors at night.",
+                "nearest the camp; the camp with none), then go indoors at night.",
                 synced: true);
             SleepInBeds = config.BindConfig(ConfigNames.ColonySection, ConfigNames.SleepInBeds, true,
                 "At night a settler with a home lies in their Longhouse bed (off: they stand by it, as before 0.15).",
@@ -207,7 +223,7 @@ namespace VikingColonies.Config
                 "Settlers with nothing to do carry what a building keeps in stock and lacks from colony chests that can spare it (off: kept items are still left alone).",
                 synced: true);
             NewcomersWalkIn = config.BindConfig(ConfigNames.ColonySection, ConfigNames.NewcomersWalkIn, true,
-                "Newcomers, and the first settlers of a new Town Hall, walk in from the edge of the colony (off: they appear at the Town Hall).",
+                "Newcomers, and the first settlers of a new camp, walk in from the edge of the colony (off: they appear at the camp).",
                 synced: true);
             Mood = config.BindConfig(ConfigNames.ColonySection, ConfigNames.Mood, true,
                 "Settlers have a mood from their home, meals, evenings and the colony's news: it speeds up or slows down their work, " +
@@ -220,18 +236,21 @@ namespace VikingColonies.Config
                 "No newcomers once a colony has this many settlers.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(1, 100));
             HuginTips = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.HuginTips, true,
-                "Hugin, the raven, explains the colony as you play: the first Town Hall, a hut without a Builder's Hut, the first " +
+                "Hugin, the raven, explains the colony as you play: the first Chieftain's Camp, a hut without a Builder's Hut, the first " +
                 "things the builder needs, the first worker, a field, the Keep in stock tab, the storehouse, free time and the " +
                 "evening fire, night, hunger, moods, trophies and a death. Each tip once per character, and only with the game's " +
                 "tutorials on. Each player's own.", synced: false);
             AskForFeedback = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.AskForFeedback, true,
                 "Once on this computer, at a good moment (a hut near you reaching level 2, or two hours with a colony), a small " +
                 "window asks what you think of the mod, with links to its Discord and its GitHub page. Nothing is sent from the " +
-                "game. Off: it never asks; the Feedback button in the Town Hall's window stays. On a server, the server's setting is used.",
+                "game. Off: it never asks; the Feedback button in the camp's window stays. On a server, the server's setting is used.",
                 synced: true);
             WordsAboveHeads = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.WordsAboveHeads, true,
                 "A settler near you who needs you says so above their head (\"Needs 12 Wood\", \"Storage full\", \"Hungry\"). " +
                 "Each player's own.", synced: false);
+            WindowScale = config.BindConfig(ConfigNames.WindowsSection, ConfigNames.WindowScale, Core.WindowScale.Default,
+                "The size of VikingColonies' windows on your screen (0.75 to 1.5; a window too tall for the screen is made to fit). " +
+                "Each player's own.", synced: false, acceptableValues: new AcceptableValueRange<float>(Core.WindowScale.Min, Core.WindowScale.Max));
             SmallTalk = config.BindConfig(ConfigNames.MessagesSection, ConfigNames.SmallTalk, true,
                 "Settlers greet you by name once a day and make small talk above their heads in their free time (needs always come " +
                 "first). Each player's own.", synced: false);
@@ -250,9 +269,28 @@ namespace VikingColonies.Config
             CourierCarryPerLevel = config.BindConfig(ConfigNames.CourierSection, ConfigNames.CarryPerLevel, 25,
                 "How many more a courier carries for each storehouse level above 1 (on a server, the server's).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            MeadHallWoodCost = config.BindConfig(ConfigNames.MeadHallSection, ConfigNames.WoodCost, 20,
+                "Wood needed to place a Mead Hall (on a server, the server's); the builder then puts up its building.",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            CookCarryCapacity = config.BindConfig(ConfigNames.CookSection, ConfigNames.CarryCapacity, 20,
+                "How much raw food the Mead Hall's cook carries to the cooking station at once (on a server, the server's).",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(1, 100));
             FieldWoodCost = config.BindConfig(ConfigNames.FieldSection, ConfigNames.WoodCost, 4,
                 "Wood needed to place a field marker (on a server, the server's).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            MemorialStoneCost = config.BindConfig(ConfigNames.MemorialSection, ConfigNames.StoneCost, 20,
+                "Stone needed to raise a memorial stone, where a colony remembers its fallen (on a server, the server's).",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(0, 500));
+            // Scarecrow.Enabled is not bound in 1.6.0 (left null: the pieces stay hidden, vc_scarecrow still shows them in a
+            // test world): 1.7.0 draws the field marker as the scarecrow and has no such setting, so none ships.
+            FallenReturn = config.BindConfig(ConfigNames.ColonySection, ConfigNames.FallenReturn, false,
+                "Dead settlers walk back into the colony after a few days (off: death is final). Only a settler who died " +
+                "while this was on comes back: their name, trait, trade and skills, not their home, hut or load.",
+                synced: true);
+            FallenReturnDays = config.BindConfig(ConfigNames.ColonySection, ConfigNames.FallenReturnDays, 3,
+                "With Colony.FallenReturn on: the days after a death before the settler walks back in (one a day, in daylight, while " +
+                "the colony has room; 0: the same day).",
+                synced: true, acceptableValues: new AcceptableValueRange<int>(0, 30));
             FarmerCarryCapacity = config.BindConfig(ConfigNames.FarmerSection, ConfigNames.CarryCapacity, 20,
                 "How many items the farmer carries before walking back to deliver.",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(1, 200));
@@ -278,7 +316,7 @@ namespace VikingColonies.Config
                 "Metres added to the lumberjack's work area for each level of their hut above 1.",
                 synced: true, acceptableValues: new AcceptableValueRange<float>(0f, 50f));
             RowsPerLevel = config.BindConfig(ConfigNames.StorageSection, ConfigNames.RowsPerLevel, 1,
-                "Rows added to a colony building's chest for each level above 1 (the Town Hall's too, by its level).",
+                "Rows added to a colony building's chest for each level above 1 (the camp's too, by its level).",
                 synced: true, acceptableValues: new AcceptableValueRange<int>(0, 3));
             CarryCapacity = config.BindConfig(ConfigNames.LumberjackSection, ConfigNames.CarryCapacity, 50,
                 "How many items the lumberjack carries before walking back to deliver.",

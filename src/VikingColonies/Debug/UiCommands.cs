@@ -21,14 +21,18 @@ namespace VikingColonies.DevTools
         public override string Name => "vc_ui";
         public override string Help => "VikingColonies (test worlds): 'vc_ui window [townhall|builder|lumberjack|longhouse|forager]' opens the nearest such " +
                                        "building's window (within 8 m) and logs its text; 'vc_ui text' logs the open windows; 'vc_ui treelist' (or replant) opens the " +
-                                       "nearest Lumberjack's Hut's Trees list; 'vc_ui order <hut> first|aside|resume|cancel' presses a Work orders button on the open Town Hall window; 'vc_ui report' presses its Report a problem button (the bug form's address goes to the log); " +
+                                       "nearest Lumberjack's Hut's Trees list; 'vc_ui order <hut> first|aside|resume|cancel' presses a Work orders button on the open Town Hall window; 'vc_ui report' presses its Report a problem button (its window opens and writes the report); 'vc_ui report github|discord|folder' presses that button in the open Report a problem window (the address goes to the log; no browser, folder or clipboard); " +
                                        "'vc_ui feedback' presses its Feedback button; 'vc_ui feedback discord|github' presses that button in the open Feedback window (the address goes to the log); " +
                                        "'vc_ui feedback arm' forgets the feedback ask on this computer and lets it come in this test world; 'vc_ui feedback due' also makes it due now; 'vc_ui feedback state' logs it; 'vc_ui pick' the nearest Forager's Hut's \"What to pick\" list; 'vc_ui pickables' " +
                                        "logs every pickable the game has (what it gives, whether it grows back, where it grows); 'vc_ui chest' opens the nearest colony chest; 'vc_ui shifte <hut>' logs its chest's hover, then presses Shift+E on it through every mod's hooks; 'vc_ui hover [metres]' " +
                                        "logs the hover texts of settlers and cairns nearby; 'vc_ui tab <tab>' shows a tab of the open window (stock: Keep in stock); " +
                                        "'vc_ui keep <hut> <item|food> <amount>' sets the nearest such building's Keep in stock entry (0 takes it off); " +
+                                       "'vc_ui ravenhints on|off|back' turns the game's raven hints (its Settings' \"Enable raven hints\") on or off for this game, or back as they were; " +
                                        "'vc_ui close' closes everything";
         public override bool IsCheat => true;
+
+        /// <summary>The game's raven hints before 'vc_ui ravenhints' first changed them, for 'back'.</summary>
+        private static bool? s_ravenHintsWas;
 
         public override void Run(string[] args)
         {
@@ -74,14 +78,35 @@ namespace VikingColonies.DevTools
                     Plugin.Instance.StartCoroutine(LogSoon());
                     break;
                 case "report":
-                    if (!Windows.TownHall.IsOpen)
+                {
+                    string way = args.Length > 1 ? args[1].ToLowerInvariant() : "";
+                    if (way == "")
                     {
-                        BuildCommand.Print("vc_ui: open the Town Hall window first (vc_ui window townhall)");
-                        return;
+                        if (!Windows.TownHall.IsOpen)
+                        {
+                            BuildCommand.Print("vc_ui: open the Town Hall window first (vc_ui window townhall)");
+                            return;
+                        }
+                        Windows.TownHall.PressReport();
                     }
-                    Windows.TownHall.PressReport(true);   // test: the address goes to the log; no browser, no clipboard
+                    else
+                    {
+                        if (!Windows.Report.IsOpen)
+                        {
+                            BuildCommand.Print("vc_ui: no Report a problem window is open (vc_ui report)");
+                            return;
+                        }
+                        if (way != "github" && way != "discord" && way != "folder")
+                        {
+                            BuildCommand.Print("vc_ui: report [github|discord|folder]");
+                            return;
+                        }
+                        // test: the address goes to the log; no browser, no folder, no clipboard
+                        Windows.Report.Press(way == "discord" ? ReportProblem.Way.Discord : way == "folder" ? ReportProblem.Way.Folder : ReportProblem.Way.Form, true);
+                    }
                     Plugin.Instance.StartCoroutine(LogSoon());
                     break;
+                }
                 case "feedback":
                     Feedback(args.Length > 1 ? args[1].ToLowerInvariant() : "");
                     break;
@@ -183,9 +208,9 @@ namespace VikingColonies.DevTools
                     {
                         Piece piece = ZNetScene.instance.GetPrefab(type.PrefabName)?.GetComponent<Piece>();
                         if (piece == null) continue;
-                        int index = categories != null ? categories.IndexOf(piece.m_category) : -1;
-                        string label = index >= 0 && labels != null && index < labels.Count ? Localization.instance.Localize(labels[index]?.ToString() ?? "") : "none";
-                        BuildCommand.Print($"vc_ui: hammer: {type.Id} is in category {piece.m_category} ({(int)piece.m_category}), the tab '{label}'");
+                        // The menu's tabs come from the usage tags since Valheim 1.0 (1.5.1, the player's 1.5.0 try: this said
+                        // Misc from the old category while the menu showed Furniture).
+                        BuildCommand.Print($"vc_ui: hammer: {type.Id} is in the menu's tabs {piece.m_usage} (usage {(int)piece.m_usage}; old category {piece.m_category})");
                     }
                     break;
                 }
@@ -202,6 +227,13 @@ namespace VikingColonies.DevTools
                 case "place":
                     PlaceMode(p, args.Length > 1 ? args[1] : "lumberjack");
                     break;
+                case "growline":   // 'vc_ui growline <hut>': the grow-room line placing that hut shows, its front facing away
+                {
+                    BuildingType type = DevHelpers.TypeByWord(args.Length > 1 ? args[1] : "lumberjack");
+                    string line = type != null ? Construction.SitePreview.GrowLine(type, 0) : "";
+                    BuildCommand.Print($"vc_ui: grow line {type?.Id ?? "?"}: {(line.Length == 0 ? "none" : DevHelpers.Plain(line).Trim())}");
+                    break;
+                }
                 case "field":   // 'vc_ui field [size] [crop]': a field marker of the nearest Farm (within 40 m) 6 m in front of you (the 1.0 play-through)
                 {
                     ColonyBuilding farm = Nearest(p, "farm", 40f);
@@ -261,6 +293,22 @@ namespace VikingColonies.DevTools
                         ? $"vc_ui: the {kept.TypeId} keeps {amount} {item} (asked its owner)" : $"vc_ui: the {kept.TypeId}'s list is full");
                     break;
                 }
+                case "ravenhints":
+                    // The camp's Overview shows Hugin's next step only with the game's raven hints on (1.6.0's look check);
+                    // 'back' puts them as they were before the first change.
+                    string hints = args.Length > 1 ? args[1].ToLowerInvariant() : "on";
+                    if (hints == "back")
+                    {
+                        if (s_ravenHintsWas.HasValue) Raven.m_tutorialsEnabled = s_ravenHintsWas.Value;
+                        s_ravenHintsWas = null;
+                    }
+                    else
+                    {
+                        if (!s_ravenHintsWas.HasValue) s_ravenHintsWas = Raven.m_tutorialsEnabled;
+                        Raven.m_tutorialsEnabled = hints != "off";
+                    }
+                    BuildCommand.Print($"vc_ui: the game's raven hints are {(Raven.m_tutorialsEnabled ? "on" : "off")}");
+                    break;
                 case "tab" when Windows.Hut.IsOpen:
                     Windows.Hut.ShowTabForTest(args.Length > 1 ? args[1] : "hut");
                     Plugin.Instance.StartCoroutine(LogSoon());
@@ -325,6 +373,7 @@ namespace VikingColonies.DevTools
                     Windows.Field.Close();
                     Windows.FieldCrop.Close();
                     Windows.Feedback.Close();
+                    Windows.Report.Close();
                     if (InventoryGui.instance != null && InventoryGui.IsVisible()) InventoryGui.instance.Hide();
                     ItemDrop.ItemData held = p.GetInventory().GetItem("$item_hammer");
                     if (held != null && p.IsItemEquiped(held)) p.UnequipItem(held);
@@ -655,7 +704,7 @@ namespace VikingColonies.DevTools
         private static void LogWindows()
         {
             int open = 0;
-            foreach (WindowBase window in new WindowBase[] { Windows.Hut, Windows.TownHall, Windows.Trees, Windows.Pick, Windows.Grow, Windows.Feedback })
+            foreach (WindowBase window in new WindowBase[] { Windows.Hut, Windows.TownHall, Windows.Trees, Windows.Pick, Windows.Grow, Windows.Feedback, Windows.Report })
             {
                 if (!window.IsOpen) continue;
                 open++;

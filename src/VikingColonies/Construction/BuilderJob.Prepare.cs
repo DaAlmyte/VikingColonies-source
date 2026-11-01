@@ -581,7 +581,7 @@ namespace VikingColonies.Construction
         /// A spot by the chest he can stand at with nothing between him and it (in front, behind, then beside it), on the
         /// floor it stands on; false when there's none.
         /// </summary>
-        private static bool OpenSideOf(Transform chest, out Vector3 spot)
+        internal static bool OpenSideOf(Transform chest, out Vector3 spot)
         {
             foreach (Vector3 way in new[] { chest.forward, -chest.forward, chest.right, -chest.right })
             {

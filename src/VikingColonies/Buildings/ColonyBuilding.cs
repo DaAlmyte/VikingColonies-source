@@ -56,6 +56,7 @@ namespace VikingColonies.Buildings
         public BuildingType Type => BuildingTypes.Get(TypeId);
         public bool IsTownHall => TypeId == BuildingTypes.TownHallId;
         public bool IsStorehouse => TypeId == BuildingTypes.StorehouseId;
+        public bool IsMeadHall => TypeId == BuildingTypes.MeadHallId;
         public StorageModule Storage { get; private set; }
 
         /// <summary>

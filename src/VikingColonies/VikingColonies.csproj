@@ -23,6 +23,7 @@
     <Reference Include="0Harmony"><HintPath>$(ProfileDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="assembly_valheim"><HintPath>$(ManagedDir)\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="assembly_utils"><HintPath>$(ManagedDir)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SoftReferenceableAssets"><HintPath>$(ManagedDir)\SoftReferenceableAssets.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Splatform"><HintPath>$(ManagedDir)\Splatform.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="assembly_guiutils"><HintPath>$(ManagedDir)\assembly_guiutils.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
@@ -48,6 +49,8 @@
   </Target>
   <ItemGroup>
     <EmbeddedResource Include="Blueprints\*.blueprint" LogicalName="VikingColonies.Blueprints.%(Filename)%(Extension)" />
+    <!-- The mod's own models: tools/assets makes them (art/models, then the Unity project in unity/, then this bundle): python -m tools.assets.make PROP with bundle vc_assets and install src/VikingColonies/Assets/vc_assets (tools/assets/README.md) -->
+    <EmbeddedResource Include="Assets/vc_assets" LogicalName="VikingColonies.Assets.vc_assets" />
   </ItemGroup>
 
 </Project>

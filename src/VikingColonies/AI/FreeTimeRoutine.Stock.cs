@@ -43,6 +43,7 @@ namespace VikingColonies.AI
                 Dictionary<string, int> contents = b.Storage.Contents();
                 StockList keep = b.Stock.List;
                 IReadOnlyDictionary<string, int> working = b.Storage.Working;   // once a building, not once an item (its review)
+                IReadOnlyDictionary<string, int> ordered = b.Storage.Ordered;   // what its own build order needs (1.5.1)
                 foreach (KeepEntry missing in StockRules.Short(contents, keep, StorageModule.IsFood))
                     if ((missing.Item == StockList.AnyFood || StorageModule.Carried(missing.Item)) && !_skippedRuns.IsBlocked(StockRuns.ClaimKey(b.Id, missing.Item), now))
                         needs.Add(new StockNeed { BuildingId = b.Id, At = at, Item = missing.Item, Missing = missing.Amount });
@@ -51,7 +52,7 @@ namespace VikingColonies.AI
                 var spares = new Dictionary<string, int>();
                 foreach (KeyValuePair<string, int> item in contents)
                 {
-                    int spare = StorageModule.Carried(item.Key) ? StockRules.Spare(contents, keep, item.Key, StorageModule.IsFood, false, working) : 0;
+                    int spare = StorageModule.Carried(item.Key) ? StockRules.Spare(contents, keep, item.Key, StorageModule.IsFood, false, working, ordered) : 0;
                     if (spare > 0) spares[item.Key] = spare;
                 }
                 foreach (StorageModule store in b.Stores)

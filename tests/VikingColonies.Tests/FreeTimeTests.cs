@@ -282,7 +282,7 @@ namespace VikingColonies.Tests
         [Fact]
         public void Every_topic_has_at_least_four_lines_and_there_are_twelve_general_ones()
         {
-            foreach (TalkTopic topic in System.Enum.GetValues(typeof(TalkTopic)).Cast<TalkTopic>().Where(t => t != TalkTopic.Wait && t != TalkTopic.Trade))   // a trade: per job (LivelyTalkTests)
+            foreach (TalkTopic topic in System.Enum.GetValues(typeof(TalkTopic)).Cast<TalkTopic>().Where(t => t != TalkTopic.Wait && t != TalkTopic.Trade && t != TalkTopic.Pastime))   // a trade: per job (LivelyTalkTests); a pastime: per pastime (PastimeTalkTests)
                 Assert.True(SmallTalk.Count(topic, "") >= 4, topic.ToString());
             foreach (string wait in new[] { "$vc_status_no_trees", "$vc_status_crops_growing", "$vc_status_nothing_to_pick", "$vc_status_no_work" })
                 Assert.True(SmallTalk.Count(TalkTopic.Wait, wait) >= 4, wait);
@@ -424,5 +424,140 @@ namespace VikingColonies.Tests
             Assert.False(FreeTimeRules.Tends(tendFires: true, freeTime: false, infiniteFuel: false, fromNearestHome: 5f));
             Assert.False(FreeTimeRules.Tends(tendFires: true, freeTime: true, infiniteFuel: true, fromNearestHome: 5f));
         }
+
+        // 1.6, the player's look at the Mead Hall: settlers spent their free time standing round its fire pit, between
+        // the long table and the cooking station, and ended up on the benches and the table. A fire with a station over
+        // it (a cooking station, the cauldron, the iron cooking station on the hearth) is a cook's, not a fire to stand by.
+        [Fact]
+        public void A_fire_with_a_cooking_station_or_cauldron_over_it_is_a_cooks_fire()
+        {
+            var fire = new GroundPoint(10f, 10f);
+            Assert.True(FreeTimeRules.IsCooksFire(fire, new[] { new GroundPoint(10f, 10f) }));
+            Assert.True(FreeTimeRules.IsCooksFire(fire, new[] { new GroundPoint(30f, 0f), new GroundPoint(10.8f, 10.5f) }));
+            Assert.False(FreeTimeRules.IsCooksFire(fire, new[] { new GroundPoint(11.5f, 10f) }));   // a station beside it, not over it
+            Assert.False(FreeTimeRules.IsCooksFire(fire, new GroundPoint[0]));
+            Assert.False(FreeTimeRules.IsCooksFire(fire, null));
+        }
+
+        // The Mead Hall's seat test (25 Oct): its benches stand against the wall with the long table 5 cm in front, so the
+        // spot 0.7 m in front of a seat is under the table and no one could get there. The walk stops at the first clear
+        // spot further out, and a settler sits down from there across the table (as a player can), never further than 3 m.
+        [Fact]
+        public void A_seat_is_sat_on_from_its_clear_spot_across_the_furniture_in_front()
+        {
+            Assert.Equal(new[] { 0.7f, 1.0f, 1.3f, 1.6f, 1.9f, 2.2f, 2.5f }, FreeTimeRules.SeatSpotSteps());
+            float reach;
+            // Nothing in front: 0.7 m and 1.3 m, as before.
+            Assert.Equal(0.7f, FreeTimeRules.ChooseSeatSpot(d => SeatSpotKind.Clear, out reach), 3);
+            Assert.Equal(FreeTimeRules.SitFrom, reach, 3);
+            // A table pushed up to the bench, clear from 2.2 m: the walk stops there, and a settler sits from a little further.
+            Assert.Equal(2.2f, FreeTimeRules.ChooseSeatSpot(d => d < 2.1f ? SeatSpotKind.Furniture : SeatSpotKind.Clear, out reach), 3);
+            Assert.Equal(3.5f, reach, 3);   // the game's paths stop half a metre or more short of furniture (runs 8-9: 3.2-3.7 m)
+            Assert.Equal(4f, FreeTimeRules.SitAcrossMax, 3);   // a player sits from 5 m
+            // The review of the change: a wall (or anything not furniture) stops the steps; never a spot beyond it.
+            Assert.Equal(0.7f, FreeTimeRules.ChooseSeatSpot(d => d < 1.5f ? SeatSpotKind.Furniture : d < 1.8f ? SeatSpotKind.Solid : SeatSpotKind.Clear, out reach), 3);
+            Assert.Equal(FreeTimeRules.SitFrom, reach, 3);
+            Assert.Equal(0.7f, FreeTimeRules.ChooseSeatSpot(d => SeatSpotKind.Solid, out reach), 3);
+            Assert.Equal(FreeTimeRules.SitFrom, reach, 3);
+            // Furniture all the way: as before too.
+            Assert.Equal(0.7f, FreeTimeRules.ChooseSeatSpot(d => SeatSpotKind.Furniture, out reach), 3);
+            Assert.Equal(FreeTimeRules.SitFrom, reach, 3);
+        }
+
+        // The Mead Hall's seat test run 10 (25 Oct, 614 "flood" lines): a walk that ended in the doorway, out of reach of
+        // the test's seat, gave it up, and the test gave it straight back; back on the same spot, the settler gave it up
+        // again, every tick. Kept to the test's seat, a settler chooses again at most once a second; anyone else at once.
+        [Fact]
+        public void Kept_to_the_tests_seat_a_settler_chooses_again_at_most_once_a_second()
+        {
+            Assert.False(FreeTimeRules.MayChooseAgain(0f, keptToTestSeat: true));   // the next tick after a choice
+            Assert.False(FreeTimeRules.MayChooseAgain(0.5f, keptToTestSeat: true));
+            Assert.True(FreeTimeRules.MayChooseAgain(FreeTimeRules.TestSeatRetrySeconds, keptToTestSeat: true));
+            Assert.True(FreeTimeRules.MayChooseAgain(5f, keptToTestSeat: true));
+            Assert.Equal(1f, FreeTimeRules.TestSeatRetrySeconds, 3);
+            // Normal play passes a seat it can't get to over, so nothing repeats: a choice as soon as one is due.
+            Assert.True(FreeTimeRules.MayChooseAgain(0f, keptToTestSeat: false));
+        }
+
+        // The Mead Hall's seat test, 26 Oct (Runa, twice): the game's paths ended 1.5 m short of a seat's spot behind the
+        // long table, just inside the door, which counts as arriving; out of reach of the seat from there, it was given up
+        // (in normal play passed over for 5 minutes) though it could be reached. She walks the last steps straight on.
+        [Fact]
+        public void A_walk_ending_short_of_a_seats_spot_walks_the_last_steps_straight_on()
+        {
+            Assert.True(FreeTimeRules.WalkOnToSeatSpot(1.5f, 0f, clearToSpot: true, stepping: 0f, sinceCloser: 0f));
+            Assert.True(FreeTimeRules.WalkOnToSeatSpot(FreeTimeRules.LastStepsReach, 0f, true, 0f, 0f));   // as far short as a walk may end
+            Assert.Equal(MoveRules.MinStopDistance + MoveRules.PathEndSlack, FreeTimeRules.LastStepsReach, 3);
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(FreeTimeRules.LastStepsReach + 0.1f, 0f, true, 0f, 0f));
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(1.5f, 0f, clearToSpot: false, stepping: 0f, sinceCloser: 0f));   // a wall between: given up
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(0.2f, 0f, true, 1f, 0f));   // on the spot already: more steps don't help
+            Assert.True(FreeTimeRules.WalkOnToSeatSpot(1f, 0f, true, FreeTimeRules.LastStepsSeconds, 0f));
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(1f, 0f, true, FreeTimeRules.LastStepsSeconds + 0.1f, 0f));   // time up
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(1f, 0f, true, 2f, FreeTimeRules.LastStepsStallSeconds + 0.1f));   // getting no closer
+            Assert.True(FreeTimeRules.WalkOnToSeatSpot(1f, 0f, true, 2f, FreeTimeRules.LastStepsStallSeconds));
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(FreeTimeRules.LastStepsDone, 0f, true, 1f, 0f));
+            // A seat up on a platform above where the way ended: no walking into its side.
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(1.5f, FreeTimeRules.LastStepsHeight + 0.1f, true, 0f, 0f));
+            Assert.False(FreeTimeRules.WalkOnToSeatSpot(1.5f, -FreeTimeRules.LastStepsHeight - 0.1f, true, 0f, 0f));
+            Assert.True(FreeTimeRules.WalkOnToSeatSpot(1.5f, 0.5f, true, 0f, 0f));
+        }
+
+        // The same run (Gudrun): two settlers met to chat on the bench 0.4 m from the seat under test, so it counted as
+        // taken. While vc_seattest holds a hut's seats, a chat meets well away from every one of them.
+        [Fact]
+        public void A_chat_meets_clear_of_the_seats_the_seat_test_holds()
+        {
+            var meeting = new ChatMeeting(new GroundPoint(0f, 0f), new GroundPoint(FreeTimeRules.ChatGap, 0f));
+            Assert.True(ChatPairing.ClearOfHeldSeats(meeting, null));   // no test running
+            Assert.True(ChatPairing.ClearOfHeldSeats(meeting, new GroundPoint[0]));
+            Assert.False(ChatPairing.ClearOfHeldSeats(meeting, new[] { new GroundPoint(0f, 0.4f) }));
+            Assert.False(ChatPairing.ClearOfHeldSeats(meeting, new[] { new GroundPoint(FreeTimeRules.ChatGap + 2.9f, 0f) }));   // by the second
+            Assert.True(ChatPairing.ClearOfHeldSeats(meeting, new[] { new GroundPoint(FreeTimeRules.ChatGap + 3.1f, 0f) }));
+            Assert.Equal(ChatPairing.DoorClearance, ChatPairing.HeldSeatClearance, 3);   // a seat's spot is up to 2.5 m in front of it
+        }
+
+        // The review of the Mead Hall's designs: a spit over the camp's campfire is no cook's (no cook works it), so the
+        // colony still gathers there; only a station that needs a fire, inside the colony's Mead Hall, makes a cook's fire.
+        [Fact]
+        public void Only_a_station_over_a_fire_inside_the_Mead_Hall_makes_a_cooks_fire()
+        {
+            Assert.True(FreeTimeRules.IsCooksStation(needsFire: true, inMeadHall: true));
+            Assert.False(FreeTimeRules.IsCooksStation(needsFire: true, inMeadHall: false));   // the camp's spit
+            Assert.False(FreeTimeRules.IsCooksStation(needsFire: false, inMeadHall: true));   // the oven, the preparation table
+        }
+
+        // The 1.6.0 self-test a6d3 (29 Oct): moved out of a storehouse going up at once to just in front of its door, a
+        // jobless settler found no stroll spot, "strolled" where she stood and kept the courier out for minutes. With no
+        // stroll spot, one by a door steps clear of it: straight away from it first, then to the sides, never back towards it.
+        [Fact]
+        public void One_by_a_door_with_nowhere_to_stroll_steps_clear_of_it_straight_away_first()
+        {
+            var door = new GroundPoint(0f, 0f);
+            var me = new GroundPoint(1f, 1.5f);
+            IReadOnlyList<GroundPoint> steps = FreeTimeRules.StepsClearOfDoor(me, door, 3f);
+            Assert.Equal(5, steps.Count);   // straight away, then 45 and 90 degrees to either side
+            foreach (GroundPoint p in steps)
+                Assert.Equal(4f, Dist(p, door), 3);   // a metre past the clearance
+            float Angle(GroundPoint p) => (float)(System.Math.Acos((p.X * me.X + p.Z * me.Z) / (Dist(p, door) * Dist(me, door))) * 180.0 / System.Math.PI);
+            Assert.Equal(new[] { 0f, 45f, 45f, 90f, 90f }, steps.Select(p => (float)System.Math.Round(Angle(p))).ToArray());
+            // The first: on the line from the door through where they stand, beyond it.
+            float along = (steps[0].X * me.X + steps[0].Z * me.Z) / Dist(me, door);
+            Assert.Equal(Dist(steps[0], door), along, 3);
+            // The two at 45 degrees lie on either side of that line.
+            float Side(GroundPoint p) => me.X * p.Z - me.Z * p.X;
+            Assert.True(Side(steps[1]) * Side(steps[2]) < 0f);
+        }
+
+        [Fact]
+        public void One_standing_on_the_doors_very_spot_still_gets_steps_clear_of_it()
+        {
+            var door = new GroundPoint(5f, 5f);
+            IReadOnlyList<GroundPoint> steps = FreeTimeRules.StepsClearOfDoor(door, door, 3f);
+            Assert.NotEmpty(steps);
+            foreach (GroundPoint p in steps) Assert.True(Dist(p, door) >= 3.5f);
+        }
+
+        private static float Dist(GroundPoint a, GroundPoint b) =>
+            (float)System.Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z));
     }
 }

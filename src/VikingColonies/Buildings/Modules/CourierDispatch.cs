@@ -228,7 +228,10 @@ namespace VikingColonies.Buildings
             return site;
         }
 
-        /// <summary>A Builder's Hut is short of what its builder's order still needs beyond its chest (carried items only).</summary>
+        /// <summary>
+        /// A Builder's Hut is short of what its builder's order still needs beyond its chest (carried items only), and beyond
+        /// what the site's own chest holds for that order (1.5.1: the builder takes it from there).
+        /// </summary>
         private static void AddOrderNeeds(ColonyBuilding builderHut, Dictionary<string, int> contents, List<KeepEntry> into)
         {
             WorkerModule worker = builderHut.GetComponent<WorkerModule>();
@@ -241,9 +244,11 @@ namespace VikingColonies.Buildings
             }
             ConstructionModule site = ConstructionModule.CurrentFor(builderHut, builderId);
             if (site == null) return;
+            StorageModule siteChest = site.Building != null && site.Building != builderHut ? site.Building.Storage : null;
+            Dictionary<string, int> atSite = siteChest != null ? siteChest.SpareContents(forOwnOrder: true) : new Dictionary<string, int>();
             foreach (KeyValuePair<string, int> need in site.RemainingNeeds())
             {
-                int missing = need.Value - (contents.TryGetValue(need.Key, out int have) ? have : 0);
+                int missing = need.Value - (contents.TryGetValue(need.Key, out int have) ? have : 0) - (atSite.TryGetValue(need.Key, out int there) ? there : 0);
                 if (missing > 0 && StorageModule.Carried(need.Key) && into.All(e => e.Item != need.Key))
                     into.Add(new KeepEntry { Item = need.Key, Amount = missing });
             }

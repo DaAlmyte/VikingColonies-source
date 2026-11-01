@@ -34,6 +34,7 @@ namespace VikingColonies.Jobs
         public const string FarmerId = SaveKeys.FarmerJob;
         public const string GuardId = SaveKeys.GuardJob;
         public const string CourierId = SaveKeys.CourierJob;
+        public const string CookId = SaveKeys.CookJob;
 
         public static readonly JobDefinition Lumberjack = new JobDefinition(LumberjackId, "$vc_lumberjack",
             BuildingTypes.LumberjackHutId, (citizen, ai, hut) => new LumberjackJob(citizen, ai, hut));
@@ -55,7 +56,11 @@ namespace VikingColonies.Jobs
         public static readonly JobDefinition Courier = new JobDefinition(CourierId, "$vc_courier",
             BuildingTypes.StorehouseId, (citizen, ai, hut) => new CourierJob(citizen, ai, hut));
 
-        private static readonly JobDefinition[] s_jobs = { Lumberjack, Builder, Forager, Farmer, Guard, Courier };
+        /// <summary>The Mead Hall's cook (1.6).</summary>
+        public static readonly JobDefinition Cook = new JobDefinition(CookId, "$vc_cook",
+            BuildingTypes.MeadHallId, (citizen, ai, hut) => new CookJob(citizen, ai, hut));
+
+        private static readonly JobDefinition[] s_jobs = { Lumberjack, Builder, Forager, Farmer, Guard, Courier, Cook };
 
         public static JobDefinition Get(string id) => string.IsNullOrEmpty(id) ? null : s_jobs.FirstOrDefault(j => j.Id == id);
 

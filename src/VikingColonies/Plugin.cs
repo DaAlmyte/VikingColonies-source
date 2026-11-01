@@ -20,7 +20,7 @@ namespace VikingColonies
     {
         public const string PluginGuid = "daalmyte.vikingcolonies";   // the player's GitHub name (decided 2026-10-17): it names the config file and can't change once released
         public const string PluginName = "VikingColonies";
-        public const string PluginVersion = "1.5.0";
+        public const string PluginVersion = "1.6.0";
 
         private Harmony _harmony;
 
@@ -58,14 +58,15 @@ namespace VikingColonies
             steps.Add(AddPart<Visuals.FieldOutline>("field outlines"));
             steps.Add(AddPart<Visuals.BuildOutline>("the placement outline"));
             steps.Add(AddPart<DevRunner>("the test tools' background work"));
+            steps.Add(AddPart<WatchdogRunner>("the test tools' watchdog (test worlds, when a test turns it on)"));
             steps.AddRange(new[]
             {
                 Command<SelfTestCommand>(), Command<Construction.BuildCommand>(), Command<Construction.BlueprintCommand>(), Command<ReportCommand>(),
                 Command<GotoCommand>(), Command<ViewCommand>(), Command<DoorsCommand>(), Command<WalkCommand>(), Command<SettlersCommand>(), Command<BedsCommand>(),
                 Command<UiCommand>(), Command<SetCommand>(), Command<RemoveCommand>(), Command<KillCommand>(), Command<PerfCommand>(),
                 Command<PlaceCommand>(), Command<FindFlatCommand>(), Command<GroundCommand>(), Command<SpeedCommand>(), Command<QuitCommand>(), Command<WorldCommand>(),
-                Command<PoseCommand>(), Command<LifeTestCommand>(), Command<PolishTestCommand>(), Command<CropsCommand>(),
-                Command<ObserveCommand>(), Command<WorkerTestCommand>(), Command<GuardTestCommand>(), Command<HallTestCommand>(), Command<WeakTestCommand>(), Command<CreativeTestCommand>(), Command<StorehouseTestCommand>(), Command<WatchCommand>(), Command<ShotCommand>(), Command<BugReportCommand>(), Command<PieceDumpCommand>(), Command<SpawnInfoCommand>(), Command<CamCommand>(), Command<StampCommand>(), Command<TurretCommand>(), Command<BuildRunCommand>(),
+                Command<PoseCommand>(), Command<LifeTestCommand>(), Command<PolishTestCommand>(), Command<SeatTestCommand>(), Command<WalkTestCommand>(), Command<WalkWatchCommand>(), Command<CropsCommand>(),
+                Command<ObserveCommand>(), Command<WorkerTestCommand>(), Command<GuardTestCommand>(), Command<HallTestCommand>(), Command<WeakTestCommand>(), Command<StepsTestCommand>(), Command<MemorialTestCommand>(), Command<CookTestCommand>(), Command<PastimeTestCommand>(), Command<CreativeTestCommand>(), Command<StorehouseTestCommand>(), Command<OwnPieceTestCommand>(), Command<WatchCommand>(), Command<ShotCommand>(), Command<BugReportCommand>(), Command<PieceDumpCommand>(), Command<MeshFindCommand>(), Command<SpawnInfoCommand>(), Command<CamCommand>(), Command<StampCommand>(), Command<PreviewCommand>(), Command<TurretCommand>(), Command<BuildRunCommand>(), Command<WatchdogCommand>(), Command<SeedCommand>(), Command<HuginCommand>(), Command<ScarecrowCommand>(), Command<LookCommand>(),
             });
             steps.Add(AddPart<Gui.SettlerWords>("words above settlers' heads and Hugin's night tip"));
             steps.Add(AddPart<Gui.FeedbackAsker>("asking once what the player thinks of the mod"));

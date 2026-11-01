@@ -4,8 +4,11 @@ using System.Linq;
 
 namespace VikingColonies.Core
 {
-    /// <summary>What a settler does with free time (0.14); the evening by the fire and tending a fire came in 0.15.</summary>
-    public enum Leisure { None, Seat, Fire, Chat, Stroll, SitDown, Evening, TendFire, CarryStock }
+    /// <summary>
+    /// What a settler does with free time (0.14); the evening by the fire and tending a fire came in 0.15; a pastime (which
+    /// one: <see cref="Core.Pastime"/>) in 1.6.
+    /// </summary>
+    public enum Leisure { None, Seat, Fire, Chat, Stroll, SitDown, Evening, TendFire, CarryStock, Pastime }
 
     /// <summary>What a settler in free time has at hand: a free seat, a burning fire, a friend to talk to; and the weather.</summary>
     public struct LeisureChoices
@@ -28,6 +31,16 @@ namespace VikingColonies.Core
         public bool Tend { get; }
         /// <summary>A colony building is short of an item it keeps, and another chest has some to spare (0.21).</summary>
         public bool Carry { get; }
+    }
+
+    /// <summary>What stands on a spot in front of a seat, from a seat's height up (<see cref="FreeTimeRules.ChooseSeatSpot"/>).</summary>
+    public enum SeatSpotKind
+    {
+        Clear,
+        /// <summary>A table, a bench: a settler sits down across it.</summary>
+        Furniture,
+        /// <summary>A wall, a door, a railing, the ground falling away: never past it.</summary>
+        Solid,
     }
 
     /// <summary>
@@ -72,6 +85,68 @@ namespace VikingColonies.Core
         /// <summary>A seat this near a burning fire is preferred.</summary>
         public const float FireNearSeat = 6f;
 
+        /// <summary>A settler sits down from this near a seat with nothing between (as a player sits from beside it).</summary>
+        public const float SitFrom = 1.3f;
+        /// <summary>The farthest a settler sits down from, across a table or bench in front of the seat (a player can from 5 m).</summary>
+        public const float SitAcrossMax = 4f;
+        /// <summary>The walk to a seat stops this far in front of it when nothing stands there.</summary>
+        public const float SeatSpot = 0.7f;
+        /// <summary>From the walk's spot beyond a table, a settler sits down from this much further: the game's paths stop half a metre or more short of furniture (runs 8-9).</summary>
+        public const float SitAcrossSlack = 1.3f;
+
+        private static readonly float[] s_seatSpotSteps = { 0.7f, 1.0f, 1.3f, 1.6f, 1.9f, 2.2f, 2.5f };
+
+        /// <summary>How far in front of a seat its walk may stop, nearest first.</summary>
+        public static IEnumerable<float> SeatSpotSteps() => s_seatSpotSteps;
+
+        /// <summary>
+        /// Where in front of a seat its walk stops (the Mead Hall's seat test, 25 Oct: its long table stands 5 cm in front of
+        /// the benches, so 0.7 m is under it): the first step clear of everything, past furniture only (a table, a bench);
+        /// anything else in the way (a wall, a door, a railing, the ground falling away) and it's 0.7 m as always.
+        /// <paramref name="reach"/>: from how far the settler may sit down, across the furniture, from that spot.
+        /// </summary>
+        public static float ChooseSeatSpot(Func<float, SeatSpotKind> at, out float reach)
+        {
+            foreach (float d in s_seatSpotSteps)
+            {
+                SeatSpotKind kind = at(d);
+                if (kind == SeatSpotKind.Clear)
+                {
+                    reach = d <= SeatSpot ? SitFrom : Math.Min(SitAcrossMax, d + SitAcrossSlack);
+                    return d;
+                }
+                if (kind == SeatSpotKind.Solid) break;
+            }
+            reach = SitFrom;
+            return SeatSpot;
+        }
+
+        /// <summary>A station this near a fire on the plan stands over it (the game puts it on the fire's spot).</summary>
+        public const float OverFire = 1f;
+
+        /// <summary>
+        /// A cook's fire (1.6): a cooking station, cauldron or iron cooking station stands over it. Settlers don't spend
+        /// their free time standing by it (the player's look at the Mead Hall: they crowded round its fire pit, onto the
+        /// long table and the benches); its fuel is still kept up.
+        /// </summary>
+        public static bool IsCooksFire(GroundPoint fire, IEnumerable<GroundPoint> stationsOverFires)
+        {
+            if (stationsOverFires == null) return false;
+            foreach (GroundPoint s in stationsOverFires)
+            {
+                float dx = s.X - fire.X, dz = s.Z - fire.Z;
+                if (dx * dx + dz * dz <= OverFire * OverFire) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// A station that makes the fire under it a cook's: one that needs a fire, inside the colony's Mead Hall, where
+        /// the cook works it (the review of the Mead Hall's designs: a spit over the camp's campfire leaves it the
+        /// colony's fire to gather round).
+        /// </summary>
+        public static bool IsCooksStation(bool needsFire, bool inMeadHall) => needsFire && inMeadHall;
+
         private static readonly Leisure[] s_order = { Leisure.TendFire, Leisure.CarryStock, Leisure.Seat, Leisure.Fire, Leisure.Chat, Leisure.Stroll, Leisure.SitDown };
 
         /// <summary>How likely each activity is; 0 when there is nothing to use (or, sitting on the ground, in rain).</summary>
@@ -90,13 +165,20 @@ namespace VikingColonies.Core
             }
         }
 
+        /// <summary>The activities in the order they are weighed (a pastime is weighed by <see cref="PastimeRules"/>).</summary>
+        public static IReadOnlyList<Leisure> Order => s_order;
+
+        /// <summary><see cref="Weight"/> with his trait's leaning, when he has one.</summary>
+        public static int WeightFor(Leisure leisure, LeisureChoices choices, Trait? trait) =>
+            trait.HasValue ? Traits.LeisureWeight(trait.Value, leisure, Weight(leisure, choices)) : Weight(leisure, choices);
+
         /// <summary>An activity by weight; <paramref name="roll"/> from 0 to 1. A stroll is always possible.</summary>
         public static Leisure Pick(LeisureChoices choices, double roll) => Pick(choices, roll, null);
 
         /// <summary>As <see cref="Pick(LeisureChoices, double)"/>, with his trait's leaning (0.16, <see cref="Traits.LeisureWeight"/>).</summary>
         public static Leisure Pick(LeisureChoices choices, double roll, Trait? trait)
         {
-            int Weighed(Leisure l) => trait.HasValue ? Traits.LeisureWeight(trait.Value, l, Weight(l, choices)) : Weight(l, choices);
+            int Weighed(Leisure l) => WeightFor(l, choices, trait);
             int total = 0;
             foreach (Leisure l in s_order) total += Weighed(l);
             if (total == 0) return Leisure.None;
@@ -115,6 +197,74 @@ namespace VikingColonies.Core
         }
 
         public static float ChoiceSeconds(double roll) => (float)(30 + 60 * Clamp01(roll));
+
+        /// <summary>
+        /// Where one by a door steps to when there's nowhere to stroll (the 1.6.0 self-test a6d3: moved to just in front of a
+        /// storehouse's door, she "strolled" where she stood and kept its courier out): a metre past <paramref name="clearance"/>
+        /// from the door, straight away from it (through where they stand) first, then 45 and 90 degrees to either side. The
+        /// angles are from that line, not the door's facing: beside a door along its wall, one may point into the hut, which
+        /// the caller's roof and wall checks turn down.
+        /// </summary>
+        public static IReadOnlyList<GroundPoint> StepsClearOfDoor(GroundPoint me, GroundPoint door, float clearance)
+        {
+            float dx = me.X - door.X, dz = me.Z - door.Z, length = (float)Math.Sqrt(dx * dx + dz * dz);
+            if (length < 0.01f)
+            {
+                dx = 1f;   // on the door's very spot: any way out will do
+                dz = 0f;
+                length = 1f;
+            }
+            dx /= length;
+            dz /= length;
+            float reach = clearance + 1f;
+            var steps = new List<GroundPoint>();
+            foreach (float degrees in s_doorStepAngles)
+            {
+                double a = degrees * Math.PI / 180.0;
+                float cos = (float)Math.Cos(a), sin = (float)Math.Sin(a);
+                steps.Add(new GroundPoint(door.X + (dx * cos - dz * sin) * reach, door.Z + (dx * sin + dz * cos) * reach));
+            }
+            return steps;
+        }
+
+        private static readonly float[] s_doorStepAngles = { 0f, 45f, -45f, 90f, -90f };
+
+        /// <summary>
+        /// A walk to a seat may end this far short of its spot and count as arriving (<see cref="MoveRules.ReachedPathEnd"/>):
+        /// from as far as this the last steps go straight on (<see cref="WalkOnToSeatSpot"/>).
+        /// </summary>
+        public const float LastStepsReach = MoveRules.MinStopDistance + MoveRules.PathEndSlack;
+        /// <summary>The last steps to a seat's spot take this long at most...</summary>
+        public const float LastStepsSeconds = 5f;
+        /// <summary>... and stop when they get no closer for this long (a bench, a settler in the way).</summary>
+        public const float LastStepsStallSeconds = 1.5f;
+        /// <summary>This near the spot, more steps don't help.</summary>
+        public const float LastStepsDone = 0.3f;
+        /// <summary>Not to a spot higher or lower than this (a seat up on a platform above where the way ended), as sitting down.</summary>
+        public const float LastStepsHeight = 1f;
+
+        /// <summary>
+        /// The walk to a seat with a table in front ended <paramref name="toSpot"/> short of its spot, out of reach of the
+        /// seat (the Mead Hall's seat test, 26 Oct: the game's paths ended 1.5 m short, just inside its door): with nothing
+        /// between and <paramref name="heightOff"/> metres above or below, the settler walks the last steps straight on,
+        /// <paramref name="stepping"/> seconds so far and <paramref name="sinceCloser"/> since getting closer; false, and
+        /// the seat is given up as before.
+        /// </summary>
+        public static bool WalkOnToSeatSpot(float toSpot, float heightOff, bool clearToSpot, float stepping, float sinceCloser) =>
+            clearToSpot && Math.Abs(heightOff) <= LastStepsHeight && toSpot > LastStepsDone && toSpot <= LastStepsReach
+            && stepping <= LastStepsSeconds && sinceCloser <= LastStepsStallSeconds;
+
+        /// <summary>Kept to vc_seattest's seat, a settler chooses again at most this often (<see cref="MayChooseAgain"/>).</summary>
+        public const float TestSeatRetrySeconds = 1f;
+
+        /// <summary>
+        /// Whether a choice that is due may be made now, <paramref name="sinceLastChoice"/> seconds after the last. Kept to
+        /// vc_seattest's seat, at most once a second: the test gives back a seat just given up on (a walk that ended in the
+        /// doorway, out of reach of it), and back on the same spot the settler gave it up again every tick (run 10, 25 Oct:
+        /// 614 log lines). Normal play passes such a seat over, so a choice comes as soon as it's due.
+        /// </summary>
+        public static bool MayChooseAgain(float sinceLastChoice, bool keptToTestSeat) =>
+            !keptToTestSeat || sinceLastChoice >= TestSeatRetrySeconds;
 
         /// <summary>How long he keeps at it once there.</summary>
         public static float DoSeconds(Leisure leisure, double roll)
@@ -239,6 +389,20 @@ namespace VikingColonies.Core
         /// </summary>
         public const float DoorClearance = 3f;
 
+        /// <summary>
+        /// How far a chat's spots keep from the seats vc_seattest holds (26 Oct: two met on the Mead Hall's bench 0.4 m from
+        /// the seat under test, and it counted as taken): as from a door, past where the walk to a seat stops (up to 2.5 m).
+        /// </summary>
+        public const float HeldSeatClearance = DoorClearance;
+
+        /// <summary>Both spots at least <see cref="HeldSeatClearance"/> from every seat the seat test holds (none: no test).</summary>
+        public static bool ClearOfHeldSeats(ChatMeeting meeting, IEnumerable<GroundPoint> heldSeats)
+        {
+            foreach (GroundPoint seat in heldSeats ?? Enumerable.Empty<GroundPoint>())
+                if (ColonyRules.Distance(meeting.First, seat) < HeldSeatClearance || ColonyRules.Distance(meeting.Second, seat) < HeldSeatClearance) return false;
+            return true;
+        }
+
         /// <summary>Both spots at least <see cref="DoorClearance"/> from every door.</summary>
         public static bool ClearOfDoors(ChatMeeting meeting, IEnumerable<GroundPoint> doors)
         {
@@ -302,6 +466,12 @@ namespace VikingColonies.Core
                 default: return "";
             }
         }
+
+        /// <summary>A story's listeners (1.6): "listening to Ulf's story", the teller saved as the partner.</summary>
+        public const string Listening = "$vc_doing_listening";
+
+        /// <summary>A pastime's words (1.6): "$vc_doing_archery".</summary>
+        public static string Token(Pastime pastime) => pastime == Pastime.None ? "" : "$vc_doing_" + pastime.ToString().ToLowerInvariant();
 
         /// <summary>
         /// The value saved on the settler: the activity's words, and the friend he chats with, by name (for the hover) and

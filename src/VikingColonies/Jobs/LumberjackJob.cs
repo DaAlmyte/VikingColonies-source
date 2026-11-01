@@ -492,6 +492,7 @@ namespace VikingColonies.Jobs
                 s_claims.ClaimArea(Citizen.Id, Ground(position + _chopper.FallDir * (Chopper.FallLength * 0.4f)), FelledAreaRadius, Time.time);
                 _felledSpot = position;
                 _haveFelled = true;
+                Colony.Deeds.Count(Citizen.ColonyId, DeedKinds.Felled);   // the colony's deeds (1.5.1)
             }
             _lastChopSpot = position;
             _haveChopSpot = true;
@@ -573,7 +574,7 @@ namespace VikingColonies.Jobs
                 Log.Info($"{Citizen.CitizenName} skipped replanting {spot.Replant.Sapling}: no room to grow.");
                 return;
             }
-            Object.Instantiate(sapling, spot.Position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+            Object.Instantiate(sapling, spot.Position, ModRandom.Turn("cosmetic", Citizen.CitizenName));
             Log.Info($"{Citizen.CitizenName} planted {spot.Replant.Sapling} at ({spot.Position.x:0}, {spot.Position.z:0})");
             Citizen.Carry.Remove(spot.Replant.Seed, 1);
             Citizen.SaveCarry();
@@ -705,7 +706,7 @@ namespace VikingColonies.Jobs
                 if (prefab != null) inventory.AddItem(prefab, 1);
                 return;
             }
-            if (body.GetCurrentWeapon() != axe && !SettlerPose.IsHeld(body)) body.EquipItem(axe, false);   // put away while he sits
+            if (body.GetCurrentWeapon() != axe && !SettlerPose.HandsBusy(body)) body.EquipItem(axe, false);   // put away while seated or at archery
         }
 
         private void BorrowAxe(string prefabName)

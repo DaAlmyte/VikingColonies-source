@@ -30,6 +30,25 @@ namespace VikingColonies.Core
         public const float BreakOffHealth = 0.5f;
 
         /// <summary>
+        /// A fight that has hurt them to half is looked at again at once, not at the next look half a second on: two Necks'
+        /// bites took a settler from just over half to under 40% between two looks (1.5.1's runs, 2026-10-25).
+        /// </summary>
+        public static bool LookAgainNow(bool fighting, float health01) => fighting && health01 <= BreakOffHealth;
+
+        /// <summary>
+        /// The status once a fight is over: "fighting off" goes back to working (or jobless), and the job says more as it
+        /// runs; anything else was set since and stays. Null: leave it (1.5.1: "Fighting off Neck" stayed on the hover).
+        /// </summary>
+        public static string StatusAfterFight(string status, bool employed)
+        {
+            if (status == null || !status.StartsWith(FightingStatus, StringComparison.Ordinal)) return null;
+            return employed ? "$vc_status_working" : "$vc_status_jobless";
+        }
+
+        /// <summary>The start of a settler's status while they fight a weak creature off (the creature's name follows).</summary>
+        public const string FightingStatus = "$vc_status_fighting_off";
+
+        /// <summary>
         /// Not weak for the colony, a raid or the alarm, or the setting off: today's flee. Hit from afar or hurt to half: flee.
         /// Going for this settler: a timid one runs (unless standing their ground), within 8 m it's fought, farther they carry
         /// on. After someone else: a brave settler fights one within 3 m; standing their ground they carry on; else today's.

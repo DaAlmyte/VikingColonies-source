@@ -46,6 +46,9 @@ namespace VikingColonies.Core
         public readonly SortedSet<int> TakenAway = new SortedSet<int>();
 
         public int TakeAwayLeft => Math.Max(0, TakeAwayTotal - TakenAway.Count);
+        /// <summary>The player's pieces an upgrade takes down and puts back (1.6); none for orders from before.</summary>
+        public readonly List<PutBackRecord> PutBacks = new List<PutBackRecord>();
+        public int PutBacksLeft => PutBacks.Count(p => p.Open);
         /// <summary>A piece was put up or an old one taken away: an upgrade can no longer be cancelled.</summary>
         public bool Changed;
         /// <summary>The network time the player last pressed Do first (Town Hall › Work orders); 0 for never.</summary>
@@ -67,8 +70,8 @@ namespace VikingColonies.Core
         /// <summary>Every piece to build is up or skipped.</summary>
         public bool BuildHandled => Enumerable.Range(0, Total).All(i => !IsOpen(i));
 
-        /// <summary>Every piece to build is up or skipped, and every old piece to take away is gone.</summary>
-        public bool AllHandled => BuildHandled && TakeAwayLeft == 0;
+        /// <summary>Every piece to build is up or skipped, every old piece to take away is gone, and the player's pieces are back.</summary>
+        public bool AllHandled => BuildHandled && TakeAwayLeft == 0 && PutBacksLeft == 0;
 
         public bool IsPreparing => State == BuildState.Clearing || State == BuildState.Shaping;
 
@@ -170,6 +173,42 @@ namespace VikingColonies.Core
         }
 
         /// <summary>
+        /// One of the player's pieces an upgrade puts back moves on (1.6): standing, down, back, or skipped from any open
+        /// state, never back. Once one is down the upgrade can't be cancelled: the cancel would lose it. False when nothing
+        /// changes. <paramref name="kept"/>: what it held as it came down (<see cref="PutBackRecord.Kept"/>), only for Down.
+        /// </summary>
+        public bool MovePutBack(int index, PutBackState state, string kept = null)
+        {
+            if (index < 0 || index >= PutBacks.Count || !Enum.IsDefined(typeof(PutBackState), state)) return false;
+            PutBackRecord putBack = PutBacks[index];
+            if (!putBack.Open || state <= putBack.State) return false;
+            putBack.State = state;
+            if (state == PutBackState.Down)
+            {
+                Changed = true;
+                putBack.Kept = kept ?? "";
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// A put-back never taken down is left out (gone, or filled since): only while it is still standing here, never
+        /// overruling "down" from another computer (the review's finding 5). False when nothing changes.
+        /// </summary>
+        public bool LeaveOut(int index)
+        {
+            if (index < 0 || index >= PutBacks.Count || PutBacks[index].State != PutBackState.Standing) return false;
+            PutBacks[index].State = PutBackState.Skipped;
+            return true;
+        }
+
+        /// <summary>The order's stamp (its <see cref="Created"/> time in milliseconds) a report carries, so it counts only for this order.</summary>
+        public long Stamp => (long)Math.Round(Created * 1000.0);
+
+        /// <summary>A report made for this order (the same stamp, give or take a millisecond of saving), not one before a cancel.</summary>
+        public bool IsStamped(long stamp) => Math.Abs(Stamp - stamp) <= 1L;
+
+        /// <summary>
         /// A finished hut's pieces are gone (0.13): its order reopens as a repair — the same plan and level, only those
         /// pieces open, the site long since cleared and shaped. False (and nothing changes) for an order not finished or
         /// with none of those pieces in it.
@@ -213,6 +252,7 @@ namespace VikingColonies.Core
             Changed = false;
             TakeAwayTotal = 0;
             TakenAway.Clear();
+            PutBacks.Clear();
             return true;
         }
 
@@ -280,6 +320,7 @@ namespace VikingColonies.Core
             Created = now,
         };
 
+        /// <summary>The put-backs are written only when there are any: an order without them is written as 0.13 wrote it.</summary>
         public string Encode() => RecordCodec.Encode(new[]
         {
             Pair("v", RecordCodec.FormatInt(CurrentVersion)),
@@ -302,13 +343,17 @@ namespace VikingColonies.Core
             Pair("paused", Paused ? "1" : "0"),
             Pair("watched", Watched ? "1" : "0"),
             Pair("rebuilt", string.Join(",", Rebuilt.Select(r => RecordCodec.FormatInt(r.Key) + ":" + RecordCodec.FormatInt(r.Value)))),
-        });
+        }.Concat(PutBacks.Count == 0 ? Enumerable.Empty<KeyValuePair<string, string>>()
+            : new[] { Pair("back", RecordCodec.Encode(PutBacks.Take(MaxPutBacks).Select((p, i) => Pair(RecordCodec.FormatInt(i), p.Encode())))) }));
 
         /// <summary>
         /// The most pieces an order counts, far above any design (the biggest is a few hundred): a saved count beyond it
         /// is cut to it (the review round of 2026-10-23: a tampered "total=2000000000" hung the hut's owner on every load).
         /// </summary>
         public const int MaxPieces = 20000;
+
+        /// <summary>The most put-backs an order keeps (a lot holds a few dozen of the player's pieces at most).</summary>
+        public const int MaxPutBacks = 500;
 
         /// <summary>Null for an empty or unreadable text. Never throws; unknown fields are ignored.</summary>
         public static BuildOrderRecord Decode(string text)
@@ -359,6 +404,12 @@ namespace VikingColonies.Core
             {
                 int index = RecordCodec.ParseInt(part, -1);
                 if (index >= 0 && index < order.TakeAwayTotal) order.TakenAway.Add(index);
+            }
+            foreach (KeyValuePair<string, string> entry in RecordCodec.Decode(RecordCodec.Get(f, "back")).OrderBy(e => RecordCodec.ParseInt(e.Key, int.MaxValue)))
+            {
+                if (order.PutBacks.Count >= MaxPutBacks) break;
+                PutBackRecord putBack = PutBackRecord.Decode(entry.Value);
+                if (putBack != null) order.PutBacks.Add(putBack);
             }
             return order;
         }

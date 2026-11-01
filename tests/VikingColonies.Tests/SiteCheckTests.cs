@@ -8,6 +8,24 @@ namespace VikingColonies.Tests
     public class SiteCheckTests
     {
         [Fact]
+        public void The_verdict_carries_the_players_piece_the_upgrade_waits_for_and_the_put_backs()
+        {
+            var findings = new SiteFindings { OwnPiece = "$piece_bench", OwnPieceWhy = OwnPieceWhy.InTheWay, OwnPieceNewPiece = "$piece_woodwall", PutBacks = 2 };
+            findings.AddRed(RedReason.OwnPiece);
+            SiteVerdict verdict = SiteCheck.Judge(findings, 1);
+            Assert.Equal(SiteColour.Red, verdict.Colour);
+            Assert.Equal(RedReason.OwnPiece, verdict.Red);
+            Assert.Equal("$piece_bench", verdict.OwnPiece);
+            Assert.Equal(OwnPieceWhy.InTheWay, verdict.OwnPieceWhy);
+            Assert.Equal("$piece_woodwall", verdict.OwnPieceNewPiece);
+            Assert.Equal(2, verdict.PutBacks);
+            // Another building in the way says so first: the player's piece is only named when it is all that waits.
+            findings.AddRed(RedReason.OtherBuilding);
+            Assert.Equal(RedReason.OtherBuilding, SiteCheck.Judge(findings, 1).Red);
+            Assert.Equal(SiteColour.Green, SiteCheck.Judge(new SiteFindings { PutBacks = 1 }, 1).Colour);
+        }
+
+        [Fact]
         public void Tools_already_in_the_colonys_chests_are_not_asked_for()
         {
             // Seen: the outline asked for "an axe, a pickaxe and a hoe in the colony's chests" with an axe and a hoe in them.

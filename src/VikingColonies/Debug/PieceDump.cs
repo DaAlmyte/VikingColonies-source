@@ -168,6 +168,18 @@ namespace VikingColonies.DevTools
                 fields.Add(Pair("extends", Str(extension.m_craftingStation.name)));
                 fields.Add(Pair("reach", F(extension.m_maxStationDistance)));
             }
+            // Where the game lets a player place it (1.6, the player on the Mead Hall: a campfire stood on a wooden floor,
+            // which the game never allows): not on wood, only on the ground, not on a floor.
+            Piece placing = prefab.GetComponent<Piece>();
+            if (placing != null)
+            {
+                var rules = new List<string>();
+                if (placing.m_notOnWood) rules.Add(Str("notOnWood"));
+                if (placing.m_groundOnly) rules.Add(Str("groundOnly"));
+                if (placing.m_groundPiece) rules.Add(Str("groundPiece"));
+                if (placing.m_notOnFloor) rules.Add(Str("notOnFloor"));
+                if (rules.Count > 0) fields.Add(Pair("place", "[" + string.Join(", ", rules) + "]"));
+            }
             // Where someone sits and the way they face (2026-10-22: the camp's sitting logs; until then read from the
             // seat's colliders).
             List<string> sits = prefab.GetComponentsInChildren<Chair>(true).Where(c => c.m_attachPoint != null)

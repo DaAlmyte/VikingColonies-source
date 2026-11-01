@@ -1,5 +1,134 @@
 # Changelog
 
+## 1.6.0 (2026-11-01) — The cook and the Mead Hall
+
+**For server owners:** the server and every player need 1.6.0. New settings: `Mead Hall.WoodCost` (20),
+`Cook.CarryCapacity` (20) and `Colony.Pastimes` (on), the server's. A settler saves a new skill, `cooking`, and their
+last pastimes (`pastimes`); a cooking station saves `vc_cook_holds`; a hut's upgrade order saves the player's pieces it
+takes down and puts back; a builder saves why they left a site that waits (`vc_builder_away`). Worlds and colonies load as they were.
+Works with Valheim 1.0.21 (checked 30 October 2026).
+
+### New
+- **The Mead Hall and its cook.** A new colony hut, one per colony. Its cook roasts the raw meat and fish your colony's
+  chests can spare on the cooking stations inside it, a hot meal for every settler and two more, and takes each piece
+  off into the hall's chest when it's done. **Nothing burns** on a cooking station in a Mead Hall that has a cook, even
+  at night or while the cook is away. The cook keeps the hearth fed with spare wood, and says so when there's none.
+- **Breakfast at the Mead Hall.** Settlers eat their breakfast at the hall's table when its chest has their food, and
+  hot food comes first among what they haven't had lately. A hot meal lifts their mood (+5).
+- The cook learns the **Cooking** skill: faster on and off the station.
+- **The Mead Hall's building**, five levels: a hall with a fire and a cooking station, then the cauldron and a long
+  table with benches, a kitchen behind with the hearth, the iron cooking station and the food preparation table, the
+  stone oven, and a long oak table. Each level brings the stations of its age, and the cauldron's upgrades with them.
+  Its fires stand on the bare earth, as the game wants, and smoke leaves through the open tops of its gables.
+- **Pastimes.** Settlers with nothing to do fill their free time with archery at a target, practice at a training
+  dummy, board games and toasts at a table with chairs, dancing round a banner pole or maypole, stories at a fire,
+  admiring trophies, the map table, stretching, sparring, naps and petting tame animals, and some dance at the evening's
+  fire. Each trait has a favourite; three kinds or more in two days lift their mood. Nothing is made or hurt. They talk
+  about what they're at. Setting `Colony.Pastimes` (on).
+- **A saved hut design is kept before it's replaced.** Saving a design again with `vc_blueprint save` keeps the one
+  saved before beside it (`<hut>.blueprint.bak`, then `.bak2` …), so one wrong save no longer loses an evening's design.
+- **Your own pieces stay through hut upgrades.** A bench, a chest, a torch on the wall, an item stand: what you built
+  in or on a hut no longer stops its upgrade as "another building in the way". Each stays where you put it, or the
+  builder takes it down before the part it hangs on is replaced and puts the same piece back in its place after, still
+  yours, with nothing dropped (a sign keeps its text, a portal its name, a torch its fuel). The upgrade waits only when
+  a new piece needs that very spot, or a piece that must come down holds something (empty the chest, take the trophy
+  off, let the smelter finish) or is a ward, a map table with a map, or a bed someone sleeps in, and the hut's window
+  names the piece and says what to do. The Storehouse's chests follow the same rule.
+- **Taking a hut down warns about your pieces on it:** the first click names the ones that would fall with it.
+
+### Changed
+- **Placing a hut shows how far it grows.** A grey line under it says which way and how far the hut grows by its
+  last level, seen from where you stand ("By level 5 it grows about 13 m toward you: leave room there"), so a
+  neighbour doesn't block its upgrade later.
+- **Report a problem also offers our Discord, and says where your bug report file is.** The camp's Report a problem
+  button opens a small window that saves the bug report and shows where (`VikingColonies-bugreport.txt`, with
+  `LogOutput.log` beside it). **Bug form on GitHub** opens the bug form as before; **Ask on Discord** copies the report
+  and opens our Discord, to post it in #bug-reports (no GitHub account needed); **Show the file** opens its folder with
+  the file picked out, ready to drag in. Nothing is sent from the game.
+- **A builder builds their own hut first.** Until their Builder's Hut first stands they stay at it while it waits on
+  you, as a MineColonies builder does; they go elsewhere meanwhile only when another site has everything it needs, or
+  when the wait isn't one you can answer there (a tree or rock above level 1, no support, out of reach). Do first or
+  Set aside in the camp's Work tab still sends them elsewhere at once.
+- **A builder says why they move.** Leaving a site that waits, they tell you if you're nearby ("Ragnar leaves the
+  Lumberjack's Hut for now: it needs Flint. Back in 5 minutes"), and for those five minutes their hover says "Waiting
+  for Flint at the Lumberjack's Hut, working here meanwhile".
+- **The camp's Overview looks like its picture:** a box for each block, big numbers, a bar of how full the camp is,
+  green for what's well and orange for what needs you, and the boxes fill the window. Its mood reads "Content (52)"
+  under Mood, no longer "Mood: Content (52)".
+- In their free time and at the evening's gathering settlers no longer stand round a fire in the Mead Hall that has a
+  cooking station or cauldron over it: that's the cook's. In their free time they still sit on the hall's benches. A
+  campfire with a spit by your camp stays theirs.
+- Settlers sit down on a bench or chair with a table pushed up to it from across the table, as you can, instead of
+  climbing along the bench to it. Never across a wall.
+- **The memorial stone looks like one of the game's runestones**, no longer a plain pillar. A stone you've already
+  raised changes look; its words, cost and place stay as they were.
+
+## 1.5.1 (2026-10-28) — The Chieftain's Camp
+
+**For server owners:** the server and every player need 1.5.1. New settings: `Windows.Scale` (1.0), each player's own;
+`Colony.FallenReturn` (off), `Colony.FallenReturnDays` (3) and `Memorial.StoneCost` (20). The camp saves new values,
+`vc_colony_deeds` (the colony's deeds), `vc_fallen` (its fallen) and `vc_fallen_back_day` (the day of the last
+return); a memorial stone saves its words. Worlds and
+colonies load as they were.
+
+### Changed
+- **The Town Hall is now called the Chieftain's Camp**: at every level it is a camp round a fire, not a hall. Only its
+  name changes; your colonies are as they were, and the settings keep their names.
+- The colony's buildings, the field marker and the memorial stone are in the hammer's **Misc** tab, as 1.4.3 meant:
+  Valheim 1.0's build menu had put the buildings under Furniture, with the chests they're made from.
+- A brave settler now runs when a monster comes within 9 m (6 m before), and when a strong one, such as a Troll,
+  comes within 12 m, as most settlers do: a Troll could catch them before they got away. Timid ones run at 20 m, as
+  before.
+
+### New
+- **The camp's window is new.** It opens on an **Overview** of the colony: its settlers and free beds, the food and
+  who is hungry, the colony's mood and the reasons that weigh most, what the next newcomer waits for, what the
+  builders still need (with Hand over) and the storehouse. **People** gives every settler a page: who they are, their
+  mood and why, their skills, their home, what they carry and their newest lines in the Saga. **Work** is the old Work
+  orders tab. The **Saga** has **the colony's deeds** beside it, today and all time: trees felled, harvested and
+  foraged, items carried, pieces mended, buildings built, raids held off, settlers lost (counted from 1.5.1 on).
+  **The camp** holds its levels and its Keep in stock. The alarm is on the left of the bottom row, Close in the middle,
+  Report a problem and Feedback smaller on the right.
+- **Hugin's first steps.** With the game's raven hints on (Settings, "Enable raven hints"), Hugin now says what to do next for a new colony: build a
+  Builder's Hut, give a settler a job, build a Longhouse, put food in the camp's chest, build a Watchtower, raise the
+  camp to level 2. The camp's Overview shows the next step. Steps are read from the colony as it stands, so an older
+  colony starts with its steps ticked off.
+- **The memorial stone.** Raise one in your colony (the hammer's Misc tab, one per colony): it names everyone the
+  colony has lost, their trade, the day and how, and you read it like a runestone. An older colony's stone starts with
+  the deaths its Saga still holds.
+- **The fallen return**, off by default (`Colony.FallenReturn`, a server's choice): a settler who dies walks back in a
+  few days later, as themselves (name, looks, trait, trade and skills), one a day while the colony has room. The
+  colony stops mourning them, and the memorial stone marks their return.
+- **A window size setting**, `Windows.Scale` (0.75 to 1.5): every VikingColonies window at the size you like; a window
+  too tall for your screen is made to fit.
+
+### Fixed
+- The builder walks straight into the hut to its chest. Before, the walk often ended behind the hut's back wall, by
+  the chest, and the builder went round to the door from there, almost every time they fetched something.
+- Every settler now heads for a hut's door from wherever they are when going in or out: to its chest, to shelter, to
+  bed. Before, a settler more than 12 m from the door first walked to the hut's back wall, behind its chest, and only
+  then went round to the door. Settlers running to shelter keep running up to the door instead of slowing to a jog.
+- Near a hut, settlers walk straight to its door and close round its corners, rather than the game's own wandering way
+  (at some huts 10 m out and back). One held up close in front of a door, under a low eave or by a post, opens it from
+  where they stand instead of giving the hut up. Leaving a hut for somewhere behind it, they go close round it.
+- A settler sheltering in a hut stays inside when a monster outside at its door hits them (a Troll reaching in), until
+  they are hurt to half, when they make a run for it. Before, any hit inside sent them out of the door to another hut,
+  into the monster. One that follows them inside, or hits through the back wall, still sends them on to another hut.
+- A settler fighting off a weak animal breaks off and runs the moment they're hurt to half, not at their next look:
+  two Necks could bite them well below half in between. Once a fight is over, their status no longer says "Fighting
+  off".
+- With StarLevelSystem (or another mod that gives creatures stars), settlers keep their own size, so a starred
+  settler fits through a door again.
+- The materials you put in a hut's chest for its own build or next level stay there for it: builders on other sites,
+  couriers and settlers take only what's beyond what that build still needs. Before, another site could take them,
+  and the hut's level waited for you again. The camp's and the storehouse's chests still serve every build, and an
+  order you set aside holds nothing.
+- Report a problem: the report's date and times read the same on every PC (a Thai calendar wrote the year 2569),
+  and a colony whose camp is out of sight reads "no Town Hall here", not a place at (0, 0, 0).
+- A settler sitting on a bench or lying in a bed that the builder takes down (a hut's old level going up to its next)
+  now gets up and stands on the ground. Before, they stayed seated in the air and slowly sank under the ground.
+- Hut designs can only put up building pieces: anything else a design names is skipped.
+
 ## 1.5.0 (2026-10-25) — The storehouse, creative mode and settlers standing up to weak animals
 
 **For server owners:** the server and every player need 1.5.0. New settings: `Creative.CreativeMode` (Auto; the

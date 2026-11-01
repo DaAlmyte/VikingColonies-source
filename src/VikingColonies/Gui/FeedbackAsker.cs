@@ -125,7 +125,10 @@ namespace VikingColonies.Gui
         }
 
         /// <summary>A monster within 30 m that would fight the player, or anything after them within 60 m (<see cref="FeedbackAsk.Threat"/>).</summary>
-        private static bool EnemyNear(Player player)
+        private static bool EnemyNear(Player player) => ThreatNear(player) != null;
+
+        /// <summary>The creature <see cref="EnemyNear"/> sees, or null.</summary>
+        private static Character ThreatNear(Player player)
         {
             Vector3 me = player.transform.position;
             foreach (Character c in Character.GetAllCharacters())
@@ -139,9 +142,9 @@ namespace VikingColonies.Gui
                 bool targetsPlayer = ai is MonsterAI monster && monster.GetTargetCreature() == player;
                 if (FeedbackAsk.Threat(distance, BaseAI.IsEnemy(player, c), GuardRules.IsMonster(faction, brain),
                         GuardRules.IsAnimal(faction, brain, ai != null && ai.m_passiveAggresive), targetsPlayer))
-                    return true;
+                    return c;
             }
-            return false;
+            return null;
         }
 
         /// <summary>
@@ -229,6 +232,26 @@ namespace VikingColonies.Gui
         /// <summary>vc_ui feedback state: what it remembers and whether it's due.</summary>
         internal static string StateForTest() =>
             $"asked={(Memory.Asked ? 1 : 0)} played={Memory.PlayedSeconds:0}s hutReachedLevel2={s_ask.HutReachedLevel2} colony={s_hasColony} " +
-            $"armed={s_armed} forcedDue={s_forcedDue} setting={ColonyConfig.AskForFeedback.Value} file={FilePath}";
+            $"armed={s_armed} forcedDue={s_forcedDue} setting={ColonyConfig.AskForFeedback.Value} file={FilePath}" + HeldForTest();
+
+        /// <summary>What would hold the ask back right now (the state line's end): an enemy, a raid, or what keeps the player busy.</summary>
+        private static string HeldForTest()
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null) return " held=no player";
+            var held = new System.Collections.Generic.List<string>();
+            Character threat = ThreatNear(player);
+            if (threat != null)
+                held.Add($"enemy ({Utils.GetPrefabName(threat.gameObject)}, {threat.GetFaction()}, " +
+                         $"{Vector3.Distance(threat.transform.position, player.transform.position):0} m)");
+            if (RandEventSystem.instance != null && RandEventSystem.HaveActiveEvent()) held.Add("raid");
+            if (Cursor.lockState != CursorLockMode.Locked) held.Add("cursor free (game not in focus?)");
+            if (Windows.AnyOpen()) held.Add("our window");
+            if (Menu.IsVisible() || InventoryGui.IsVisible() || Minimap.IsOpen() || global::Console.IsVisible() || TextInput.IsVisible()
+                || UnifiedPopup.IsVisible() || StoreGui.IsVisible() || Hud.IsPieceSelectionVisible()) held.Add("a game window");
+            if (!player.IsOnGround() || player.IsSwimming() || player.IsAttached() || player.IsSleeping()) held.Add("not on the ground");
+            if (Busy(player) && held.Count == 0) held.Add("busy (other)");
+            return held.Count == 0 ? " held=nothing" : " held=" + string.Join(", ", held);
+        }
     }
 }

@@ -51,6 +51,12 @@ namespace VikingColonies.Core
     /// <summary>vc_bugreport (0.27): the report's opening lines.</summary>
     public static class BugReport
     {
+        /// <summary>A report's date and time in the common calendar on every PC (1.5.1: a Thai PC wrote the year 2569).</summary>
+        public static string Stamp(DateTime at) => at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+        /// <summary>A time of day for the report's lines, with colons on every PC (some write 14.53.07).</summary>
+        public static string Clock(DateTime at) => at.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
         public static string Header(string modVersion, string gameVersion, IEnumerable<string> otherMods, IReadOnlyCollection<string> gameCheckMissing,
             IReadOnlyCollection<string> startupFailures, string network)
         {
@@ -140,5 +146,91 @@ namespace VikingColonies.Core
 
         /// <summary>Whole seconds until the next report may start (rounded up; 0 when it may now).</summary>
         public int SecondsLeft(double now) => Busy(now) ? (int)Math.Ceiling(Seconds - (now - _last)) : 0;
+    }
+}
+
+namespace VikingColonies.Core
+{
+    /// <summary>
+    /// Where the bug report file is (1.6, Report a problem's window): the path in words, shortened where it starts with
+    /// the account's own folder (it can hold the Windows account's name, and players share screenshots), and how to open
+    /// its folder for dragging the file into a Discord post or the bug form.
+    /// </summary>
+    public static class BugReportPlace
+    {
+        public const string FileName = "VikingColonies-bugreport.txt";
+
+        /// <summary>
+        /// The path to show: on Windows with back slashes and the account's folder as %USERPROFILE% (case-blind; also works
+        /// typed into File Explorer's address bar), elsewhere as ~. Only a whole folder counts; without a home, as it was.
+        /// </summary>
+        public static string Shown(string path, string home, bool windows)
+        {
+            if (path == null) return "";
+            char sep = windows ? '\\' : '/';
+            string p = windows ? path.Replace('/', '\\') : path;
+            string h = (windows ? (home ?? "").Replace('/', '\\') : home ?? "").TrimEnd(sep);
+            StringComparison how = windows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (h.Length > 0 && p.StartsWith(h, how) && (p.Length == h.Length || p[h.Length] == sep))
+                return (windows ? "%USERPROFILE%" : "~") + p.Substring(h.Length);
+            if (windows)
+            {
+                // Proton: the game sees Wine's own user folder as home, while the mod manager's profile is in the Linux one.
+                System.Text.RegularExpressions.Match linux = ProtonHome.Match(p);
+                if (linux.Success && linux.Index == 0) return "~" + p.Substring(linux.Length);
+            }
+            return p;
+        }
+
+        /// <summary>A Linux home seen through Proton: Z:\home\name (either slash), up to the next folder or the end.</summary>
+        private static readonly System.Text.RegularExpressions.Regex ProtonHome = new System.Text.RegularExpressions.Regex(
+            @"Z:[\\/]home[\\/][^\\/'""\s]+(?![^\\/'""\s])", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// A message (why the file couldn't be written) with the account's folder shortened wherever it appears: either
+        /// slash, case-blind on Windows, only where the folder's name ends (and a Proton Linux home as ~).
+        /// </summary>
+        public static string Scrubbed(string text, string home, bool windows)
+        {
+            if (text == null) return "";
+            string h = (home ?? "").TrimEnd('\\', '/');
+            string result = text;
+            if (h.Length > 0)
+            {
+                string[] parts = h.Split('\\', '/');
+                string pattern = string.Join(@"[\\/]", parts.Select(System.Text.RegularExpressions.Regex.Escape)) + "(?![A-Za-z0-9_-])";
+                result = System.Text.RegularExpressions.Regex.Replace(result, pattern, (windows ? "%USERPROFILE%" : "~").Replace("$", "$$"),
+                    windows ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : System.Text.RegularExpressions.RegexOptions.None);
+            }
+            return windows ? ProtonHome.Replace(result, "~") : result;
+        }
+
+        /// <summary>The folder a file is in ("" when the path has none).</summary>
+        public static string Folder(string file)
+        {
+            file = file ?? "";
+            int at = Math.Max(file.LastIndexOf('\\'), file.LastIndexOf('/'));
+            return at < 0 ? "" : file.Substring(0, at);
+        }
+
+        /// <summary>File Explorer's command line: the file selected, ready to drag; its folder when the file isn't there.</summary>
+        public static string ExplorerArguments(string file, bool exists)
+        {
+            string f = (file ?? "").Replace('/', '\\');
+            return exists ? "/select,\"" + f + "\"" : "\"" + Folder(f) + "\"";
+        }
+
+        /// <summary>The file's folder as a file:/// address (off Windows, for the system's file browser), each part escaped.</summary>
+        public static string FolderAddress(string file)
+        {
+            string folder = Folder(file).Replace('\\', '/');
+            string[] parts = folder.Split('/');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                bool drive = i == 0 && parts[i].Length == 2 && char.IsLetter(parts[i][0]) && parts[i][1] == ':';
+                if (!drive) parts[i] = Uri.EscapeDataString(parts[i]);
+            }
+            return "file://" + (folder.StartsWith("/") ? "" : "/") + string.Join("/", parts) + "/";
+        }
     }
 }

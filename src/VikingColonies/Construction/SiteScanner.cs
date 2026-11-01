@@ -405,6 +405,11 @@ namespace VikingColonies.Construction
                 bool builderHut = ColonyBuilding.All.Any(b => b != null && b.IsValid && b.TypeId == BuildingTypes.BuilderHutId && b.ColonyId == colonyId);
                 findings.AddRed(StorehouseRules.PlaceRed(others, builderHut));
             }
+            if (colony != null && self == null && type != null && type.Id == BuildingTypes.MeadHallId)   // one per colony (1.6)
+            {
+                string colonyId = colony.ColonyId;
+                findings.AddRed(MeadHallRules.PlaceRed(ColonyBuilding.All.Count(b => b != null && b.IsValid && b.IsMeadHall && b.ColonyId == colonyId)));
+            }
             foreach (ConstructionModule other in ConstructionModule.All)
             {
                 if (other == null || other == self || !other.IsValid) continue;

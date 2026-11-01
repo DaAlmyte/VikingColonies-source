@@ -49,6 +49,39 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void A_fight_hurt_to_half_is_looked_at_again_at_once_not_at_the_next_look()
+        {
+            Assert.True(StandUp.LookAgainNow(fighting: true, health01: 0.5f));
+            Assert.True(StandUp.LookAgainNow(fighting: true, health01: 0.38f));
+            Assert.False(StandUp.LookAgainNow(fighting: true, health01: 0.51f));
+            Assert.False(StandUp.LookAgainNow(fighting: false, health01: 0.3f));   // not fighting: the usual look, every half second
+        }
+
+        [Fact]
+        public void A_fight_over_leaves_no_fighting_status_behind()
+        {
+            // 2026-10-25: "Fighting off Neck" stayed up after the fight, and the next check (and the hover) saw a fight.
+            Assert.Equal("$vc_status_working", StandUp.StatusAfterFight("$vc_status_fighting_off Neck", employed: true));
+            Assert.Equal("$vc_status_jobless", StandUp.StatusAfterFight("$vc_status_fighting_off Neck", employed: false));   // as JoblessRoutine
+            Assert.Null(StandUp.StatusAfterFight("", employed: true));
+            Assert.Null(StandUp.StatusAfterFight("$vc_status_fighting Troll", employed: true));   // a guard's fight: not this one
+            Assert.Null(StandUp.StatusAfterFight("$vc_status_fleeing", employed: true));   // already something else: left as it is
+            Assert.Null(StandUp.StatusAfterFight(null, employed: true));
+        }
+
+        [Fact]
+        public void A_look_made_at_once_at_half_or_less_can_never_keep_the_fight_going()
+        {
+            // The look at once runs every frame while they still fight: no answer at half or less may be a fight (its review).
+            foreach (Trait trait in (Trait[])System.Enum.GetValues(typeof(Trait)))
+                foreach (bool standing in new[] { false, true })
+                    foreach (bool goesForMe in new[] { false, true })
+                        foreach (float distance in new[] { 1f, 5f, 12f })
+                            foreach (float health in new[] { 0.5f, 0.3f, 0.01f })
+                                Assert.NotEqual(StandUpChoice.Fight, Decide(goesForMe: goesForMe, distance: distance, health01: health, standing: standing, trait: trait));
+        }
+
+        [Fact]
         public void A_timid_settler_flees_unless_standing_their_ground()
         {
             Assert.Equal(StandUpChoice.Flee, Decide(trait: Trait.Timid));

@@ -64,6 +64,8 @@ namespace VikingColonies.Core
         public const string Pose = "vc_pose";
         public const string PoseTarget = "vc_pose_at";
         public const string Doing = "vc_doing";
+        /// <summary>A builder's note of the site they left for now (1.6, <see cref="AwayNote"/>).</summary>
+        public const string BuilderAway = "vc_builder_away";
 
         // A settler's cairn.
         public const string CairnName = "vc_cairn_name";
@@ -95,10 +97,30 @@ namespace VikingColonies.Core
         public const string CourierTasks = "vc_courier_tasks";    // the storehouse's: who carries what
         /// <summary>On a hut: "Couriers take the rest" turned off (1.5, part 3); absent: on.</summary>
         public const string CouriersLeave = "vc_couriers_leave";
+        public const string MeadHallType = "meadhall";            // 1.6, the cook
+        public const string MeadHallPiece = "vc_hut_meadhall";
+        public const string CookJob = "cook";
+        /// <summary>On a cooking station: it stood in a Mead Hall with a cook when last looked at (holds its food done).</summary>
+        public const string CookHolds = "vc_cook_holds";
+        /// <summary>On a cooking station: where its Mead Hall's chest stood when last looked at (the hold waits while that spot isn't loaded).</summary>
+        public const string CookHallPos = "vc_cook_hall";
         /// <summary>On a storehouse: its take-down is ordered and its couriers are emptying it first (1.5, part 3).</summary>
         public const string StoreClosing = "vc_store_closing";
         /// <summary>On a storehouse: no chest inside it has an empty slot, as its owner's couriers' plan last saw (1.5.0).</summary>
         public const string StoreFull = "vc_store_full";
+        /// <summary>On the camp (the Town Hall's ZDO): the colony's deeds, today and all time (1.5.1, Core.ColonyDeeds).</summary>
+        public const string ColonyDeeds = "vc_colony_deeds";
+        /// <summary>On the camp: the colony's fallen (1.5.1, Core.FallenList), and the day of the last return.</summary>
+        public const string Fallen = "vc_fallen";
+        public const string FallenBackDay = "vc_fallen_back_day";
+        /// <summary>On a memorial stone (1.5.1): its copy of the fallen's words (no records).</summary>
+        public const string MemorialWords = "vc_memorial_words";
+        /// <summary>The memorial stone's prefab (1.5.1).</summary>
+        public const string MemorialPiece = "vc_memorial";
+        /// <summary>The scarecrow's prefab (custom assets' first test, 27 Oct 2026): the mod's own model, decoration only.</summary>
+        public const string ScarecrowPiece = "vc_scarecrow";
+        /// <summary>The chopping block's prefab (the Valheim look pass's second own model, 27 Oct 2026): decoration only.</summary>
+        public const string ChoppingBlockPiece = "vc_choppingblock";
         /// <summary>The Town Hall's camp (huts round 2): its level (0 until built), and why its next level waits.</summary>
         public const string CampLevel = "vc_camp_level";
         public const string CampWaits = "vc_camp_waits";

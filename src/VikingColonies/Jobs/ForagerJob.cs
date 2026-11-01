@@ -290,6 +290,7 @@ namespace VikingColonies.Jobs
                 if (lying != null && Vector3.Distance(lying.transform.position, pos) <= Foraging.GatherRadius) _dropsBefore.Add(IdOf(lying.gameObject));
             nview.InvokeRPC("RPC_Pick", 0);
             Citizen.Practise(WorkSkill.Farming);   // for a pick that happened (0.26, review of 0.22)
+            Colony.Deeds.Count(Citizen.ColonyId, DeedKinds.Gathered, Mathf.Max(1, _target.m_amount));   // the colony's deeds (1.5.1)
             _picked.Add(_targetId, Time.time);
             _awaitingDrop = true;
             Log.Info($"{Citizen.CitizenName} picks the {Utils.GetPrefabName(_target.gameObject)} at ({pos.x:0}, {pos.z:0})");

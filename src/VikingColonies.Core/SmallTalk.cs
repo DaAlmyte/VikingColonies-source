@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace VikingColonies.Core
 {
     /// <summary>What a settler talks about (0.14); <see cref="SmallTalk.Topic"/> says the order they're tried in.</summary>
-    public enum TalkTopic { Mourn, Hungry, Weather, NewHere, Newcomer, Built, Wait, Jobless, General, Evening, Cheerful, Grumpy, Trade, Repelled, Boss }
+    public enum TalkTopic { Mourn, Hungry, Weather, NewHere, Newcomer, Built, Wait, Jobless, General, Evening, Cheerful, Grumpy, Trade, Repelled, Boss, Pastime }
 
     /// <summary>What is going on around a settler that small talk can be about.</summary>
     public struct TalkContext
@@ -35,6 +35,12 @@ namespace VikingColonies.Core
         public bool RepelledLately;
         /// <summary>A boss whose fall the colony heard of in the last <see cref="SmallTalk.MournDays"/> days, its name's token ("" for none) (1.4.2).</summary>
         public string BossToken;
+        /// <summary>The pastime they are at (1.6; none when not at one).</summary>
+        public Pastime Pastime;
+        /// <summary>At a story, one of its listeners (not the teller).</summary>
+        public bool Listening;
+        /// <summary>Who or what the pastime is with: the partner, the teller, the animal ("" for none).</summary>
+        public string PastimeWith;
     }
 
     /// <summary>A line of small talk: its translation token and the name or word it is about ("" for none).</summary>
@@ -69,6 +75,10 @@ namespace VikingColonies.Core
             // 1.4.2: their trade, a raid held off, the latest boss to fall.
             ["trade_lumberjack"] = 4, ["trade_builder"] = 4, ["trade_farmer"] = 4, ["trade_forager"] = 4, ["trade_guard"] = 4,
             ["repelled"] = 4, ["boss"] = 4,
+            // 1.6: at a pastime, its own lines (a story's listeners theirs).
+            ["pastime_archery"] = 5, ["pastime_weaponpractice"] = 5, ["pastime_boardgame"] = 5, ["pastime_toast"] = 5, ["pastime_poledance"] = 4,
+            ["pastime_story"] = 5, ["pastime_listening"] = 4, ["pastime_admire"] = 4, ["pastime_map"] = 4, ["pastime_stretch"] = 4,
+            ["pastime_spar"] = 5, ["pastime_nap"] = 4, ["pastime_firedance"] = 4, ["pastime_pettame"] = 4,
         };
 
         /// <summary>Every line's token (a unit test checks each has words).</summary>
@@ -89,7 +99,8 @@ namespace VikingColonies.Core
         public static TalkTopic Topic(TalkContext context, Func<double> roll)
         {
             // The colony's own news first, then the trade, the trait and the wider world (1.4.2).
-            foreach (TalkTopic topic in new[] { TalkTopic.Mourn, TalkTopic.Hungry, TalkTopic.Weather, TalkTopic.NewHere, TalkTopic.Newcomer,
+            // At a pastime (1.6) they talk about it, after a death or hunger.
+            foreach (TalkTopic topic in new[] { TalkTopic.Mourn, TalkTopic.Hungry, TalkTopic.Pastime, TalkTopic.Weather, TalkTopic.NewHere, TalkTopic.Newcomer,
                          TalkTopic.Built, TalkTopic.Repelled, TalkTopic.Evening, TalkTopic.Wait, TalkTopic.Jobless, TalkTopic.Trade,
                          TalkTopic.Cheerful, TalkTopic.Grumpy, TalkTopic.Boss })
                 if (Applies(topic, context) && roll() < (topic == TalkTopic.Trade ? TradeChance : 0.5)) return topic;
@@ -114,6 +125,7 @@ namespace VikingColonies.Core
                 case TalkTopic.Trade: return !string.IsNullOrEmpty(c.Job) && Count(TalkTopic.Trade, "", c.Job) > 0;
                 case TalkTopic.Repelled: return c.RepelledLately;
                 case TalkTopic.Boss: return !string.IsNullOrEmpty(c.BossToken);
+                case TalkTopic.Pastime: return Count(TalkTopic.Pastime, c) > 0;
                 default: return true;
             }
         }
@@ -122,11 +134,29 @@ namespace VikingColonies.Core
         public static int Count(TalkTopic topic, string waitStatus, string job = "") =>
             s_counts.TryGetValue(Key(topic, waitStatus, job), out int n) ? n : 0;
 
+        /// <summary>How many lines a topic has in this context (a pastime: that pastime's, or a story's listeners').</summary>
+        public static int Count(TalkTopic topic, TalkContext context) =>
+            s_counts.TryGetValue(Key(topic, context.WaitStatus, context.Job, PastimeKey(context)), out int n) ? n : 0;
+
+        private static string PastimeKey(TalkContext c) =>
+            c.Pastime == Pastime.None ? "" : c.Listening ? "listening" : c.Pastime.ToString().ToLowerInvariant();
+
+        /// <summary>The pastime a doing's words are (1.6): "$vc_doing_archery" is archery; a story's listener's is the story.</summary>
+        public static Pastime PastimeOf(string doingToken, out bool listening)
+        {
+            listening = doingToken == ActivityWords.Listening;
+            if (listening) return Pastime.Story;
+            if (string.IsNullOrEmpty(doingToken)) return Pastime.None;
+            foreach (Pastime p in PastimeRules.All)
+                if (ActivityWords.Token(p) == doingToken) return p;
+            return Pastime.None;
+        }
+
         /// <summary>The line the seed picks (it wraps round), naming whoever or whatever the topic is about.</summary>
         public static TalkLine Line(TalkTopic topic, string waitStatus, int seed, TalkContext context = default(TalkContext))
         {
-            string key = Key(topic, waitStatus, context.Job);
-            int count = Count(topic, waitStatus, context.Job);
+            string key = Key(topic, waitStatus, context.Job, PastimeKey(context));
+            int count = s_counts.TryGetValue(key, out int known) ? known : 0;
             if (count == 0)
             {
                 key = "general";
@@ -137,6 +167,7 @@ namespace VikingColonies.Core
                 : topic == TalkTopic.Newcomer ? context.NewcomerName
                 : topic == TalkTopic.Built ? context.BuiltToken
                 : topic == TalkTopic.Boss ? context.BossToken
+                : topic == TalkTopic.Pastime ? context.PastimeWith
                 : "";
             return new TalkLine("$vc_talk_" + key + "_" + n.ToString(System.Globalization.CultureInfo.InvariantCulture), arg);
         }
@@ -164,6 +195,7 @@ namespace VikingColonies.Core
         {
             var context = new TalkContext { DeadName = "", NewcomerName = "", BuiltToken = "", WaitStatus = "", Job = "", BossToken = "" };
             if (saga == null) return context;
+            var back = new HashSet<string>();   // returned since (the fallen return, 1.5.1): nobody talks of their death
             foreach (SagaEntry entry in saga.Page(0, SagaLog.MaxEntries))   // newest first
             {
                 if (entry.Kind == "repelled" && today - entry.Day >= 0 && today - entry.Day <= MournDays) context.RepelledLately = true;
@@ -172,7 +204,8 @@ namespace VikingColonies.Core
                     context.BossToken = entry.Args[0] ?? "";
                 string first = entry.Args.Count > 0 ? entry.Args[0] : "";
                 if (first.Length == 0) continue;
-                if (entry.Kind == "died" && context.DeadName.Length == 0 && today - entry.Day >= 0 && today - entry.Day <= MournDays)
+                if (entry.Kind == "fallenback") back.Add(first);
+                else if (entry.Kind == "died" && context.DeadName.Length == 0 && !back.Contains(first) && today - entry.Day >= 0 && today - entry.Day <= MournDays)
                     context.DeadName = first;
                 else if ((entry.Kind == "arrived" || entry.Kind == "came") && entry.Day == today)
                 {
@@ -185,10 +218,11 @@ namespace VikingColonies.Core
             return context;
         }
 
-        private static string Key(TalkTopic topic, string waitStatus, string job = "")
+        private static string Key(TalkTopic topic, string waitStatus, string job = "", string pastime = "")
         {
             switch (topic)
             {
+                case TalkTopic.Pastime: return "pastime_" + (pastime ?? "");
                 case TalkTopic.Trade: return "trade_" + (job ?? "");
                 case TalkTopic.Repelled: return "repelled";
                 case TalkTopic.Boss: return "boss";

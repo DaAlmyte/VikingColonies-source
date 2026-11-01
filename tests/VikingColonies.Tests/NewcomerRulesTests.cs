@@ -43,7 +43,7 @@ namespace VikingColonies.Tests
         public void A_brave_settler_runs_later_and_a_timid_one_sooner()
         {
             var brave = new FleeTracker();
-            Assert.False(brave.Update(8f, double.NegativeInfinity, 0, startDistance: 6f));
+            Assert.False(brave.Update(10f, double.NegativeInfinity, 0, startDistance: Traits.FleeRange(Trait.Brave, FleeTracker.StartDistance)));
             var timid = new FleeTracker();
             Assert.True(timid.Update(18f, double.NegativeInfinity, 0, startDistance: 20f));
             Assert.True(new FleeTracker().Update(11f, double.NegativeInfinity, 0));   // the usual 12 m

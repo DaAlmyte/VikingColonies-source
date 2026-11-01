@@ -20,6 +20,26 @@ namespace VikingColonies.Tests
             Assert.Empty(result.Reasons);
         }
 
+        [Fact]   // the cook (1.6)
+        public void A_hot_last_meal_lifts_the_mood_by_five()
+        {
+            var fed = Nothing(); fed.AteToday = true;
+            var hot = fed; hot.LastMealHot = true;
+            Assert.Equal(5, Change(hot) - Change(fed));
+            Assert.Contains(Mood.Compute(hot).Reasons, r => r.Token == "$vc_mood_hotmeal" && r.Change == 5);
+            Assert.Contains("$vc_mood_hotmeal", Mood.ReasonTokens);
+            Assert.DoesNotContain(Mood.Compute(Nothing()).Reasons, r => r.Token == "$vc_mood_hotmeal");
+        }
+
+        [Fact]   // the cook's review, minor 11: "a hot meal" showed on a settler hungry for days
+        public void A_hot_meal_counts_only_while_they_are_fed()
+        {
+            var hungry = Nothing(); hungry.LastMealHot = true; hungry.Hungry = true; hungry.AteToday = true;
+            Assert.DoesNotContain(Mood.Compute(hungry).Reasons, r => r.Token == "$vc_mood_hotmeal");
+            var daysAgo = Nothing(); daysAgo.LastMealHot = true;   // not fed today
+            Assert.DoesNotContain(Mood.Compute(daysAgo).Reasons, r => r.Token == "$vc_mood_hotmeal");
+        }
+
         [Fact]
         public void Each_reason_adds_or_takes_away_its_share()
         {

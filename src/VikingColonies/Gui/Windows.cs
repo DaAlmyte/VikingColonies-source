@@ -11,6 +11,7 @@ namespace VikingColonies.Gui
         public static readonly FieldCropWindow FieldCrop = new FieldCropWindow();
         public static readonly StockAddWindow StockAdd = new StockAddWindow();
         public static readonly FeedbackWindow Feedback = new FeedbackWindow();
+        public static readonly ReportWindow Report = new ReportWindow();
 
         /// <summary>A reply to the player: in the open window's message line, else in the game's message corner (Core.Replies).</summary>
         public static void Reply(string text)
@@ -31,6 +32,6 @@ namespace VikingColonies.Gui
 
         /// <summary>Any colony window is open (the feedback ask waits until none is, 1.4.2).</summary>
         public static bool AnyOpen() =>
-            Hut.IsOpen || TownHall.IsOpen || Trees.IsOpen || Pick.IsOpen || Grow.IsOpen || Field.IsOpen || FieldCrop.IsOpen || StockAdd.IsOpen || Feedback.IsOpen;
+            Hut.IsOpen || TownHall.IsOpen || Trees.IsOpen || Pick.IsOpen || Grow.IsOpen || Field.IsOpen || FieldCrop.IsOpen || StockAdd.IsOpen || Feedback.IsOpen || Report.IsOpen;
     }
 }

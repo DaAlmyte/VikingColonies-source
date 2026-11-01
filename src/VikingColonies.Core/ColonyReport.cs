@@ -38,7 +38,8 @@ namespace VikingColonies.Core
     public sealed class ReportColony
     {
         public string Id = "";
-        public Vec3 Hall;
+        /// <summary>Where its Town Hall stands; null when this computer can't see it (1.5.1, a player's report: it read (0, 0, 0)).</summary>
+        public Vec3? Hall;
         public List<ReportBuilding> Buildings { get; } = new List<ReportBuilding>();
         public List<ReportSettler> Settlers { get; } = new List<ReportSettler>();
     }
@@ -53,7 +54,7 @@ namespace VikingColonies.Core
             if (colonies.Count == 0) sb.Append("No colonies.\n");
             foreach (ReportColony colony in colonies)
             {
-                sb.Append($"Colony {colony.Id}: Town Hall at {P(colony.Hall)}, {colony.Settlers.Count} settlers\n");
+                sb.Append($"Colony {colony.Id}: {(colony.Hall.HasValue ? "Town Hall at " + P(colony.Hall.Value) : "no Town Hall here")}, {colony.Settlers.Count} settlers\n");
                 foreach (ReportBuilding b in colony.Buildings)
                 {
                     sb.Append($"  {b.Type} {b.Id} level {b.Level} at {P(b.Position)} turned {b.Turn.ToString("0", CultureInfo.InvariantCulture)}");

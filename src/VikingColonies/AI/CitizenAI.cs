@@ -34,13 +34,24 @@ namespace VikingColonies.AI
         private Vector3 _refugeSpot;
         private Vector3 _refugeChest;
         private Vector3 _refugeDoor;
+        private Vector3 _refugeOutward;   // the way out through its door
         private float _refugeChosenAt = float.NegativeInfinity;
         private readonly RefugeProgress _refuge = new RefugeProgress();
         private bool _inside;
         private readonly Unstuck _unstuck = new Unstuck();
         private float _sidestepUntil;
+        /// <summary>A straight leg near a hut (<see cref="WalkLeg"/>): its watch, and whether straight legs are given up for this walk.</summary>
+        private readonly LegWatch _legWatch = new LegWatch();
+        private bool _legsOff;
+        private Vector3 _legAim;
+        private bool _legClear;
+        private float _legClearUntil;
+        private bool _legWasStraight;
+        private readonly List<FireRing> _legFires = new List<FireRing>();
         private Vector3 _sidestep;
         private float _insideSince;
+        /// <summary>The last monster's hit inside a hut already weighed (stay or leave, 1.5.1).</summary>
+        private double _hitWeighed = double.NegativeInfinity;
         private float _settleUntil;
         private const float SettleDistance = 0.3f;
         private float _wayCheckAt;
@@ -59,6 +70,8 @@ namespace VikingColonies.AI
 
         /// <summary>Self-test: the colony counts as raided.</summary>
         internal static bool RaidForTest;
+        /// <summary>vc_walktest: he shelters as from an attack (no monster needed); his own, not every settler's (its review).</summary>
+        internal bool AttackForTest;
         private readonly GoneTracker _colonyGone = new GoneTracker(ColonyRules.GoneChecksFor(MembershipCheckSeconds));
         private readonly GoneTracker _workplaceGone = new GoneTracker(ColonyRules.GoneChecksFor(MembershipCheckSeconds));
         private readonly GoneTracker _homeGone = new GoneTracker(ColonyRules.GoneChecksFor(MembershipCheckSeconds));
@@ -91,6 +104,7 @@ namespace VikingColonies.AI
         private DoorUser _doors;
         private Vector3 _testWalkTo;
         private float _testWalkUntil;
+        private bool _testWalkHurry;
         private Vector3 _makeWayTo;
         private float _makeWayUntil;
         private bool _makingWay;
@@ -111,6 +125,10 @@ namespace VikingColonies.AI
 
         /// <summary>vc_pose: his own brain rests for a while (he stays where a test command put him).</summary>
         internal void PauseForTest(float seconds) => _pausedForTestUntil = Time.time + seconds;
+
+        /// <summary>A test tool has him paused or on a test walk, or he makes way for the builder: his status stays as it was
+        /// meanwhile, so the watchdog leaves him be (its review, 26 Oct).</summary>
+        internal bool HeldForTest => Time.time < _pausedForTestUntil || Time.time < _testWalkUntil || Time.time < _makeWayUntil;
 
         /// <summary>vc_lifetest: puts him on a spot as a recall does (off his seat and out of bed first, or the seat pulls him back).</summary>
         internal Vector3 PlaceForTest(Vector3 spot) => PlaceAt(spot);
@@ -275,7 +293,7 @@ namespace VikingColonies.AI
             Perf.Stop("settler: meals", timer);
 
             _threatTimer -= dt;
-            if (_threatTimer <= 0f)
+            if (_threatTimer <= 0f || StandUp.LookAgainNow(Fighting && !onDuty, _citizen.Body.GetHealthPercentage()))
             {
                 _threatTimer = ThreatCheckSeconds;
                 timer = Perf.Start();
@@ -287,7 +305,7 @@ namespace VikingColonies.AI
             if (IsAlerted() != fleeing) SetAlerted(fleeing);
             if (Fighting && !onDuty && FightOff()) return true;   // a weak creature fought off (1.5.0): the job waits
             bool alarm = TownHallModule.ColonyAlarmFor(_citizen.ColonyId, out _);   // the Town Hall's alarm (1.3): in, as in a raid
-            IndoorReason reason = GuardDuty.Indoors(IndoorRules.Reason(_flee.Fleeing, RaidAtColony() || alarm, ColonyConfig.SettlersShelterInRaids.Value || alarm,
+            IndoorReason reason = GuardDuty.Indoors(IndoorRules.Reason(_flee.Fleeing || AttackForTest && _citizen.Record.HasColony, RaidAtColony() || alarm, ColonyConfig.SettlersShelterInRaids.Value || alarm,
                 EnvMan.IsNight(), ColonyConfig.SettlersGoIndoorsAtNight.Value), onDuty);
             if (reason != _indoors) ChangeIndoors(reason);
             if (reason != IndoorReason.None && _breakfast.Running) _breakfast.Interrupt();   // he finishes it once it's over
@@ -300,7 +318,7 @@ namespace VikingColonies.AI
             if (reason == IndoorReason.Raid && GoIndoors()) return true;   // no hut: he works on, and flees if monsters come
             if (Time.time < _testWalkUntil)
             {
-                if (GoTo(_testWalkTo, 1f))   // the self-test sends him somewhere (through a door)
+                if (GoTo(_testWalkTo, 1f, _testWalkHurry))   // the self-test sends him somewhere (through a door)
                 {
                     Idle();
                     if (!TestWalkDone) Log.Info($"{_citizen.CitizenName} got to the test walk's end at ({_testWalkTo.x:0.0}, {_testWalkTo.z:0.0})");
@@ -583,7 +601,9 @@ namespace VikingColonies.AI
                 float distance = Vector3.Distance(transform.position, other.transform.position);
                 if (!IsThreat(_citizen.Body, other, distance, passive, fightBack ? hall : 0)) continue;
                 // Something too strong for the colony's age about: today's flee, never a fight beside it (1.5.0).
-                if (!WeakRules.IsWeakFor(Utils.GetPrefabName(other.gameObject), other.GetLevel(), hall)) nearestStrong = Mathf.Min(nearestStrong, distance);
+                // Weak as IsThreat judges it: with fight-back off, only the weak few (the review of 1.5.1's 12 m: it changes only the
+                // brave's range, as with it off they run from everything).
+                if (!WeakRules.IsWeakFor(Utils.GetPrefabName(other.gameObject), other.GetLevel(), fightBack ? hall : 0)) nearestStrong = Mathf.Min(nearestStrong, distance);
                 if (distance >= nearest) continue;
                 nearest = distance;
                 nearestOne = other;
@@ -629,7 +649,8 @@ namespace VikingColonies.AI
             if (choice == StandUpChoice.Flee)
             {
                 double hit = FightRules.HitCounts(_citizen.LastMonsterHitTime, ignoreHitsBefore) ? _citizen.LastMonsterHitTime : double.NegativeInfinity;
-                _flee.Update(nearest, hit, Time.time, Traits.FleeRange(_citizen.TraitKind, FleeTracker.StartDistance));   // brave or timid (0.16)
+                _flee.Update(nearest, hit, Time.time,
+                    Traits.FleeRange(_citizen.TraitKind, FleeTracker.StartDistance, nearestStrong));   // brave or timid (0.16); a strong one: the brave at 12 m (1.5.1)
             }
             else
                 _flee.Update(float.PositiveInfinity, double.NegativeInfinity, Time.time);   // fighting or carrying on: nothing to run from
@@ -780,11 +801,24 @@ namespace VikingColonies.AI
             }
             if (_inside)
             {
-                // A monster that reaches him in there (it followed him in) makes the hut no refuge: another, or he runs.
-                if (_indoors == IndoorReason.Attack && _citizen.LastMonsterHitTime > _insideSince)
+                // A monster that reaches him in there (it followed him in) makes the hut no refuge: another, or he runs. One
+                // outside at its door, reaching in, he stays from while he is well: out there is into it (1.5.1, the player's
+                // 1.5.0 try with a Troll; IndoorRules.LeavesAfterHit).
+                if (_indoors == IndoorReason.Attack && _citizen.LastMonsterHitTime > Math.Max(_insideSince, _hitWeighed))
                 {
-                    GiveUpRefuge("was attacked inside");
-                    return true;
+                    _hitWeighed = _citizen.LastMonsterHitTime;
+                    Vector3 from = _citizen.LastMonsterHitFrom;
+                    Footprint walls = ColonyBuilding.FindById(_refugeId)?.GetComponent<ConstructionModule>()?.RoomFootprint?.Grow(-SiteSurvey.SiteMargin);
+                    bool monsterInside = walls != null && walls.Contains(new Vec3(from.x, from.y, from.z));
+                    bool atTheDoor = IndoorRules.AtTheDoor(Ground(from), Ground(_refugeDoor), new GroundPoint(_refugeOutward.x, _refugeOutward.z), monsterInside);
+                    float health = _citizen.Body.GetHealthPercentage();
+                    if (IndoorRules.LeavesAfterHit(monsterInside, atTheDoor, health))
+                    {
+                        GiveUpRefuge(monsterInside ? "was attacked inside" : atTheDoor ? "is hurt to half by what stands at the door of" : "was hit through the walls of");
+                        return true;
+                    }
+                    Log.Info($"{_citizen.CitizenName} stays in hut {_refugeId}: what hit them stands outside at its door ({Utils.DistanceXZ(from, _refugeDoor):0.0} m off), " +
+                             $"and out is into it ({health * 100f:0}% health).");
                 }
                 // His walk stops short of the spot, on the door side, which may be in the way in: the last steps onto it.
                 if (!_refuge.Settled && now < _settleUntil && toSpot > SettleDistance) StepTowards(_refugeSpot);
@@ -902,7 +936,7 @@ namespace VikingColonies.AI
             if (id.Length == 0) return;
             ColonyBuilding hut = ColonyBuilding.FindById(id);
             float floor = hut != null ? hut.transform.position.y : transform.position.y;
-            GroundPoint spot = IndoorRules.Spot(huts[pick].Chest, huts[pick].Door, huts[pick].Inward, _citizen.Id);
+            GroundPoint spot = ShelterSpot(huts[pick].Chest, huts[pick].Door, huts[pick].Inward, _citizen.Id, floor);
             _refugeSpot = new Vector3(spot.X, floor, spot.Z);
             if (r.HasHome && id == ResidenceModule.LonghouseOf(r.Home) && r.HomePos != null)
             {
@@ -912,6 +946,7 @@ namespace VikingColonies.AI
             }
             _refugeChest = new Vector3(huts[pick].Chest.X, floor, huts[pick].Chest.Z);
             _refugeDoor = new Vector3(huts[pick].Door.X, floor, huts[pick].Door.Z);
+            _refugeOutward = new Vector3(-huts[pick].Inward.X, 0f, -huts[pick].Inward.Z);
             Log.Info($"{_citizen.CitizenName} goes into the {(hut != null ? hut.TypeId : "hut")} {id} ({_indoors}).");
         }
 
@@ -957,12 +992,14 @@ namespace VikingColonies.AI
         /// </summary>
         public bool GoTo(Vector3 point, float stopDistance, bool hurry = false)
         {
+            LastWalkAt = Time.time;
             if (!_hasGoal || Utils.DistanceXZ(point, _goal) > MoveRules.NewGoalDistance)
             {
                 _goal = point;
                 _hasGoal = true;
                 _arrived = false;
-                _wayCheckAt = Time.time + UnityEngine.Random.Range(0f, 0.5f);   // soon, but not every settler on the same frame
+                _arrivalNoted = false;
+                _wayCheckAt = Time.time + ModRandom.Range("jitter", _citizen != null ? _citizen.CitizenName : "", 0f, 0.5f);   // soon, but not every settler on the same frame
             }
             float stop = MoveRules.StopDistance(stopDistance);
             float distance = Utils.DistanceXZ(transform.position, point);
@@ -981,9 +1018,19 @@ namespace VikingColonies.AI
                 StopMoving();
                 _trapped.Arrived(transform.position.x, transform.position.z);
                 _doors.Arrived();
+                NoteArrival();
                 return true;
             }
             _running = MoveRules.ShouldRun(_running, distance, hurry);
+            // Just out of a hut by its door, the goal behind it: round its walls close by, a straight leg at a time (1.5.1's
+            // walk check: the game's own way round a Builder's Hut's corner went 3 m wide).
+            Vector3 leg = _doors.RoundAfterLeaving(transform.position, point);
+            if (leg != point)
+            {
+                if (WalkLeg(leg, 0.5f) && _doors.CornerFailed(transform.position, leg)) _doors.ForgetLeft();
+                if (TrappedWatch.CountsAsTrying(false, distance)) _trapped.Walking(transform.position.x, transform.position.z, Time.time);
+                return false;
+            }
             // MoveTo also stops and returns true when no path exists; that only counts as arriving close by. Behind a
             // wall he walks on towards the goal itself: round to it, or up to the door in the way.
             bool pathEnded = PathTo(point, wallBetween ? MoveRules.MinStopDistance : stop, _running);
@@ -996,9 +1043,12 @@ namespace VikingColonies.AI
                 _wayCheckAt = Time.time + WayCheckSeconds;
                 List<Vector3> way = s_path(this);
                 float gap = way.Count > 0 ? Utils.DistanceXZ(way[way.Count - 1], point) : 0f;
-                if (DoorRules.LookForDoorNow(gap))
+                // A hut's walls between the way's end and the goal (its closed door is a wall to the game's paths): its door
+                // now, from however far, not first at the way's end behind its back wall (1.5.1, the player's 1.5.0 watch).
+                Footprint walled = way.Count > 0 ? _doors.WalledHut(way[way.Count - 1], point) : null;
+                if (DoorRules.LookForDoorNow(gap, walled != null))
                 {
-                    if (_doors.Consider(point, unreachable: true, _dt, early: true, gapFromHere: gap)) return false;
+                    if (_doors.Consider(point, unreachable: true, _dt, early: true, gapFromHere: gap, walledHut: walled)) return false;
                     _wayCheckAt = Time.time + EarlyLookAgainSeconds;
                 }
             }
@@ -1008,6 +1058,7 @@ namespace VikingColonies.AI
                 return false;
             if (!MoveRules.ReachedPathEnd(pathEnded, distance, stop)) return false;
             _arrived = true;
+            NoteArrival();
             StopMoving();
             _trapped.Arrived(transform.position.x, transform.position.z);
             return true;
@@ -1233,9 +1284,9 @@ namespace VikingColonies.AI
             int inside = door != null && ground != null
                 ? DoorRules.SideOf(CoreVectors.V(door.transform.position), CoreVectors.V(door.transform.forward), ground.Centre) : 0;
             if (inside != 0)
-                foreach (float distance in DoorRules.StandOffs)
+                foreach (float distance in DoorRules.MakeWayDistances)   // past the landing of one stepping out (a6d3)
                 {
-                    Vector3 outside = DoorUser.Spot(door, -inside, distance + 0.5f);
+                    Vector3 outside = DoorUser.Spot(door, -inside, distance);
                     if (StandsFree(outside)) return outside;
                 }
             return FreeSpotNear(inside != 0 ? DoorUser.Spot(door, -inside, DoorRules.StandOff) : near, anyway: true,
@@ -1274,6 +1325,28 @@ namespace VikingColonies.AI
             Log.Info(now ? $"{_citizen.CitizenName} still stood where {builder} builds: moved from {At(from)} to {At(to)}."
                          : $"{_citizen.CitizenName} makes way for {builder}: from {At(from)} to {At(to)}.");
             return true;
+        }
+
+        /// <summary>A settler's spot in a hut (<see cref="IndoorRules.Spot"/>), one the hut can take; for the checks too.</summary>
+        internal static GroundPoint ShelterSpot(GroundPoint chest, GroundPoint door, GroundPoint inward, string settlerId, float floor)
+        {
+            Vector3 chestAt = new Vector3(chest.X, floor, chest.Z);
+            GroundPoint spot = IndoorRules.Spot(chest, door, inward, settlerId, p => HutTakes(new Vector3(p.X, floor, p.Z), chestAt));
+            if (!HutTakes(new Vector3(spot.X, floor, spot.Z), chestAt))
+                Log.Info($"No shelter spot clear of the walls and furniture round the chest at ({chest.X:0.0}, {chest.Z:0.0}): the one as before");
+            return spot;
+        }
+
+        /// <summary>
+        /// A shelter spot the hut can take: inside its walls (none between it and the chest) and clear of its furniture.
+        /// Settlers don't count, so the spot stays the same whoever stands about (1.5.1).
+        /// </summary>
+        private static bool HutTakes(Vector3 spot, Vector3 chest)
+        {
+            if (s_solidMask == 0) s_solidMask = LayerMask.GetMask("piece", "piece_nonsolid", "Default", "static_solid", "Default_small");
+            // From 0.3 m up (0.65 less the radius): a thick floor or a step round the chest isn't counted (its review).
+            return !Physics.CheckCapsule(spot + Vector3.up * 0.65f, spot + Vector3.up * 1.6f, 0.35f, s_solidMask, QueryTriggerInteraction.Ignore)
+                   && !Walls.StructureBetween(chest, spot);
         }
 
         /// <summary>Room for him to stand there (nothing solid in a capsule his size).</summary>
@@ -1455,6 +1528,7 @@ namespace VikingColonies.AI
         }
 
         private static int s_standMask;
+        private static int s_solidMask;
         private bool _toldNoFreeSpot;
         private const float TrappedBackOffSeconds = 10f;
         private static readonly AccessTools.FieldRef<Character, float> s_maxAirAltitude = AccessTools.FieldRefAccess<Character, float>("m_maxAirAltitude");
@@ -1510,8 +1584,11 @@ namespace VikingColonies.AI
                      $"network {(nview != null ? nview.m_type + (nview.m_distant ? " distant" : "") : "none")}, {_citizen.DescribeBody()}");
         }
 
-        /// <summary>A walk with a path (for the door user); true when there, or when the path ends.</summary>
-        internal bool WalkTowards(Vector3 point, float stopDistance) => PathTo(point, stopDistance, false);
+        /// <summary>
+        /// A walk with a path (for the door user, up to a door's spot); true when there, or when the path ends. At the pace he
+        /// had (1.5.1: running to shelter, they slowed to a jog for the door).
+        /// </summary>
+        internal bool WalkTowards(Vector3 point, float stopDistance) => PathTo(point, stopDistance, _running);
 
         /// <summary>A walk with a path and nothing more (waiting his turn at a door: no hops among the others).</summary>
         internal bool WalkPlain(Vector3 point, float stopDistance) => MoveTo(_dt, point, stopDistance, false);
@@ -1549,11 +1626,35 @@ namespace VikingColonies.AI
                     _sidestepUntil = Time.time + Unstuck.SidestepSeconds;
                     ForgetPath();
                     Log.Info($"{_citizen.CitizenName} still hasn't moved on the way to ({point.x:0.0}, {point.z:0.0}): they step to the " +
-                             $"{(side > 0 ? "right" : "left")} (at ({me.x:0.0}, {me.y:0.0}, {me.z:0.0}))");
+                             $"{(side > 0 ? "right" : "left")} (at ({me.x:0.0}, {me.y:0.0}, {me.z:0.0}); {WhatsAround(me)})");
                     MoveTowards(_sidestep, false);
                     break;
             }
             return false;
+        }
+
+        private static readonly Collider[] s_around = new Collider[16];
+
+        /// <summary>
+        /// For the log of one stuck: what solid things touch them (within 0.3 m of their body), and their path's next corner
+        /// (v16's life.txt, 27 Oct: settlers out of the Forager's Hut stood still at one spot by its side for minutes).
+        /// </summary>
+        private string WhatsAround(Vector3 me)
+        {
+            const float reach = LegRadius + 0.3f;   // the lower end a little above the ground: the floor under them isn't news
+            int count = Physics.OverlapCapsuleNonAlloc(me + Vector3.up * (reach + 0.05f), me + Vector3.up * 1.5f, reach, s_around,
+                LayerMask.GetMask("Default", "Default_small", "static_solid", "piece", "terrain", "vehicle", "character", "character_net"), QueryTriggerInteraction.Ignore);
+            var names = new SortedSet<string>();
+            for (int i = 0; i < count; i++)
+            {
+                Collider c = s_around[i];
+                if (c == null || c.transform.root == transform.root) continue;
+                Vector3 at = c.transform.root.position;
+                names.Add($"{Utils.GetPrefabName(c.transform.root.gameObject)} at ({at.x:0.0}, {at.y:0.0}, {at.z:0.0})");
+            }
+            List<Vector3> path = s_path(this);
+            string next = path != null && path.Count > 0 ? $"path {path.Count} corners, next ({path[0].x:0.0}, {path[0].y:0.0}, {path[0].z:0.0})" : "no path";
+            return $"touching {(names.Count > 0 ? string.Join(", ", names) : "nothing")}; {next}";
         }
 
         /// <summary>A hop, as a player's jump (over a lip or a log in a doorway).</summary>
@@ -1566,6 +1667,103 @@ namespace VikingColonies.AI
             Vec3 heading = DoorRules.WayHeading(CoreVectors.V(transform.position), path != null ? path.ConvertAll(CoreVectors.V) : null,
                 CoreVectors.V(transform.forward));
             return CoreVectors.U(heading);
+        }
+
+        /// <summary>A straight leg is looked along only this far (near a hut's door; further off, the game's own way).</summary>
+        private const float LegReach = 30f;
+        /// <summary>A body's width, and its top, for the look along a straight leg (above a knee-high step).</summary>
+        private const float LegRadius = 0.35f;
+        private const float LegTop = 1.8f;
+        /// <summary>The ground along a straight leg rises or falls no more than this a metre (else steps, a drop, a bank).</summary>
+        private const float LegStep = 0.5f;
+        private static int s_legMask;
+
+        /// <summary>A new walk near a hut: straight legs are tried again (<see cref="WalkLeg"/>).</summary>
+        internal void NewLegs()
+        {
+            _legsOff = false;
+            _legWatch.Start();
+            _legClearUntil = 0f;
+            _legWasStraight = false;
+        }
+
+        /// <summary>
+        /// A leg near a hut, to its door's spot or round its corner (<see cref="HutWay"/>): walked straight when nothing stands in
+        /// the way, else by the game's own way, which bends at its walking map's large triangles and tile edges near huts,
+        /// 10 m out and back (1.5.1's walk check). True when there, or when the game's way ends. Stuck on a straight leg
+        /// against something the look missed (<see cref="LegWatch"/>), the game's own way for the rest of this walk.
+        /// </summary>
+        internal bool WalkLeg(Vector3 aim, float stopDistance)
+        {
+            Vector3 me = transform.position;
+            if (!_legsOff && LegClear(me, aim))
+            {
+                if (Utils.DistanceXZ(me, aim) <= stopDistance)
+                {
+                    StopMoving();
+                    return true;
+                }
+                if (!_legWatch.Stuck(me.x, me.z, Time.time))
+                {
+                    Vector3 way = aim - me;
+                    way.y = 0f;
+                    MoveTowards(way.normalized, _running);
+                    _legWasStraight = true;
+                    return false;
+                }
+                _legsOff = true;
+                ForgetPath();
+                Log.Info($"{_citizen.CitizenName} is stopped on the straight way to ({aim.x:0.0}, {aim.z:0.0}) at {At(me)}: the game's own way from here");
+            }
+            if (_legWasStraight)
+            {
+                _legWasStraight = false;
+                ForgetPath();   // the game keeps a path 5 s: one from before the straight leg leads back
+            }
+            return PathTo(aim, stopDistance, _running);
+        }
+
+        /// <summary>Nothing built, no tree or rock, no water or step in a body's way straight from him to the point (looked at again every moment).</summary>
+        private bool LegClear(Vector3 me, Vector3 aim)
+        {
+            if (Time.time < _legClearUntil && Utils.DistanceXZ(aim, _legAim) < 0.3f) return _legClear;
+            _legAim = aim;
+            _legClearUntil = Time.time + 0.3f;
+            _legFires.Clear();
+            foreach (FirePlace fire in ColonyPlaces.Fires(_citizen.ColonyId))
+                if (fire != null && fire.Valid) _legFires.Add(new FireRing(fire.Position.x, fire.Position.z, fire.Radius));
+            _legClear = StraightClear(me, aim, _legFires);
+            return _legClear;
+        }
+
+        /// <summary>Feet this near the ground count as on it, for a straight leg's ends (not on a floor, a deck or stairs: the review).</summary>
+        private const float LegOnGround = 0.3f;
+
+        private static bool StraightClear(Vector3 me, Vector3 aim, List<FireRing> fires)
+        {
+            Vector3 way = aim - me;
+            way.y = 0f;
+            float length = way.magnitude;
+            if (length > LegReach || ZoneSystem.instance == null) return false;
+            if (length < 0.05f) return true;
+            // Both ends on the ground: off a floor's edge, or to a door's spot up stairs, the look along it can't tell (the review).
+            if (Mathf.Abs(me.y - ZoneSystem.instance.GetGroundHeight(me)) > LegOnGround
+                || Mathf.Abs(aim.y - ZoneSystem.instance.GetGroundHeight(aim)) > LegOnGround + 0.2f) return false;
+            if (HutWay.PassesFire(CoreVectors.V(me), CoreVectors.V(aim), fires)) return false;   // a fire pit's stones are under the look
+            Vector3 dir = way / length;
+            if (s_legMask == 0) s_legMask = LayerMask.GetMask("piece", "static_solid", "Default", "Default_small", "vehicle", "pathblocker");
+            Vector3 low = me + Vector3.up * (KneeHeight + LegRadius), high = me + Vector3.up * (LegTop - LegRadius);
+            if (Physics.CapsuleCast(low, high, LegRadius, dir, length, s_legMask, QueryTriggerInteraction.Ignore)) return false;
+            float water = ZoneSystem.instance.m_waterLevel, last = ZoneSystem.instance.GetGroundHeight(me);
+            for (float d = 1f; d < length + 1f; d += 1f)
+            {
+                Vector3 at = me + dir * Mathf.Min(d, length);
+                float ground = ZoneSystem.instance.GetGroundHeight(at);
+                if (ground < water + 0.5f || Mathf.Abs(ground - last) > LegStep) return false;
+                if (EffectArea.IsPointInsideArea(at, EffectArea.Type.Burning, 1f) != null) return false;   // a fire not the colony's
+                last = ground;
+            }
+            return true;
         }
 
         /// <summary>A straight step without a path (through a doorway the paths don't know is open yet).</summary>
@@ -1584,6 +1782,24 @@ namespace VikingColonies.AI
 
         /// <summary>He is going through a door (his job's walk waits meanwhile; it isn't stuck).</summary>
         internal bool UsingDoor => _doors.Busy;
+
+        /// <summary>vc_walkwatch: when a walk was last asked of him, where to, and whether he is there.</summary>
+        internal float LastWalkAt { get; private set; } = float.NegativeInfinity;
+        internal Vector3 WalkGoal => _goal;
+        internal bool WalkArrived => _arrived;
+        /// <summary>vc_walkwatch: how many walks he has arrived at, and the last one's goal (an arrival straight into the next
+        /// errand is gone before a look at him sees it standing: its review).</summary>
+        internal int Arrivals { get; private set; }
+        internal Vector3 ArrivedGoal { get; private set; }
+        private bool _arrivalNoted;
+
+        private void NoteArrival()
+        {
+            if (_arrivalNoted) return;
+            _arrivalNoted = true;
+            Arrivals++;
+            ArrivedGoal = _goal;
+        }
 
         /// <summary>vc_watch (0.24.1): what his walking does now, in one line: his path, goal, the door near him, why indoors.</summary>
         internal string WatchState()
@@ -1652,11 +1868,30 @@ namespace VikingColonies.AI
         /// <summary>The next walk asks for a fresh path (the game keeps a path for up to 5 s for the same goal).</summary>
         internal void ForgetPath() => s_lastFindPathTime(this) = -1000f;
 
-        /// <summary>Self-test: walks to this point for a while instead of working.</summary>
-        internal void TestWalk(Vector3 point, float seconds)
+        /// <summary>vc_walktest: each test walk starts as a first one (no door remembered from the last).</summary>
+        internal void ForgetDoorsForTest() => _doors.ForgetForTest();
+
+        /// <summary>vc_walktest: the game's path from one point to another for him, its corners (empty when none).</summary>
+        internal List<Vector3> WayForTest(Vector3 from, Vector3 to)
+        {
+            var way = new List<Vector3>();
+            if (Pathfinding.instance != null) Pathfinding.instance.GetPath(from, to, way, m_pathAgentType, false, true, false);
+            return way;
+        }
+
+        /// <summary>vc_walktest: a copy of the game's path he follows now (empty when none).</summary>
+        internal List<Vector3> WayForTest()
+        {
+            List<Vector3> path = s_path(this);
+            return path != null ? new List<Vector3>(path) : new List<Vector3>();
+        }
+
+        /// <summary>Self-test: walks to this point for a while instead of working (<paramref name="hurry"/>: as to shelter, vc_walktest).</summary>
+        internal void TestWalk(Vector3 point, float seconds, bool hurry = false)
         {
             _testWalkTo = point;
             _testWalkUntil = Time.time + seconds;
+            _testWalkHurry = hurry;
             TestWalkDone = false;
         }
 
@@ -1689,6 +1924,33 @@ namespace VikingColonies.AI
 
         /// <summary>No wall or floor of a building between him and the point (its own piece aside): free time sits him down from here.</summary>
         internal bool NothingBetween(Vector3 goal) => !WallBetween(goal);
+
+        private static readonly RaycastHit[] s_furnitureHits = new RaycastHit[16];
+        private static int s_pieceMask, s_groundMask;
+
+        /// <summary>
+        /// Nothing but furniture (a table, a bench) or the seat itself (<paramref name="own"/>) between <paramref name="from"/>
+        /// and <paramref name="goal"/> at knee height: a settler may sit down across it, as a player can (the Mead Hall's
+        /// long table, 1.6); a wall, a door, the ground or a rock between, never.
+        /// </summary>
+        internal static bool OnlyFurnitureBetween(Vector3 from, Vector3 goal, Piece own)
+        {
+            if (s_pieceMask == 0) s_pieceMask = LayerMask.GetMask("piece", "piece_nonsolid");
+            if (s_groundMask == 0) s_groundMask = LayerMask.GetMask("terrain", "static_solid", "Default");
+            Vector3 a = from + Vector3.up * KneeHeight, b = goal + Vector3.up * KneeHeight;
+            Vector3 way = b - a;
+            float length = way.magnitude;
+            if (length < 0.01f) return true;
+            if (Physics.Linecast(a, b, s_groundMask, QueryTriggerInteraction.Ignore)) return false;
+            int count = Physics.RaycastNonAlloc(a, way / length, s_furnitureHits, length, s_pieceMask, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                Piece piece = s_furnitureHits[i].collider != null ? s_furnitureHits[i].collider.GetComponentInParent<Piece>() : null;
+                if (piece == null) return false;
+                if (piece != own && piece.m_category != Piece.PieceCategory.Furniture) return false;
+            }
+            return true;
+        }
 
         /// <summary>Test tool (vc_ui sleepers): the hut he went into for the night or shelter, and whether he counts himself inside.</summary>
         internal string RefugeIdForTest => _refugeId;

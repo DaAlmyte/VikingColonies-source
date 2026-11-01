@@ -116,6 +116,68 @@ namespace VikingColonies.Tests
             Assert.True(spots >= 3, $"only {spots} different spots for 12 settlers");
         }
 
+        // In a small hut some settlers' spots fell outside its walls or inside its workbench (the level-1 Watchtower and
+        // Lumberjack's Hut, 1.5.1's walking check, 2026-10-24): a spot the hut can't take (the game looks) is passed over.
+        [Fact]
+        public void A_spot_outside_the_walls_or_in_the_furniture_is_never_chosen()
+        {
+            var chest = new GroundPoint(0f, 0f);
+            var door = new GroundPoint(1f, 2f);
+            var inward = new GroundPoint(0f, -1f);
+            System.Func<GroundPoint, bool> takes = p => p.X < 0.2f;   // the east half: beyond a wall, or the workbench
+            for (int i = 0; i < 60; i++)
+            {
+                GroundPoint spot = IndoorRules.Spot(chest, door, inward, "settler-" + i, takes);
+                Assert.True(takes(spot), $"settler-{i}'s spot ({spot.X:0.00}, {spot.Z:0.00}) is one the hut can't take");
+                Assert.Equal(spot.X, IndoorRules.Spot(chest, door, inward, "settler-" + i, takes).X);   // the same each time
+            }
+            Assert.True(Enumerable.Range(0, 30).Select(i => IndoorRules.Spot(chest, door, inward, "settler-" + i, takes))
+                .Select(p => System.Math.Round(p.X, 2)).Distinct().Count() >= 2, "settlers still spread over the spots left");
+        }
+
+        [Fact]
+        public void With_no_spot_the_hut_can_take_it_is_the_chest_side_by_the_door_way()
+        {
+            var chest = new GroundPoint(0f, 0f);
+            var door = new GroundPoint(0f, 2f);
+            var inward = new GroundPoint(0f, -1f);
+            GroundPoint spot = IndoorRules.Spot(chest, door, inward, "anyone", p => System.Math.Abs(p.X) < 0.01f);   // only the line to the door
+            // Between the chest and the door, a little way off the chest: inside whatever the walls are.
+            Assert.Equal(0f, spot.X, 3);
+            Assert.True(spot.Z > 0.3f && spot.Z < 1.5f, $"the spot at {spot.Z:0.00} m");
+            // Not even that: the spot as before 1.5.1 (its review: better a spot than none).
+            GroundPoint before = IndoorRules.Spot(chest, door, inward, "anyone");
+            GroundPoint none = IndoorRules.Spot(chest, door, inward, "anyone", p => false);
+            Assert.Equal(before.X, none.X);
+            Assert.Equal(before.Z, none.Z);
+        }
+
+        [Fact]
+        public void When_the_hut_takes_only_spots_in_the_way_in_it_is_one_of_those_not_one_it_cannot_take()
+        {
+            var chest = new GroundPoint(0f, 0f);
+            var door = new GroundPoint(0f, 1.6f);   // a door this near: every spot is near the way in
+            var inward = new GroundPoint(0f, -1f);
+            System.Func<GroundPoint, bool> takes = p => p.X > 0.1f;
+            for (int i = 0; i < 20; i++)
+                Assert.True(takes(IndoorRules.Spot(chest, door, inward, "settler-" + i, takes)));
+        }
+
+        [Fact]
+        public void A_hut_that_takes_every_spot_gives_the_spots_as_before()
+        {
+            var chest = new GroundPoint(0f, 0f);
+            var door = new GroundPoint(1f, 2f);
+            var inward = new GroundPoint(0f, -1f);
+            for (int i = 0; i < 20; i++)
+            {
+                GroundPoint before = IndoorRules.Spot(chest, door, inward, "settler-" + i);
+                GroundPoint now = IndoorRules.Spot(chest, door, inward, "settler-" + i, p => true);
+                Assert.Equal(before.X, now.X);
+                Assert.Equal(before.Z, now.Z);
+            }
+        }
+
         // In the shipped Builder's Hut the door is 2.2 m from the chest: the spot straight towards it was 1 m inside the
         // door, where the next settler steps through, and two settlers wedged each other at the door.
         [Fact]
@@ -226,6 +288,61 @@ namespace VikingColonies.Tests
             Assert.False(IndoorRules.WithinWalls(onItsGround: false, wallToChest: false, fromDoor: 5f));
             Assert.False(IndoorRules.WithinWalls(onItsGround: true, wallToChest: true, fromDoor: 5f));   // just outside a wall
             Assert.False(IndoorRules.WithinWalls(onItsGround: true, wallToChest: false, fromDoor: 1f));  // in the open doorway: he'd block it
+        }
+
+        // A level-1 hut 4 m deep (z -2..2), its door in the front wall at (0, 2), outward +z.
+        private static readonly GroundPoint Door = new GroundPoint(0f, 2f), Outward = new GroundPoint(0f, 1f);
+
+        [Fact]
+        public void A_monster_outside_in_front_of_the_door_is_at_the_door()
+        {
+            // The player's 1.5.0 try: a Troll at the hut hit the forager inside, and the forager walked out to another hut.
+            Assert.True(IndoorRules.AtTheDoor(new GroundPoint(0f, 3.5f), Door, Outward, monsterInside: false));
+            Assert.True(IndoorRules.AtTheDoor(new GroundPoint(2f, 2.3f), Door, Outward, monsterInside: false));   // beside it, against the front wall
+        }
+
+        [Fact]
+        public void A_monster_behind_a_small_hut_isnt_at_the_door()
+        {
+            // The review: behind the back wall of a 4 m deep hut a Troll stands 5.5 m from the door, under the old 6 m line,
+            // and the settler stayed in while it hit them through the wall. The door, on the other side, is clear.
+            Assert.False(IndoorRules.AtTheDoor(new GroundPoint(0f, -3.5f), Door, Outward, monsterInside: false));
+            Assert.False(IndoorRules.AtTheDoor(new GroundPoint(2.8f, -1f), Door, Outward, monsterInside: false));   // by the side wall, behind the door's line
+        }
+
+        [Fact]
+        public void A_monster_well_out_in_front_or_inside_isnt_at_the_door()
+        {
+            Assert.False(IndoorRules.AtTheDoor(new GroundPoint(0f, 2f + IndoorRules.DoorClear + 1f), Door, Outward, monsterInside: false));
+            Assert.False(IndoorRules.AtTheDoor(new GroundPoint(0f, 1f), Door, Outward, monsterInside: true));
+        }
+
+        [Fact]
+        public void One_at_the_door_keeps_them_in_while_they_are_well()
+        {
+            Assert.False(IndoorRules.LeavesAfterHit(monsterInside: false, atTheDoor: true, health01: 1f));
+            Assert.False(IndoorRules.LeavesAfterHit(monsterInside: false, atTheDoor: true, health01: 0.6f));
+        }
+
+        [Fact]
+        public void Hurt_to_half_they_make_a_run_for_it_past_one_at_the_door()
+        {
+            // The review: nothing ended the stay, and a monster camping at the door killed them where they stood.
+            Assert.True(IndoorRules.LeavesAfterHit(monsterInside: false, atTheDoor: true, health01: StandUp.BreakOffHealth));
+            Assert.True(IndoorRules.LeavesAfterHit(monsterInside: false, atTheDoor: true, health01: 0.3f));
+        }
+
+        [Fact]
+        public void A_monster_in_the_hut_with_them_sends_them_on_as_before()
+        {
+            // Since 0.5, wherever it stands in there (the review: one that followed them in stops by the door).
+            Assert.True(IndoorRules.LeavesAfterHit(monsterInside: true, atTheDoor: false, health01: 1f));
+        }
+
+        [Fact]
+        public void One_elsewhere_outside_leaves_the_door_clear_and_they_go()
+        {
+            Assert.True(IndoorRules.LeavesAfterHit(monsterInside: false, atTheDoor: false, health01: 1f));
         }
     }
 }

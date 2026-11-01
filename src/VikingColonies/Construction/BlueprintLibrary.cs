@@ -66,13 +66,48 @@ namespace VikingColonies.Construction
             s_sources.Remove(file);
         }
 
-        public static string Save(string name, BlueprintFile blueprint)
+        /// <summary>
+        /// Saves the design as &lt;name&gt;.blueprint in the player's folder. A design already there with other lines is
+        /// first copied beside it (<see cref="BlueprintBackups.Save"/>; the copy's file name in <paramref name="kept"/>, else null).
+        /// </summary>
+        /// <returns>The file's path, or null when nothing was saved (<paramref name="problem"/> says why; the design
+        /// saved before is then as it was).</returns>
+        public static string Save(string name, BlueprintFile blueprint, out string kept, out string problem)
         {
             if (!BlueprintNames.IsPlainName(name)) throw new System.ArgumentException($"'{name}' isn't a plain design name");   // the command checks first
-            Directory.CreateDirectory(UserFolder);
-            string path = Path.Combine(UserFolder, name + ".blueprint");
-            File.WriteAllLines(path, blueprint.ToLines().ToArray());
-            return path;
+            kept = null;
+            problem = null;
+            try
+            {
+                Directory.CreateDirectory(UserFolder);
+            }
+            catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException)
+            {
+                problem = $"the folder {UserFolder} couldn't be made ({e.Message}), so nothing was saved";
+                return null;
+            }
+            DesignSave save = BlueprintBackups.Save(new DiskFolder(UserFolder), name + ".blueprint", blueprint.ToLines().ToList());
+            kept = save.Kept;
+            problem = save.Problem;
+            return save.Saved ? Path.Combine(UserFolder, name + ".blueprint") : null;
+        }
+
+        /// <summary>The player's design folder on disk, for <see cref="BlueprintBackups.Save"/>.</summary>
+        private sealed class DiskFolder : IDesignFolder
+        {
+            private readonly string _folder;
+
+            public DiskFolder(string folder) => _folder = folder;
+
+            private string PathOf(string name) => Path.Combine(_folder, name);
+
+            public IEnumerable<string> Names() => Directory.GetFiles(_folder).Select(Path.GetFileName);
+            public bool Exists(string name) => File.Exists(PathOf(name));
+            public IList<string> ReadLines(string name) => File.ReadAllLines(PathOf(name));
+            public void WriteLines(string name, IList<string> lines) => File.WriteAllLines(PathOf(name), lines.ToArray());
+            public void Copy(string from, string to) => File.Copy(PathOf(from), PathOf(to), false);
+            public void Delete(string name) => File.Delete(PathOf(name));
+            public void Move(string from, string to) => File.Move(PathOf(from), PathOf(to));
         }
 
         private static BlueprintFile LoadUser(BuildingType type, string file, out string source)

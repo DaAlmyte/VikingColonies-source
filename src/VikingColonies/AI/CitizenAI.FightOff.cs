@@ -133,6 +133,8 @@ namespace VikingColonies.AI
             Humanoid body = _citizen.Body;
             if (_putAwayForFight != null && body.GetInventory().ContainsItem(_putAwayForFight)) body.EquipItem(_putAwayForFight, false);
             _putAwayForFight = null;
+            string after = StandUp.StatusAfterFight(_citizen.Status, _citizen.Record.IsEmployed);
+            if (after != null) _citizen.Status = after;
             if (!resume) return;
             try
             {
@@ -213,7 +215,7 @@ namespace VikingColonies.AI
                 GiveUpFight("no blow lands");
                 return false;
             }
-            _citizen.Status = "$vc_status_fighting_off " + t.GetHoverName();
+            _citizen.Status = StandUp.FightingStatus + " " + t.GetHoverName();
             Vector3 at = t.transform.position;
             if (gap > reach)
             {

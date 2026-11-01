@@ -103,11 +103,12 @@ namespace VikingColonies.Core
     /// <summary>A chest that holds an item, and how many of it it can spare (the rest its building keeps).</summary>
     public struct KeptChest
     {
-        public KeptChest(string building, int held, int spare)
+        public KeptChest(string building, int held, int spare, int forOrder = 0)
         {
             Building = building ?? "";
             Held = held;
             Spare = spare;
+            ForOrder = Math.Max(0, forOrder);
         }
 
         /// <summary>The building's name (its translation token).</summary>
@@ -115,6 +116,10 @@ namespace VikingColonies.Core
         public int Held { get; }
         public int Spare { get; }
         public int Kept => Math.Max(0, Held - Spare);
+        /// <summary>How many of what isn't spare the building holds for its own open build order (1.5.1).</summary>
+        public int ForOrder { get; }
+        /// <summary>At least half of what it keeps back is for its own order, not its Keep in stock: words that say so.</summary>
+        public bool ForItsOrder => ForOrder > 0 && ForOrder * 2 >= Kept;
     }
 
     /// <summary>What a chest can spare when its building keeps some of it, and what its building is short of.</summary>
@@ -124,13 +129,16 @@ namespace VikingColonies.Core
         /// Where more of a missing item is kept: the building keeping the most of it, or null when none keeps any. The
         /// builder's "Needs 12 Wood" says so (1.4.2: kept items are left alone, a rule only the guide told).
         /// </summary>
-        public static string KeptIn(IEnumerable<KeptChest> chests)
+        public static string KeptIn(IEnumerable<KeptChest> chests) => MostKept(chests)?.Building;
+
+        /// <summary>The chest that keeps back the most of the item (its Keep in stock or its own order, 1.5.1); null for none.</summary>
+        public static KeptChest? MostKept(IEnumerable<KeptChest> chests)
         {
             if (chests == null) return null;
             KeptChest? most = null;
             foreach (KeptChest chest in chests)
                 if (chest.Kept > 0 && (most == null || chest.Kept > most.Value.Kept)) most = chest;
-            return most?.Building;
+            return most;
         }
 
         /// <summary>
@@ -158,8 +166,12 @@ namespace VikingColonies.Core
         /// What the building's worker works with (<paramref name="working"/>, <see cref="WorkingStock"/>) is left too, the
         /// larger of it and the kept amount holding (1.4.3: settlers ate a Farm's seed carrots).
         /// </summary>
+        /// <param name="ordered">
+        /// What the building's own open build order still needs (1.5.1): left on top of the kept amount and the working stock,
+        /// for anyone but that order's builder (who passes null).
+        /// </param>
         public static int Spare(IReadOnlyDictionary<string, int> contents, StockList keep, string item, Func<string, bool> isFood, bool ownUse,
-                                IReadOnlyDictionary<string, int> working = null)
+                                IReadOnlyDictionary<string, int> working = null, IReadOnlyDictionary<string, int> ordered = null)
         {
             int held = Held(contents, item);
             if (ownUse) return held;
@@ -172,6 +184,7 @@ namespace VikingColonies.Core
                     spare = Math.Min(spare, FoodBeyondNamed(contents, keep, isFood) - anyFood);
             }
             if (working != null && item != null && working.TryGetValue(item, out int works)) spare = Math.Min(spare, held - works);
+            if (ordered != null && item != null && ordered.TryGetValue(item, out int needed) && needed > 0) spare -= needed;
             return Math.Max(0, spare);
         }
 
@@ -336,6 +349,12 @@ namespace VikingColonies.Core
                 if (!string.IsNullOrEmpty(seed)) working[seed] = each;
             return working;
         }
+
+        /// <summary>
+        /// Whether a building's chest keeps what its own open build order still needs (1.5.1): a hut's does, as
+        /// MineColonies' huts keep what their open requests need; the camp's and the storehouse's are the colony's stores.
+        /// </summary>
+        public static bool HoldsOrder(bool isCamp, bool isStorehouse) => !isCamp && !isStorehouse;
 
         public static Dictionary<string, int> OfFarm(IEnumerable<FieldSeeds> fields)
         {

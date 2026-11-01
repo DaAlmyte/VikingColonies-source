@@ -17,9 +17,17 @@ namespace VikingColonies.Construction
             [HarmonyPatch(typeof(Character), nameof(Character.AddRootMotion)), HarmonyPrefix]
             private static bool AddRootMotion(Character __instance)
             {
-                if (!__instance.InAttack() || __instance.IsPlayer()) return true;
+                if (__instance.IsPlayer()) return true;
                 Citizen citizen = __instance.GetComponent<Citizen>();
-                return !BuildSwing.StaysPutWhileSwinging(citizen != null, IsBuilder(citizen));
+                if (citizen == null) return true;
+                // No gesture, pose or practice blow slides a settler (1.6); a job's swing does, the builder's excepted.
+                bool attacking = __instance.InAttack();
+                if (!attacking) return false;
+                SettlerPose pose = citizen.GetComponent<SettlerPose>();
+                AI.FreeTimeRoutine free = citizen.GetComponent<AI.CitizenAI>()?.FreeTimeState;
+                if (PastimeRules.StaysPut(true, true, free != null ? free.CurrentPastime : Pastime.None, pose != null && pose.Current != SettlerPose.Kind.None))
+                    return false;
+                return !BuildSwing.StaysPutWhileSwinging(true, IsBuilder(citizen));
             }
         }
 
@@ -36,6 +44,9 @@ namespace VikingColonies.Construction
             {
                 if (___m_character == null || ___m_character.IsPlayer()) return true;
                 Citizen citizen = ___m_character.GetComponent<Citizen>();
+                // At a pastime (1.6) no blow lands, whatever started it: practice is for show.
+                AI.FreeTimeRoutine free = citizen != null ? citizen.GetComponent<AI.CitizenAI>()?.FreeTimeState : null;
+                if (free != null && free.CurrentPastime != Pastime.None) return false;
                 return !BuildSwing.SkipsGameHit(citizen != null, IsBuilder(citizen));
             }
         }

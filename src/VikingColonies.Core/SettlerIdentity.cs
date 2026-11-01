@@ -80,8 +80,17 @@ namespace VikingColonies.Core
 
         public static float WorkFactor(Trait trait) => trait == Trait.Hardworking ? 1.1f : trait == Trait.Lazy ? 0.9f : 1f;
 
-        /// <summary>How near a monster comes before he runs: a brave one waits, a timid one runs early.</summary>
-        public static float FleeRange(Trait trait, float normal) => trait == Trait.Brave ? 6f : trait == Trait.Timid ? 20f : normal;
+        /// <summary>
+        /// How near a monster comes before he runs: a brave settler waits for 9 m (1.5.1, the player's pick: at 6 m, 0.16's,
+        /// a Troll's first blow came as they turned to run), a timid one runs from 20 m, the rest at the normal distance.
+        /// </summary>
+        public static float FleeRange(Trait trait, float normal) => FleeRange(trait, normal, float.PositiveInfinity);
+
+        /// <param name="nearestStrong">How far the nearest monster too strong for the colony is (a Troll; float.PositiveInfinity
+        /// when none): one within the usual distance has the brave run at that distance too, whatever weak one is nearer, as a
+        /// Troll gains about 3.5 m between two looks (1.5.1, 2026-10-25: one who started at 7.2 m was caught).</param>
+        public static float FleeRange(Trait trait, float normal, float nearestStrong) =>
+            trait == Trait.Brave ? (nearestStrong <= normal ? normal : 9f) : trait == Trait.Timid ? 20f : normal;
 
         /// <summary>His free time by his nature: the chatty talk twice as often, the quiet never and sit more, the lazy only sit.</summary>
         public static int LeisureWeight(Trait trait, Leisure leisure, int weight)
@@ -258,6 +267,7 @@ namespace VikingColonies.Core
             ["forager"] = new[] { "ArmorRagsChest", "ArmorTrollLeatherLegs" },
             ["guard"] = new[] { "ArmorLeatherChest", "ArmorLeatherLegs", "CapeDeerHide" },
             ["courier"] = new[] { "ArmorRagsChest", "ArmorLeatherLegs", "CapeDeerHide" },   // 1.5
+            ["cook"] = new[] { "ArmorRagsChest", "ArmorRagsLegs" },   // 1.6
         };
 
         public static string[] For(string jobId) => jobId != null && s_byJob.TryGetValue(jobId, out string[] items) ? items : s_rags;

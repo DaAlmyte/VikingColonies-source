@@ -29,12 +29,39 @@ namespace VikingColonies.Citizens
             Refresh();
         }
 
+        private static readonly HashSet<string> s_resized = new HashSet<string>();
+
+        /// <summary>
+        /// A settler keeps their own size, on every computer (a player's report, 1.4.3: StarLevelSystem makes a creature 10%
+        /// bigger a star, and starred settlers no longer fit through a door). Their stars count for everything else.
+        /// </summary>
+        private static void KeepOwnSize(Citizen c)
+        {
+            if (c == null) return;
+            Vector3 own = OwnScale(), now = c.transform.localScale;
+            if (!SettlerSize.Changed(now.x, now.y, now.z, own.x, own.y, own.z)) return;
+            c.transform.localScale = own;
+            if (s_resized.Add(c.Id)) Log.Info($"{c.CitizenName}'s size was changed by another mod (x{now.x:0.00}); kept at their own");
+        }
+
+        private static Vector3 s_ownScale;
+
+        /// <summary>The settler body's own size, as the game's prefab has it.</summary>
+        private static Vector3 OwnScale()
+        {
+            if (s_ownScale != Vector3.zero) return s_ownScale;
+            GameObject prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(CitizenPrefab.PrefabName) : null;
+            s_ownScale = prefab != null ? prefab.transform.localScale : Vector3.one;
+            return s_ownScale;
+        }
+
         internal static void Refresh()
         {
             s_settlers.Clear();
             s_players.Clear();
             foreach (Citizen c in Citizen.All)
             {
+                KeepOwnSize(c);
                 Collider body = c != null ? c.GetComponent<CapsuleCollider>() : null;
                 if (Usable(body)) s_settlers.Add(body);
             }

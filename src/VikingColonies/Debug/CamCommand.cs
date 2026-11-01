@@ -90,6 +90,17 @@ namespace VikingColonies.DevTools
             BuildCommand.Print($"vc_cam: the camera at ({n[0]:0.##}, {n[1]:0.##}, {n[2]:0.##}) of the {type.Id} {b.Id.Substring(0, System.Math.Min(8, b.Id.Length))} (level {b.Level})");
         }
 
+        /// <summary>vc_preview: the camera at a spot of the world looking at another, the HUD hidden, until <see cref="Off"/>.</summary>
+        internal static void LookFrom(Vector3 at, Vector3 look)
+        {
+            s_at = at;
+            s_look = look;
+            s_follow = null;
+            s_following = false;
+            s_keepHud = false;
+            TurnOn();
+        }
+
         private static void TurnOn()
         {
             s_on = true;

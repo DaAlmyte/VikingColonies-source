@@ -18,13 +18,20 @@ namespace VikingColonies.Gui
     {
         public const string Colony = "vc_tip_colony", Builder = "vc_tip_builder", Needs = "vc_tip_needs", Worker = "vc_tip_worker",
             Night = "vc_tip_night", Hunger = "vc_tip_hunger", Death = "vc_tip_death", FreeTime = "vc_tip_freetime", Evening = "vc_tip_evening", Field = "vc_tip_field",
-            Stock = "vc_tip_stock", Storehouse = "vc_tip_storehouse",
+            Stock = "vc_tip_stock", Storehouse = "vc_tip_storehouse", MeadHall = "vc_tip_meadhall",
             Mood = "vc_tip_mood", Trophy = "vc_tip_trophy";
 
         /// <summary>A tip comes only to a player this near where it happened.</summary>
         private const float NearMetres = 40f;
 
-        private static readonly string[] s_all = { Colony, Builder, Needs, Worker, Night, Hunger, Death, FreeTime, Evening, Field, Mood, Stock, Trophy, Storehouse };
+        private static readonly string[] s_all = new[] { Colony, Builder, Needs, Worker, Night, Hunger, Death, FreeTime, Evening, Field, Mood, Stock, Trophy, Storehouse, MeadHall }
+            .Concat(StepLines()).ToArray();
+
+        /// <summary>Hugin's first steps (1.5.1): the lines he says as each step opens, and once all are done.</summary>
+        private static IEnumerable<string> StepLines()
+        {
+            for (StartStep step = StartStep.BuilderHut; step <= StartStep.None; step++) yield return GuidedStart.LineToken(step).Substring(1);
+        }
 
         private static readonly AccessTools.FieldRef<List<Raven.RavenText>> s_tempTexts = TempTextsRef();
 
@@ -42,11 +49,91 @@ namespace VikingColonies.Gui
         }
 
         /// <summary>Takes our tips off Hugin's waiting list.</summary>
-        public static void Unqueue(string tip = null)
+        public static int Unqueue(string tip = null)
         {
             List<Raven.RavenText> texts = s_tempTexts != null ? s_tempTexts() : null;
-            texts?.RemoveAll(t => t != null && t.m_key != null && (tip == null ? s_all.Contains(t.m_key) : t.m_key == tip));
+            return texts?.RemoveAll(t => t != null && t.m_key != null && (tip == null ? s_all.Contains(t.m_key) : t.m_key == tip)) ?? 0;
         }
+
+        /// <summary>Lines waiting for the player to talk to Hugin (the game's and ours; seen ones go at his next look).</summary>
+        public static int Waiting()
+        {
+            List<Raven.RavenText> texts = s_tempTexts != null ? s_tempTexts() : null;
+            Player player = Player.m_localPlayer;
+            return texts == null ? 0 : texts.Count(t => t != null && (player == null || string.IsNullOrEmpty(t.m_key) || !player.HaveSeenTutorial(t.m_key)));
+        }
+
+        /// <summary>The in-game moment for Hugin's log lines: "day 1 0.42" (the day's fraction, 0.5 noon).</summary>
+        private static string When()
+        {
+            if (EnvMan.instance == null || ZNet.instance == null) return "day ? ?";
+            return $"day {EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds())} "
+                   + EnvMan.instance.GetDayFraction().ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Hugin's pace in the log (1.6.1's measuring, the player's question of 2026-10-27: "Does it feel spammy or just
+        /// enough?"): each line queued, each time he lands to say one, each one heard; the game's own lines too, marked.
+        /// Once per line per character, so a player's log gains a few lines in all.
+        /// </summary>
+        internal static void LogPace(string what, string key)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            Log.Event($"{what} {key}{(s_all.Contains(key) ? "" : " (the game's)")} ({When()}; {Waiting()} waiting)");
+        }
+
+        /// <summary>A line queued for the raven (each hook its own class: one renamed game method fails alone).</summary>
+        [HarmonyPatch]
+        private static class PaceQueuedHook
+        {
+            [HarmonyPatch(typeof(Raven), nameof(Raven.AddTempText)), HarmonyPrefix]
+            private static void Queued(string key, out bool __state) => __state = key != null && key.Length > 0 && !HuginTips.Queued(key);
+
+            [HarmonyPatch(typeof(Raven), nameof(Raven.AddTempText)), HarmonyPostfix]
+            private static void QueuedAfter(string key, bool __state)
+            {
+                if (__state) LogPace("vc_hugin: queued", key);
+            }
+        }
+
+        /// <summary>Keys whose landing was logged this session: Hugin lands again each time he left (the player 20 m off).</summary>
+        private static readonly HashSet<string> s_landingLogged = new HashSet<string>();
+
+        /// <summary>Hugin lands with a line, logged once per line a session (review: a player who never talks to him and
+        /// walks about made him land every few seconds).</summary>
+        [HarmonyPatch]
+        private static class PaceLandsHook
+        {
+            /// <summary>He lands only where the ground lets him: a spawn that found no spot leaves him where he was.</summary>
+            [HarmonyPatch(typeof(Raven), "Spawn"), HarmonyPrefix]
+            private static void Lands(Raven __instance, out Vector3 __state) => __state = __instance.transform.position;
+
+            [HarmonyPatch(typeof(Raven), "Spawn"), HarmonyPostfix]
+            private static void LandsAfter(Raven __instance, Raven.RavenText text, Vector3 __state)
+            {
+                if (text != null && !text.m_static && __instance.transform.position != __state && !string.IsNullOrEmpty(text.m_key)
+                    && s_landingLogged.Add(text.m_key))
+                    LogPace("vc_hugin: lands with", text.m_key);
+            }
+        }
+
+        /// <summary>The local player heard a line (the game marks it seen when the player talks to Hugin).</summary>
+        [HarmonyPatch]
+        private static class PaceSaidHook
+        {
+            [HarmonyPatch(typeof(Player), nameof(Player.SetSeenTutorial)), HarmonyPrefix]
+            private static void Heard(Player __instance, string name, out bool __state) =>
+                __state = __instance == Player.m_localPlayer && !string.IsNullOrEmpty(name) && !__instance.HaveSeenTutorial(name);
+
+            [HarmonyPatch(typeof(Player), nameof(Player.SetSeenTutorial)), HarmonyPostfix]
+            private static void HeardAfter(string name, bool __state)
+            {
+                if (__state) LogPace("vc_hugin: said", name);
+            }
+        }
+
+        /// <summary>vc_hugin forgets what a character heard: its landings may be logged again.</summary>
+        internal static void ForgetLandings() => s_landingLogged.Clear();
 
         /// <summary>Joining a world: tips queued for another character don't follow (review of 0.11).</summary>
         [HarmonyPatch]
@@ -114,6 +201,59 @@ namespace VikingColonies.Gui
                 .OrderBy(h => Vector3.Distance(h.transform.position, me)).FirstOrDefault();
             if (hall == null || !ColonyPermissions.LocalMayManage(hall)) return;
             if (TownHallLevels.TrophiesFor(hall.Level + 1).Any(t => player.GetInventory().GetItem(t, -1, true) != null)) Show(Trophy);
+        }
+
+        /// <summary>
+        /// Every few seconds (<see cref="SettlerWords"/>' clock): Hugin's first steps (1.5.1, review 4). In the colony the
+        /// player stands in (its camp's circle) and may manage, Hugin says the next step's line once per character; once all
+        /// are done, that the colony stands on its own, to a player who has heard a step before (an old colony arriving
+        /// with everything hears nothing).
+        /// </summary>
+        public static void CheckFirstSteps()
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null || !ColonyConfig.HuginTips.Value || !Raven.m_tutorialsEnabled) return;
+            ColonyBuilding hall = StepsHall(player.transform.position);
+            if (hall == null || !ColonyPermissions.LocalMayManage(hall)) return;
+            StartFacts facts = StepFacts(hall);
+            // A step done since its line was queued: Hugin doesn't tell the player to do it (review of 1.5.1).
+            foreach (string stale in GuidedStart.StaleLines(facts))
+                if (Unqueue(stale.Substring(1)) > 0) LogPace("vc_hugin: dropped (its step is done)", stale.Substring(1));
+            StartStep next = GuidedStart.Next(facts);
+            // The colony tip already says to build a Builder's Hut with its tools: step 2's line isn't said on top of it.
+            string line = GuidedStart.LineToken(next, player.HaveSeenTutorial(Colony) || Queued(Colony));
+            if (line.Length == 0) return;
+            string tip = line.Substring(1);
+            if (next == StartStep.None && !StepLines().Any(l => l != tip && player.HaveSeenTutorial(l))) return;
+            Show(tip);
+        }
+
+        /// <summary>The camp of the colony the player stands in: the nearest within its circle, or null.</summary>
+        internal static ColonyBuilding StepsHall(Vector3 me) =>
+            ColonyBuilding.TownHalls().Where(h => Vector3.Distance(h.transform.position, me) <= HallRules.PerksAt(h.Level).Radius)
+                .OrderBy(h => Vector3.Distance(h.transform.position, me)).FirstOrDefault();
+
+        /// <summary>What the colony has, as the steps read it (loaded buildings and settlers; nothing saved for the steps).</summary>
+        internal static StartFacts StepFacts(ColonyBuilding hall)
+        {
+            string colony = hall.ColonyId;
+            List<ColonyBuilding> built = ColonyBuilding.All.Where(b => b != null && b.IsValid && b.ColonyId == colony
+                && b.GetComponent<Construction.ConstructionModule>() is Construction.ConstructionModule site && site.IsBuilt).ToList();
+            TownHallModule townHall = hall.GetComponent<TownHallModule>();
+            return new StartFacts
+            {
+                // A camp placed but not founded yet isn't a colony: no step is said for it, and the colony tip comes first
+                // at founding (the steps game test, 1.5.1's review: step 2's line was queued in that moment).
+                HasCamp = townHall != null && townHall.Founded,
+                BuiltBuilderHut = built.Any(b => b.TypeId == BuildingTypes.BuilderHutId),
+                HasWorker = Citizen.All.Any(c => c != null && c.Record.ColonyId == colony && GuidedStart.CountsAsWorker(c.Record.Job)),
+                BuiltLonghouse = built.Any(b => b.TypeId == BuildingTypes.LonghouseId),
+                BuiltWatchtower = built.Any(b => b.TypeId == BuildingTypes.WatchtowerId),
+                CampFood = townHall != null ? townHall.Needs().Food : 0,
+                FoodEach = townHall != null ? townHall.NewcomerRules.FoodEach : 1,
+                CampLevel = hall.Level,
+                LevelsOn = ColonyConfig.HallLevels.Value,
+            };
         }
 
         /// <summary>Every few seconds (<see cref="SettlerWords"/>' clock): the first night near a colony with settlers.</summary>
@@ -184,6 +324,7 @@ namespace VikingColonies.Gui
             _timer = EverySeconds;
             HuginTips.CheckNight();
             HuginTips.CheckTrophy();
+            HuginTips.CheckFirstSteps();   // 1.5.1
             Refresh();
         }
 
@@ -324,6 +465,10 @@ namespace VikingColonies.Gui
             context.Trait = c.TraitKind;   // the cheerful say cheerful things, the grumpy grumble (0.17)
             if (ColonyConfig.Mood.Value) context.Mood = c.MoodLevel;   // the cheerful only when content or better (0.18)
             context.Evening = doing == ActivityWords.Token(Leisure.Evening);
+            // At a pastime (1.6) they talk about it, naming the partner, the teller or the animal it's with.
+            context.Pastime = SmallTalk.PastimeOf(doing, out bool listening);
+            context.Listening = listening;
+            context.PastimeWith = context.Pastime != Pastime.None ? partner : "";
             if (doing == ActivityWords.Token(Leisure.Chat))
             {
                 // Turns: the one whose name comes first speaks in the even 5-second slots, the other in the odd ones; the
@@ -341,11 +486,11 @@ namespace VikingColonies.Gui
             if (_talkUntil.TryGetValue(c, out float talkUntil) && now < talkUntil) return _talkLine[c];
             if (!_talkNext.TryGetValue(c, out float next))
             {
-                _talkNext[c] = now + Random.Range(3f, 20f);   // the first line comes soon after he's seen in free time
+                _talkNext[c] = now + ModRandom.Range("talk", c.CitizenName, 3f, 20f);   // the first line comes soon after he's seen in free time
                 return "";
             }
             if (now < next) return "";
-            _talkNext[c] = now + Random.Range(120f, 240f) * Traits.TalkEvery(c.TraitKind);   // the chatty more, the quiet less (0.16)
+            _talkNext[c] = now + ModRandom.Range("talk", c.CitizenName, 120f, 240f) * Traits.TalkEvery(c.TraitKind);   // the chatty more, the quiet less (0.16)
             string line = Say(context, SmallTalk.Seed(c.Id, (int)(WorldSeconds() / LineSeconds)));
             _talkUntil[c] = now + LineSeconds;
             _talkLine[c] = line;
@@ -434,6 +579,9 @@ namespace VikingColonies.Gui
             SettlerWords words = FindAnyObjectByType<SettlerWords>();
             return words != null && c != null && words._shown.TryGetValue(c, out string said) ? said : "";
         }
+
+        /// <summary>Self-test: whether his head is on the screen, as the words see it.</summary>
+        internal static bool OnScreenForTest(Citizen c) => c != null && OnScreen(c);
 
         /// <summary>Self-test: look again now.</summary>
         internal static void RefreshForTest()

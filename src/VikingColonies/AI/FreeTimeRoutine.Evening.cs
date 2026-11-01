@@ -74,6 +74,7 @@ namespace VikingColonies.AI
                 StopActivity();
                 Begin(Leisure.Evening, now);
                 _eveningPlaceAt = float.NegativeInfinity;
+                _danceUntil = 0f;
                 SaveDoing(ActivityWords.Token(Leisure.Evening), "");
             }
             if (now - _eveningPlaceAt >= EveningPlaceSeconds) ChooseEveningPlace(now);
@@ -91,10 +92,10 @@ namespace VikingColonies.AI
                 if (_seat != null)
                 {
                     Vector3 me = _citizen.transform.position, point = _seat.Point;
-                    bool close = Utils.DistanceXZ(me, point) <= SitFrom && Mathf.Abs(me.y - point.y) <= 1f && _ai.NothingBetween(point);
+                    bool close = CanSitFrom(_ai, me, _seat, _seatReach);
                     if (!close && !_ai.GoTo(_spot, 0.4f)) return;
                     _ai.Idle();
-                    if (ColonyPlaces.Taken(_seat, _citizen) || !_pose.SitOn(_seat.Chair))
+                    if (!close && CantSitFromWalksEnd(_ai, me, _seat, _seatReach) || ColonyPlaces.Taken(_seat, _citizen) || !_pose.SitOn(_seat.Chair))
                     {
                         ReleaseSeat();
                         _eveningPlaceAt = float.NegativeInfinity;   // a ring spot next time
@@ -105,7 +106,7 @@ namespace VikingColonies.AI
                 else return;
                 _arrived = true;
                 _arrivedAt = now;
-                _nextGestureAt = now + Random.Range(5f, 15f);
+                _nextGestureAt = now + ModRandom.Range("pastime", _citizen.CitizenName, 5f, 15f);
                 return;
             }
             _ai.Idle();
@@ -116,10 +117,12 @@ namespace VikingColonies.AI
             bool wet = EnvMan.IsWet();
             if (_eveningSits && !wet && _pose.Current == SettlerPose.Kind.None && now - _arrivedAt > 1.5f) _pose.SitGround();
             if (wet && _pose.Current == SettlerPose.Kind.Ground) _pose.Stand();
-            if (_pose.Current == SettlerPose.Kind.None && now >= _nextGestureAt)
+            // A dance by the fire (1.6) ends after its time, or when rain comes.
+            if (_danceUntil > 0f && (_pose.Current != SettlerPose.Kind.Dance || now >= _danceUntil || wet)) EndEveningDance(now);
+            if (_pose.Current == SettlerPose.Kind.None && now >= _nextGestureAt && !EveningDance(now))
             {
-                _pose.Gesture(EveningGestures[s_rng.Next(EveningGestures.Length)]);
-                _nextGestureAt = now + Random.Range(10f, 20f);
+                _pose.Gesture(EveningGestures[Rng.Next(EveningGestures.Length)]);
+                _nextGestureAt = now + ModRandom.Range("pastime", _citizen.CitizenName, 10f, 20f);
             }
         }
 
@@ -132,8 +135,7 @@ namespace VikingColonies.AI
             float[] known = _citizen.Record.ColonyPos;
             Vector3 hallAt = hall != null ? hall.transform.position : known != null && known.Length == 3 ? Citizen.ToVector3(known) : _citizen.transform.position;
             var fires = ColonyPlaces.Fires(colony).Where(f => f.Valid).ToList();
-            int pick = Gathering.Place(fires.Select(f => new GatheringFire(f.Id, Ground(f.Position), f.Burning, f.Roofed, f.AtHall, f.InHut)).ToList(),
-                Ground(hallAt), HallRules.RadiusOf(colony));
+            int pick = EveningFire(colony, fires, hallAt);
             Vector3 centre = pick >= 0 ? fires[pick].Position : hallAt;
             bool moved = Utils.DistanceXZ(centre, _eveningCentre) > 1f;
             _eveningAtFire = pick >= 0;
@@ -153,7 +155,7 @@ namespace VikingColonies.AI
             if (_seat != null)
             {
                 FreeTimeClaims.TryClaim(_seat.Id, _seat.Point, _citizen.Id);
-                _spot = SeatApproach(_seat);
+                _spot = SeatApproach(_seat, out _seatReach);
                 return;
             }
             // The colony's roster with those loaded here: the same places on every computer (0.18: each counted only its own).
@@ -166,6 +168,11 @@ namespace VikingColonies.AI
             _spot = ring.Spots.Count > 0 ? ring.Spots[index % ring.Spots.Count] : centre;
             _eveningSits = index % 2 == 0;   // every other one sits; the others stand and raise a toast
         }
+
+        /// <summary>The index in <paramref name="fires"/> of the colony's evening fire, or -1 for the camp (vc_cooktest's check 8 too).</summary>
+        internal static int EveningFire(string colony, System.Collections.Generic.List<FirePlace> fires, Vector3 hallAt) =>
+            Gathering.Place(fires.Select(f => new GatheringFire(f.Id, Ground(f.Position), f.Burning, f.Roofed, f.AtHall, f.InHut, f.Cooks)).ToList(),
+                Ground(hallAt), HallRules.RadiusOf(colony));
 
         /// <summary>The ring round a place: twice as many spots as settlers worked out, those behind a wall or a step too high dropped.</summary>
         private static EveningRing RingFor(string colony, Vector3 centre, int count, float now, float inner)

@@ -55,6 +55,9 @@ namespace VikingColonies.Citizens
                 Hungry = eat && r.Hungry,
                 DistinctFoods = eat ? MealMemory.Distinct(r.LastMeals) : 0,
                 SameFoodRunning = eat && MealMemory.SameRunning(r.LastMeals),
+                LastMealHot = eat && AI.BreakfastRoutine.IsHot(MealMemory.Last(r.LastMeals)),   // a cook's hot food (1.6)
+                DistinctPastimes = PastimeMemory.Distinct(r.LastPastimes, today),   // varied free time (1.6)
+                FavouriteToday = PastimeMemory.DidFavourite(r.LastPastimes, citizen.TraitKind, today),
                 EveningByFire = MoodDays.Within(r.EveningDay, today, 2),
                 EveningCompany = r.EveningCompany,
                 InCalling = r.IsEmployed && Callings.Matches(r.Calling, r.Job),

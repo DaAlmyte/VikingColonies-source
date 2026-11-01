@@ -141,7 +141,8 @@ namespace VikingColonies.DevTools
         private static int s_keep = ShotFile.DefaultKeep;
 
         public override string Name => "vc_shot";
-        public override string Help => "VikingColonies (test worlds): 'vc_shot [label]' saves a screenshot into BepInEx/VikingColonies/shots (the newest 60 are kept, and every one of the last day); " +
+        public override string Help => "VikingColonies (test worlds): 'vc_shot [label]' saves a screenshot into BepInEx/VikingColonies/shots (the newest 60 are kept, and every one of the last day), " +
+                                       "without the test-run banner ('vc_shot banner [label]' keeps it in, to check the banner itself); " +
                                        "'vc_shot keep <count>' keeps more until the game closes (a long picture run; at most 500)";
         public override bool IsCheat => true;
 
@@ -155,17 +156,36 @@ namespace VikingColonies.DevTools
                 BuildCommand.Print($"vc_shot: the newest {s_keep} pictures are kept until the game closes");
                 return;
             }
+            // The test-run banner stays out of every picture (store pictures, the showcase, the gallery), unless asked for
+            // by name; the picture's name then says "banner".
+            bool banner = args != null && args.Length > 0 && string.Equals(args[0], "banner", StringComparison.OrdinalIgnoreCase);
+            Save(args != null && args.Length > 0 ? string.Join("-", args) : null, banner);
+        }
+
+        /// <summary>Saves a screenshot under that label (written at the end of the frame) and logs where; null if it couldn't.</summary>
+        internal static string Save(string label, bool banner = false)
+        {
             try
             {
                 Directory.CreateDirectory(Folder);
                 foreach (string old in ShotFile.Oldest(Directory.GetFiles(Folder, "*.png").Select(Path.GetFileName), s_keep - 1, DateTime.Now))
                     File.Delete(Path.Combine(Folder, old));
-                string path = Path.Combine(Folder, ShotFile.Name(DateTime.Now, args != null && args.Length > 0 ? string.Join("-", args) : null));
+                string path = Path.Combine(Folder, ShotFile.Name(DateTime.Now, label));
+                if (banner) RunBanner.ShowForPicture();   // even straight after a picture that hid it (the review)
+                else RunBanner.HideForPicture();
                 ScreenCapture.CaptureScreenshot(path);   // written at the end of the frame
                 BuildCommand.Print($"vc_shot: saving {path}");
+                return path;
             }
-            catch (Exception e) { BuildCommand.Print($"vc_shot: couldn't save a screenshot: {e.Message}"); }
+            catch (Exception e)
+            {
+                BuildCommand.Print($"vc_shot: couldn't save a screenshot: {e.Message}");
+                return null;
+            }
         }
+
+        /// <summary>A long picture run (vc_preview) keeps at least this many until the game closes.</summary>
+        internal static void KeepAtLeast(int keep) => s_keep = Math.Max(s_keep, ShotFile.ClampKeep(keep));
     }
 
     /// <summary>The game's walking map for vc_perf (0.24.1): its tiles and the links between them; Unity allows about 65,535 links.</summary>

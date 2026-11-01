@@ -49,6 +49,26 @@ namespace VikingColonies.Core
     }
 
     /// <summary>
+    /// The test runner's heartbeat file (0.24.1), rewritten every 5 s of real time while the command file is on. In a world it
+    /// also gives the world's own clock and the game's speed (the fast clock, 2026-10-25): a fast stretch of a scenario waits
+    /// on game time, so a frame too slow to keep the clock up can't shorten a watch. Decimals with a point, whatever the PC's
+    /// language.
+    /// </summary>
+    public static class Heartbeat
+    {
+        /// <summary>gameSeconds below 0: no world (the menu), no clock lines.</summary>
+        public static string Text(DateTime now, int frames, string world, string popup, double gameSeconds, float speed)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string text = $"time {now.ToString("yyyy-MM-ddTHH:mm:ss", inv)}\nframes {frames.ToString(inv)}\nworld {world}\n" +
+                          $"popup {(string.IsNullOrEmpty(popup) ? "none" : popup)}\n";
+            if (gameSeconds >= 0)
+                text += $"gametime {gameSeconds.ToString("0.0", inv)}\nspeed {speed.ToString("0.##", inv)}\n";
+            return text;
+        }
+    }
+
+    /// <summary>
     /// The test command file: console commands written into a text file and run by the game, so tests need no typing in
     /// the game's console. Only our commands and a few harmless dev commands run; never devcommands itself.
     /// </summary>

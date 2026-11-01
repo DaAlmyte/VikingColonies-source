@@ -18,25 +18,36 @@ namespace VikingColonies.Gui
     /// order as builders take them, with Do first, Set aside / Resume and Cancel upgrade, and what they still need. Keep in
     /// stock (0.21): what its chest keeps, 10 food for newcomers to start (<see cref="StockTab"/>).
     /// </summary>
-    internal sealed class TownHallWindow : WindowBase
+    internal sealed partial class TownHallWindow : WindowBase
     {
         private const int RowsPerPage = 10;
         private const int SagaPerPage = 12;
         private const float RowsTop = -210f, RowStep = 30f;   // 20 px lower for the details' mood line (0.17 review M5)
-        /// <summary>The citizens' rows start lower still: a chosen settler's five lines had shrunk to a tiny font (the 1.0 play-through).</summary>
-        private const float CitizenRowsTop = RowsTop - 30f;
+        /// <summary>
+        /// The people's rows start lower still: a chosen settler's page sits above them (the 1.0 play-through: five lines had
+        /// shrunk to a tiny font; 1.5.1: the page grew by their load and their saga lines).
+        /// </summary>
+        private const float CitizenRowsTop = RowsTop - 65f;
         private const int OrdersPerPage = 8;
         private const float NeedsRefreshSeconds = 2f;
+        /// <summary>The camp tab's two parts sit under their buttons (1.5.1).</summary>
+        private const float CampPartTop = -36f;
 
-        private enum Tab { Citizens, Saga, Orders, Stock, Hall }
+        /// <summary>1.5.1, the Chieftain's Camp's window (review 8's picture): it opens on the Overview.</summary>
+        private enum Tab { Overview, People, Work, Saga, Camp }
+        private enum CampPart { Levels, Stock }
 
-        private Tab _tab = Tab.Citizens;
+        private Tab _tab = Tab.Overview;
+        private CampPart _campPart = CampPart.Levels;
         private readonly List<GameObject> _citizensControls = new List<GameObject>();
         private readonly List<GameObject> _sagaControls = new List<GameObject>();
         private readonly List<GameObject> _ordersControls = new List<GameObject>();
-        private Button _citizensTab, _sagaTab, _ordersTab, _stockTab, _hallTab;
+        private readonly List<GameObject> _campControls = new List<GameObject>();
+        private Button _overviewTab, _citizensTab, _sagaTab, _ordersTab, _hallTab;
+        private Button _campLevels, _campStock;
         private StockTab _stock;
         private HallTab _hall;
+        private Text _deeds;
 
         // Citizens
         private Text _header;
@@ -45,7 +56,6 @@ namespace VikingColonies.Gui
         private readonly List<string> _rowIds = new List<string>();
         private Button _prev, _next, _recall;
         private Button _alarm;
-        private Button _report;
         private Text _message;
         private int _citizenPage;
         private string _chosenId = "";
@@ -68,10 +78,10 @@ namespace VikingColonies.Gui
         private float _needsAt = float.NegativeInfinity;
 
         protected override string Title => "$vc_town_hall";
-        protected override float Width => 720f;   // 1.4.2: room for Feedback in the bottom row
-        // The bottom row, centred (1.4.2): Sound the alarm 180, Close 140, Report a problem 170, Feedback 100, 10 apart.
-        protected override float CloseX => -50f;
-        protected override float Height => 690f;
+        protected override float Width => CampWindowLayout.Width;   // 1.5.1: the Overview's two columns
+        // The bottom row (1.5.1, review 8): Sound the alarm on the left, Close in the middle, Report and Feedback small on the right.
+        protected override float CloseX => 0f;
+        protected override float Height => CampWindowLayout.Height;   // 1.5.1: the camp tab's part buttons and a settler's page; fits a 1080p screen
 
         protected override void Build(Transform root)
         {
@@ -80,30 +90,32 @@ namespace VikingColonies.Gui
             _citizensControls.Clear();
             _sagaControls.Clear();
             _ordersControls.Clear();
+            _campControls.Clear();
             _rows.Clear();
             _rowIds.Clear();
             _orderRows.Clear();
             _orderIds.Clear();
-            // Five tabs since the Hall (1.4).
-            _citizensTab = UiKit.TopButton(root, L("$vc_tab_citizens"), -244f, -62f, 116f, 34f, () => Show(Tab.Citizens));
-            _sagaTab = UiKit.TopButton(root, L("$vc_tab_saga"), -122f, -62f, 116f, 34f, () => Show(Tab.Saga));
-            _ordersTab = UiKit.TopButton(root, L("$vc_tab_orders"), 0f, -62f, 116f, 34f, () => Show(Tab.Orders));
-            _stockTab = UiKit.TopButton(root, L("$vc_tab_stock"), 122f, -62f, 116f, 34f, () => Show(Tab.Stock));
-            _hallTab = UiKit.TopButton(root, L("$vc_tab_hall"), 244f, -62f, 116f, 34f, () => Show(Tab.Hall));
-            foreach (Button tab in new[] { _citizensTab, _sagaTab, _ordersTab, _stockTab, _hallTab })
+            // Five tabs (1.5.1, review 8): Overview, People, Work, Saga, The camp (its levels and its Keep in stock).
+            _overviewTab = UiKit.TopButton(root, L("$vc_tab_overview"), -284f, -62f, 132f, 34f, () => Show(Tab.Overview));
+            _citizensTab = UiKit.TopButton(root, L("$vc_tab_people"), -142f, -62f, 132f, 34f, () => Show(Tab.People));
+            _ordersTab = UiKit.TopButton(root, L("$vc_tab_work"), 0f, -62f, 132f, 34f, () => Show(Tab.Work));
+            _sagaTab = UiKit.TopButton(root, L("$vc_tab_saga"), 142f, -62f, 132f, 34f, () => Show(Tab.Saga));
+            _hallTab = UiKit.TopButton(root, L("$vc_tab_hall"), 284f, -62f, 132f, 34f, () => Show(Tab.Camp));
+            foreach (Button tab in new[] { _overviewTab, _citizensTab, _ordersTab, _sagaTab, _hallTab })
             {
                 Text label = tab.GetComponentInChildren<Text>();
-                label.resizeTextForBestFit = true;   // "Keep in stock" in a narrower tab
+                label.resizeTextForBestFit = true;   // a longer word in another language shrinks rather than runs out
                 label.resizeTextMinSize = 12;
                 label.resizeTextMaxSize = label.fontSize;
             }
+            BuildOverview(root);
 
             _header = UiKit.Label(root, "", -105f, Width - 60f, 28f, 20);
-            _summary = UiKit.Label(root, "", -135f, Width - 60f, 100f, 17);
-            // A chosen settler's details take three lines with his mood (0.17): the text shrinks to fit rather than run into the rows.
-            _summary.resizeTextForBestFit = true;
-            _summary.resizeTextMinSize = 13;
-            _summary.resizeTextMaxSize = 17;
+            // A chosen settler's page (1.5.1): who they are, mood and why, skills, home, their load, their saga lines.
+            _summary = UiKit.Label(root, "", -135f, Width - 60f, 135f, 16);
+            _summary.resizeTextForBestFit = true;   // shrinks to fit rather than run into the rows
+            _summary.resizeTextMinSize = 12;
+            _summary.resizeTextMaxSize = 16;
             _citizensControls.Add(_header.gameObject);
             _citizensControls.Add(_summary.gameObject);
             for (int i = 0; i < RowsPerPage; i++)
@@ -130,10 +142,16 @@ namespace VikingColonies.Gui
             _citizensControls.Add(_next.gameObject);
             _citizensControls.Add(_recall.gameObject);
 
-            _saga = UiKit.Label(root, "", -105f, Width - 60f, 400f, 16);
+            // The Saga on the left, the colony's deeds on the right (1.5.1).
+            float sagaWidth = (Width - 60f) * 0.6f, deedsWidth = (Width - 60f) - sagaWidth - 20f;
+            _saga = UiKit.Label(root, "", -105f, sagaWidth, 470f, 15);
+            Shift(_saga, -(Width - 60f - sagaWidth) / 2f);
+            _deeds = UiKit.Label(root, "", -105f, deedsWidth, 300f, 15);
+            Shift(_deeds, (Width - 60f - deedsWidth) / 2f);
             _newer = UiKit.Button(root, L("$vc_newer"), -90f, 75f, 150f, 36f, () => TurnSagaPage(-1));
             _older = UiKit.Button(root, L("$vc_older"), 90f, 75f, 150f, 36f, () => TurnSagaPage(1));
             _sagaControls.Add(_saga.gameObject);
+            _sagaControls.Add(_deeds.gameObject);
             _sagaControls.Add(_newer.gameObject);
             _sagaControls.Add(_older.gameObject);
 
@@ -174,28 +192,46 @@ namespace VikingColonies.Gui
                 Close();
                 Windows.StockAdd.Open(hall);
             });
-            _stock.Build(root, Width, Height);
+            _stock.Build(root, Width, Height, CampPartTop);
             _hall = new HallTab(() => Building);
-            _hall.Build(root, Width);
-            // The alarm (1.3), beside Close on every tab: sounded where you stand.
-            _alarm = UiKit.Button(root, "", -220f, 25f, 180f, 36f, () =>
+            _hall.Build(root, Width, CampPartTop);
+            // The camp tab's two parts (1.5.1): its levels (the Hall of Trophies) and its Keep in stock, one at a time.
+            _campLevels = UiKit.TopButton(root, L("$vc_camp_part_levels"), -80f, -100f, 150f, 28f, () => ShowCampPart(CampPart.Levels));
+            _campStock = UiKit.TopButton(root, L("$vc_tab_stock"), 80f, -100f, 150f, 28f, () => ShowCampPart(CampPart.Stock));
+            _campControls.Add(_campLevels.gameObject);
+            _campControls.Add(_campStock.gameObject);
+            // The bottom row (1.5.1): the alarm (1.3) on the left, sounded where you stand; Close in the middle; Report a
+            // problem (1.4) and Feedback (1.4.2) smaller on the right; their places in CampWindowLayout (a test keeps them apart).
+            _alarm = UiKit.Button(root, "", CampWindowLayout.Alarm.X, 25f, CampWindowLayout.Alarm.Width, 36f, () =>
             {
                 TownHallModule hall = Building != null ? Building.GetComponent<TownHallModule>() : null;
                 if (hall != null && Player.m_localPlayer != null) hall.RequestAlarm(!hall.AlarmOn, Player.m_localPlayer.transform.position);
             });
-            // Report a problem (1.4), on the other side of Close on every tab: the bug form with the report, one click.
-            _report = UiKit.Button(root, L("$vc_report_problem"), 115f, 25f, 170f, 36f, () => PressReport(false));
-            // Feedback (1.4.2), beside it: the feedback window, with links to Discord and the issues page's feedback form.
-            UiKit.Button(root, L("$vc_feedback"), 260f, 25f, 100f, 36f, PressFeedback);
-            Show(Tab.Citizens);
+            // Report a problem opens its own window (1.6): the bug form or Discord, and where the file is.
+            Button report = UiKit.Button(root, L("$vc_report_problem"), CampWindowLayout.Report.X, 25f, CampWindowLayout.Report.Width, 30f, PressReport);
+            Button feedback = UiKit.Button(root, L("$vc_feedback"), CampWindowLayout.Feedback.X, 25f, CampWindowLayout.Feedback.Width, 30f, PressFeedback);
+            foreach (Button small in new[] { report, feedback })
+            {
+                Text label = small.GetComponentInChildren<Text>();
+                label.resizeTextForBestFit = true;
+                label.resizeTextMinSize = 11;
+                label.resizeTextMaxSize = 14;
+            }
+            Show(Tab.Overview);
         }
 
-        /// <summary>The Report a problem button; <paramref name="test"/> from vc_ui in a test world (no browser, no clipboard).</summary>
-        internal void PressReport(bool test)
+        /// <summary>Moves a top-anchored label sideways (the Saga's two columns, the Overview's).</summary>
+        private static void Shift(Text label, float x)
         {
-            string told = ReportProblem.Run("the Town Hall window", test);
-            ShowReportButton();
-            if (Player.m_localPlayer != null) Player.m_localPlayer.Message(MessageHud.MessageType.Center, told);
+            RectTransform rect = label.GetComponent<RectTransform>();
+            rect.anchoredPosition = new Vector2(rect.anchoredPosition.x + x, rect.anchoredPosition.y);
+        }
+
+        /// <summary>The Report a problem button: this window closes and Report a problem's window opens (1.6), writing the report.</summary>
+        internal void PressReport()
+        {
+            Close();
+            Windows.Report.Show();
         }
 
         /// <summary>The Feedback button: this window closes and the feedback window opens (without the ask's "Not now").</summary>
@@ -205,15 +241,7 @@ namespace VikingColonies.Gui
             Windows.Feedback.Show(asking: false);
         }
 
-        /// <summary>Greyed "Form opened" for 10 seconds after a report (the spam guard), then "Report a problem" again.</summary>
-        private void ShowReportButton()
-        {
-            bool busy = ReportProblem.Busy;
-            UiKit.SetLabel(_report, L(busy ? "$vc_report_done" : "$vc_report_problem"));
-            _report.interactable = !busy;
-        }
-
-        /// <summary>Each opening starts on Citizens, first pages, nobody chosen. Seen in review: the last window's state stayed.</summary>
+        /// <summary>Each opening starts on the Overview, first pages, nobody chosen. Seen in review: the last window's state stayed.</summary>
         protected override void Opened()
         {
             _citizenPage = 0;
@@ -225,7 +253,8 @@ namespace VikingColonies.Gui
             _message.text = "";
             _stock?.Reset();
             _hall?.Reset();
-            Show(Tab.Citizens);
+            _campPart = CampPart.Levels;
+            Show(Tab.Overview);
         }
 
         /// <summary>How a recall went (the settler's computer tells the asker).</summary>
@@ -240,18 +269,29 @@ namespace VikingColonies.Gui
         private void Show(Tab tab)
         {
             _tab = tab;
-            foreach (GameObject go in _citizensControls) go.SetActive(tab == Tab.Citizens);
+            foreach (GameObject go in _overviewControls) go.SetActive(tab == Tab.Overview);
+            foreach (GameObject go in _citizensControls) go.SetActive(tab == Tab.People);
             foreach (GameObject go in _sagaControls) go.SetActive(tab == Tab.Saga);
-            foreach (GameObject go in _ordersControls) go.SetActive(tab == Tab.Orders);
-            foreach (GameObject go in _stock.Controls) go.SetActive(tab == Tab.Stock);
-            foreach (GameObject go in _hall.Controls) go.SetActive(tab == Tab.Hall);
-            _citizensTab.interactable = tab != Tab.Citizens;   // the open tab's button is greyed: you're on it
+            foreach (GameObject go in _ordersControls) go.SetActive(tab == Tab.Work);
+            foreach (GameObject go in _campControls) go.SetActive(tab == Tab.Camp);
+            foreach (GameObject go in _stock.Controls) go.SetActive(tab == Tab.Camp && _campPart == CampPart.Stock);
+            foreach (GameObject go in _hall.Controls) go.SetActive(tab == Tab.Camp && _campPart == CampPart.Levels);
+            _overviewTab.interactable = tab != Tab.Overview;   // the open tab's button is greyed: you're on it
+            _citizensTab.interactable = tab != Tab.People;
             _sagaTab.interactable = tab != Tab.Saga;
-            _ordersTab.interactable = tab != Tab.Orders;
-            _stockTab.interactable = tab != Tab.Stock;
-            _hallTab.interactable = tab != Tab.Hall;
-            if (tab == Tab.Stock) HuginTips.Show(HuginTips.Stock);
+            _ordersTab.interactable = tab != Tab.Work;
+            _hallTab.interactable = tab != Tab.Camp;
+            _campLevels.interactable = _campPart != CampPart.Levels;
+            _campStock.interactable = _campPart != CampPart.Stock;
+            if (tab == Tab.Camp && _campPart == CampPart.Stock) HuginTips.Show(HuginTips.Stock);
             if (Building != null) Refresh();
+        }
+
+        /// <summary>The camp tab's part (1.5.1): its levels or its Keep in stock.</summary>
+        private void ShowCampPart(CampPart part)
+        {
+            _campPart = part;
+            Show(Tab.Camp);
         }
 
         private Button _creativeEat;
@@ -300,11 +340,11 @@ namespace VikingColonies.Gui
             if (townHall == null) return;
             UiKit.SetLabel(_alarm, L(townHall.AlarmOn ? "$vc_alarm_clear" : "$vc_alarm_sound"));
             _alarm.interactable = ColonyPermissions.LocalMayManage(Building);
-            ShowReportButton();
-            if (_tab == Tab.Citizens) RefreshCitizens(townHall);
+            if (_tab == Tab.Overview) RefreshOverview(townHall);
+            else if (_tab == Tab.People) RefreshCitizens(townHall);
             else if (_tab == Tab.Saga) RefreshSaga(townHall);
-            else if (_tab == Tab.Stock) _stock.Refresh();
-            else if (_tab == Tab.Hall) _hall.Refresh();
+            else if (_tab == Tab.Camp && _campPart == CampPart.Stock) _stock.Refresh();
+            else if (_tab == Tab.Camp) _hall.Refresh();
             else RefreshOrders();
         }
 
@@ -314,7 +354,7 @@ namespace VikingColonies.Gui
             IReadOnlyList<RosterEntry> entries = roster.Entries;
             int jobless = entries.Count(e => string.IsNullOrEmpty(e.Workplace));
             _header.text = string.Format(L("$vc_citizens_count"), entries.Count, jobless);
-            _summary.text = Summary(townHall);
+            _summary.text = L("$vc_page_choose");   // the colony at a glance is the Overview now (1.5.1)
             _citizenPage = RosterPage.ClampPage(_citizenPage, entries.Count, RowsPerPage);
             _chosenId = RosterPage.KeepChoice(_chosenId, entries);
             IReadOnlyList<RosterEntry> rows = RosterPage.Rows(entries, _citizenPage, RowsPerPage);
@@ -344,11 +384,26 @@ namespace VikingColonies.Gui
             _next.interactable = _citizenPage < pages - 1;
             Citizen chosen = ChosenCitizen(roster);
             RosterEntry lost = MissingChosen(townHall);
-            if (chosen != null) _summary.text = string.Join("\n", Details(chosen));   // who he is (0.16), in place of the colony's line
+            if (chosen != null) _summary.text = string.Join("\n", Page(chosen, townHall));   // their page (1.5.1)
             _recall.interactable = (chosen != null || lost != null) && ColonyPermissions.LocalMayManage(Building);
             // The chosen one may be on another page: the button says whom it calls back (or brings back, when he is missing).
             UiKit.SetLabel(_recall, chosen != null ? string.Format(L("$vc_recall_who"), chosen.CitizenName)
                 : lost != null ? string.Format(L("$vc_bring_back_who"), lost.Name) : L("$vc_recall"));
+        }
+
+        /// <summary>
+        /// A settler's page (1.5.1, review 8): who they are, mood and why, skills, home (<see cref="Details"/>), then what they
+        /// carry and their newest lines in the Saga.
+        /// </summary>
+        private static List<string> Page(Citizen citizen, TownHallModule townHall)
+        {
+            var lines = new List<string>(Details(citizen));
+            var load = new Dictionary<string, int>();
+            foreach (string item in citizen.Carry.ItemNames) load[item] = citizen.Carry.Count(item);
+            lines.Add(load.Count > 0 ? string.Format(L("$vc_page_carrying"), L(PiecePlacer.DescribeItems(load))) : L("$vc_page_carrying_nothing"));
+            IReadOnlyList<SagaEntry> saga = CampOverview.LinesNaming(townHall.Saga, citizen.CitizenName, 2);
+            lines.Add(L("$vc_page_saga") + " " + (saga.Count > 0 ? string.Join("  ·  ", saga.Select(SagaText.Line)) : L("$vc_page_saga_none")));
+            return lines;
         }
 
         /// <summary>"Astrid: good at foraging, cheerful. From the coast." / "Here 23 days. Home: a Longhouse bed."</summary>
@@ -380,6 +435,22 @@ namespace VikingColonies.Gui
             _saga.text = lines.Count == 0 ? L("$vc_saga_empty") : string.Join("\n", lines.Select(SagaText.Line));
             _newer.interactable = _sagaPage > 0;
             _older.interactable = _sagaPage < pages - 1;
+            _deeds.text = DeedsText(townHall.Deeds);
+        }
+
+        /// <summary>
+        /// The colony's deeds (1.5.1, from MineColonies' statistics): today and all time, a row each. Counting began with
+        /// 1.5.1, so an older colony starts at 0.
+        /// </summary>
+        private static string DeedsText(ColonyDeeds deeds)
+        {
+            int today = EnvMan.instance != null && ZNet.instance != null ? EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()) : 0;
+            var text = new System.Text.StringBuilder();
+            text.Append($"<color=orange>{L("$vc_deeds_heading")}</color>\n");
+            text.Append($"<color=#c8c8c8>{L("$vc_deeds_today")} · {L("$vc_deeds_all")}</color>\n");
+            foreach (string kind in DeedKinds.All)
+                text.Append($"{L("$vc_deeds_" + kind)}: {deeds.Today(kind, today)} · {deeds.AllTime(kind)}\n");
+            return text.ToString().TrimEnd('\n');
         }
 
         /// <summary>The colony's open orders (loaded huts: the colony, when you stand at its Town Hall), as builders take them.</summary>
@@ -480,7 +551,7 @@ namespace VikingColonies.Gui
         /// <summary>The colony's chests hold all the order still needs (what the builders carry for it counts too).</summary>
         private static bool Covered(ConstructionModule site)
         {
-            Dictionary<string, int> stock = BuilderTools.StoresForBuilders(site.Building.ColonyId, site.Building.transform.position);
+            Dictionary<string, int> stock = BuilderTools.StoresForBuilders(site.Building.ColonyId, site.Building.transform.position, site.Building);
             stock = HandOver.Available(stock, Construction.HandOverFromBag.BuilderCarries(site));
             return NeedsTally.Shortfall(site.RemainingNeeds(), stock).Count == 0;
         }
@@ -627,14 +698,25 @@ namespace VikingColonies.Gui
             citizen.RequestRecall();
         }
 
-        /// <summary>Test tool (vc_ui tab): shows a tab of the open window.</summary>
-        internal void ShowTabForTest(string tab) =>
-            Show(tab == "saga" ? Tab.Saga : tab == "orders" ? Tab.Orders : tab == "stock" ? Tab.Stock : tab == "hall" ? Tab.Hall : Tab.Citizens);
+        /// <summary>Test tool (vc_ui tab): shows a tab of the open window. The old names still work (citizens, orders, hall,
+        /// stock), so older scenarios run as they did.</summary>
+        internal void ShowTabForTest(string tab)
+        {
+            switch (tab)
+            {
+                case "people": case "citizens": Show(Tab.People); break;
+                case "work": case "orders": Show(Tab.Work); break;
+                case "saga": Show(Tab.Saga); break;
+                case "camp": case "hall": ShowCampPart(CampPart.Levels); break;
+                case "stock": ShowCampPart(CampPart.Stock); break;
+                default: Show(Tab.Overview); break;
+            }
+        }
 
-        /// <summary>How raising the hall went (the Town Hall's owner answers).</summary>
+        /// <summary>How raising the camp went (its owner answers): on its levels.</summary>
         internal void ShowHallMessage(string text)
         {
-            if (_tab != Tab.Hall) Show(Tab.Hall);
+            if (_tab != Tab.Camp || _campPart != CampPart.Levels) ShowCampPart(CampPart.Levels);
             _hall.ShowMessage(text);
         }
 
@@ -670,27 +752,31 @@ namespace VikingColonies.Gui
                 string word = L(MoodLevels.Token(needs.Mood));
                 first += "   " + string.Format(L("$vc_colony_mood"), needs.Mood < MoodLevel.Content ? $"<color=orange>{word}</color>" : word, mood);
             }
+            string next = NewcomerWaitLine(townHall, needs);
+            string store = StorehouseLine(townHall, colony);
+            return first + "\n" + string.Format(L("$vc_newcomer_next"), next) + (store.Length > 0 ? "\n" + store : "");
+        }
+
+        /// <summary>What the next newcomer waits for, in words (the Overview's and the summary's).</summary>
+        private static string NewcomerWaitLine(TownHallModule townHall, ColonyNeeds needs)
+        {
             NewcomerRules rules = townHall.NewcomerRules;
-            string next;
             switch (Newcomers.WaitsFor(needs, rules))
             {
-                case NewcomerWait.Off: next = L("$vc_newcomer_off"); break;
-                case NewcomerWait.Full: next = string.Format(L("$vc_newcomer_full"), rules.MaxSettlers); break;
+                case NewcomerWait.Off: return L("$vc_newcomer_off");
+                case NewcomerWait.Full: return string.Format(L("$vc_newcomer_full"), rules.MaxSettlers);
                 case NewcomerWait.HallFull:
                     // Only when raising the hall makes room (review of 1.4: at the top level it said so too).
                     int level = townHall.GetComponent<ColonyBuilding>().Level;
                     bool raising = level < TownHallLevels.MaxLevel && HallRules.PerksAt(level + 1).Settlers > rules.HallSettlers;
-                    next = string.Format(L(raising ? "$vc_newcomer_hall_full" : "$vc_newcomer_full"), rules.HallSettlers);
-                    break;
-                case NewcomerWait.Bed: next = L("$vc_newcomer_needs_bed"); break;
-                case NewcomerWait.Food: next = string.Format(L("$vc_newcomer_needs_food"), rules.FoodEach); break;
-                case NewcomerWait.Tomorrow: next = L("$vc_newcomer_tomorrow"); break;
-                case NewcomerWait.Morning: next = L("$vc_newcomer_morning"); break;
-                case NewcomerWait.Mood: next = L("$vc_newcomer_unhappy"); break;
-                default: next = L("$vc_newcomer_soon"); break;
+                    return string.Format(L(raising ? "$vc_newcomer_hall_full" : "$vc_newcomer_full"), rules.HallSettlers);
+                case NewcomerWait.Bed: return L("$vc_newcomer_needs_bed");
+                case NewcomerWait.Food: return string.Format(L("$vc_newcomer_needs_food"), rules.FoodEach);
+                case NewcomerWait.Tomorrow: return L("$vc_newcomer_tomorrow");
+                case NewcomerWait.Morning: return L("$vc_newcomer_morning");
+                case NewcomerWait.Mood: return L("$vc_newcomer_unhappy");
+                default: return L("$vc_newcomer_soon");
             }
-            string store = StorehouseLine(townHall, colony);
-            return first + "\n" + string.Format(L("$vc_newcomer_next"), next) + (store.Length > 0 ? "\n" + store : "");
         }
 
         /// <summary>

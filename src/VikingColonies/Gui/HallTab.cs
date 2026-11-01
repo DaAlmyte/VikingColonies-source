@@ -26,20 +26,21 @@ namespace VikingColonies.Gui
 
         public IReadOnlyList<GameObject> Controls => _controls;
 
-        public void Build(Transform root, float width)
+        /// <param name="top">Moves the tab down (the camp's window, 1.5.1: under its Levels and Keep in stock buttons).</param>
+        public void Build(Transform root, float width, float top = 0f)
         {
             _controls.Clear();   // built again after a scene change
-            _header = UiKit.Label(root, "", -105f, width - 60f, 28f, 20);
-            _perks = UiKit.Label(root, "", -137f, width - 60f, 28f, 16);
-            _needs = UiKit.Label(root, "", -180f, width - 60f, 170f, 16);
+            _header = UiKit.Label(root, "", -105f + top, width - 60f, 28f, 20);
+            _perks = UiKit.Label(root, "", -137f + top, width - 60f, 28f, 16);
+            _needs = UiKit.Label(root, "", -180f + top, width - 60f, 170f, 16);
             _needs.supportRichText = true;
             _needs.resizeTextForBestFit = true;   // a long need line (an item the game doesn't know) shrinks rather than runs off
             _needs.resizeTextMinSize = 12;
             _needs.resizeTextMaxSize = 16;
-            _gives = UiKit.Label(root, "", -360f, width - 60f, 50f, 16);
-            _trophies = UiKit.Label(root, "", -420f, width - 60f, 50f, 15);
-            _message = UiKit.Fitted(UiKit.Label(root, "", -480f, width - 60f, 28f, 16, false, TextAnchor.MiddleCenter));
-            _camp = UiKit.Label(root, "", -512f, width - 60f, 44f, 15);
+            _gives = UiKit.Label(root, "", -360f + top, width - 60f, 50f, 16);
+            _trophies = UiKit.Label(root, "", -420f + top, width - 60f, 50f, 15);
+            _message = UiKit.Fitted(UiKit.Label(root, "", -480f + top, width - 60f, 28f, 16, false, TextAnchor.MiddleCenter));
+            _camp = UiKit.Label(root, "", -512f + top, width - 60f, 44f, 15);
             _camp.resizeTextForBestFit = true;
             _camp.resizeTextMinSize = 12;
             _camp.resizeTextMaxSize = 15;

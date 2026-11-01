@@ -42,6 +42,15 @@ namespace VikingColonies.Core
         public float Target { get; set; }
         /// <summary>What nothing breaks on the site, named for the log (RedReason.Unbreakable).</summary>
         public List<string> Unbreakable { get; } = new List<string>();
+        /// <summary>
+        /// An upgrade waits for one of the player's own pieces (1.6, RedReason.OwnPiece): the first such piece's name token,
+        /// why, and the name token of the new piece that goes where it stands (in the way).
+        /// </summary>
+        public string OwnPiece { get; set; } = "";
+        public OwnPieceWhy OwnPieceWhy { get; set; }
+        public string OwnPieceNewPiece { get; set; } = "";
+        /// <summary>How many of the player's pieces the builder takes down and puts back after (an upgrade).</summary>
+        public int PutBacks { get; set; }
 
         public void Add(ClearKind kind, int toolTier = 0)
         {
@@ -74,6 +83,11 @@ namespace VikingColonies.Core
         public IReadOnlyList<KeyValuePair<ClearKind, int>> AboveLevel { get; set; }
         /// <summary>The Builder's Hut level that clears all of <see cref="AboveLevel"/>; 0 when nothing is above, or some of it is beyond every level.</summary>
         public int NeedsLevel { get; set; }
+        /// <summary>As <see cref="SiteFindings"/>: the player's piece an upgrade waits for, and the put-backs.</summary>
+        public string OwnPiece { get; set; } = "";
+        public OwnPieceWhy OwnPieceWhy { get; set; }
+        public string OwnPieceNewPiece { get; set; } = "";
+        public int PutBacks { get; set; }
     }
 
     public static class SiteCheck
@@ -127,6 +141,10 @@ namespace VikingColonies.Core
                 PickaxeTier = pickaxeTier,
                 AboveLevel = above.ToList(),
                 NeedsLevel = beyond ? 0 : needsLevel,
+                OwnPiece = findings.OwnPiece ?? "",
+                OwnPieceWhy = findings.OwnPieceWhy,
+                OwnPieceNewPiece = findings.OwnPieceNewPiece ?? "",
+                PutBacks = findings.PutBacks,
             };
         }
 

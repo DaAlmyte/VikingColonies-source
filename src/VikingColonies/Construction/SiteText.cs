@@ -14,7 +14,7 @@ namespace VikingColonies.Construction
             switch (verdict.Colour)
             {
                 case SiteColour.Red:
-                    text = Colour("#ff6b6b", L(RedToken(verdict.Red)));
+                    text = Colour("#ff6b6b", verdict.Red == RedReason.OwnPiece && verdict.OwnPiece.Length > 0 ? OwnPieceLine(verdict) : L(RedToken(verdict.Red)));
                     break;
                 case SiteColour.Yellow:
                     text = Colour("#ffd75e", Work(verdict));
@@ -51,6 +51,41 @@ namespace VikingColonies.Construction
             bool many = verdict.AboveLevel.Sum(c => c.Value) > 1;
             if (verdict.NeedsLevel <= 0) return string.Format(L(many ? "$vc_site_no_level_many" : "$vc_site_no_level"), what);
             return string.Format(L(many ? "$vc_site_above_level_many" : "$vc_site_above_level"), what, verdict.NeedsLevel);
+        }
+
+        /// <summary>
+        /// "Your Bench is where the new level's Wood wall goes: move it", "Empty your Chest first": the player's piece an
+        /// upgrade waits for (1.6), in each player's own language.
+        /// </summary>
+        public static string OwnPieceLine(SiteVerdict verdict)
+        {
+            string piece = L(verdict.OwnPiece);
+            switch (verdict.OwnPieceWhy)
+            {
+                case OwnPieceWhy.InTheWay: return string.Format(L("$vc_site_own_in_the_way"), piece, L(verdict.OwnPieceNewPiece));
+                case OwnPieceWhy.Full: return string.Format(L("$vc_site_own_full"), piece);
+                case OwnPieceWhy.HasItem: return string.Format(L("$vc_site_own_has_item"), piece);
+                case OwnPieceWhy.PlayersBed: return string.Format(L("$vc_site_own_bed"), piece);
+                case OwnPieceWhy.KeepsWhat: return string.Format(L("$vc_site_own_keeps"), piece);
+                default: return string.Format(L("$vc_site_own_unheld"), piece);
+            }
+        }
+
+        /// <summary>"The builder puts back 2 of your pieces after": an upgrade's put-backs (1.6); "" when there are none.</summary>
+        public static string PutBackLine(SiteVerdict verdict)
+        {
+            if (verdict == null || verdict.PutBacks <= 0) return "";
+            return verdict.PutBacks == 1 ? L("$vc_site_put_back_one") : string.Format(L("$vc_site_put_back_many"), verdict.PutBacks);
+        }
+
+        /// <summary>"By level 5 it grows about 12 m toward you: leave room there" (GrowRoom), in grey under the site's line.</summary>
+        public static string GrowsBy(GrowRoom.Growth seen)
+        {
+            string[] tokens = { "$vc_site_grow_far", "$vc_site_grow_right", "$vc_site_grow_near", "$vc_site_grow_left" };
+            var parts = new List<string>();
+            for (int side = 0; side < 4; side++)
+                if (seen.Sides[side] >= GrowRoom.Worth) parts.Add(string.Format(L(tokens[side]), Mathf.Round(seen.Sides[side]).ToString("0")));
+            return Colour("#c8c8c8", string.Format(L("$vc_site_grows"), seen.Level, Join(parts)));
         }
 
         /// <summary>"an axe", "an axe and a hoe", "an axe, a pickaxe and a hoe".</summary>
@@ -93,6 +128,8 @@ namespace VikingColonies.Construction
                 case RedReason.TooHigh: return "$vc_site_red_high";
                 case RedReason.OnlyOneStorehouse: return "$vc_site_red_one_storehouse";
                 case RedReason.NeedsBuilderHut: return "$vc_site_red_needs_builder";
+                case RedReason.OnlyOneMeadHall: return "$vc_site_red_one_meadhall";
+                case RedReason.OwnPiece: return "$vc_site_red_own_piece";
                 default: return "$vc_site_red_float";
             }
         }

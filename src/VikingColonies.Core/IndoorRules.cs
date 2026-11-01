@@ -75,6 +75,36 @@ namespace VikingColonies.Core
         public static bool WithinWalls(bool onItsGround, bool wallToChest, float fromDoor) =>
             onItsGround && !wallToChest && fromDoor >= DoorClearance;
 
+        /// <summary>Further than this from a hut's door, a monster outside isn't in the way out.</summary>
+        public const float DoorClear = 6f;
+
+        /// <summary>A monster this far behind the door's line (along the front wall beside it) still stands at the door.</summary>
+        public const float BesideDoor = 1f;
+
+        /// <summary>
+        /// The monster stands outside the hut at its door: on the door's outward side (or along the front wall beside it) and
+        /// within <see cref="DoorClear"/> of it. Out of the door is into it. Behind the hut or along its side walls it isn't,
+        /// however near: the review of 1.5.1's first rule (by distance alone), a Troll behind the back wall of a 4 m deep hut
+        /// stood 5.5 m from the door and kept the settler in while it hit them through the wall.
+        /// </summary>
+        /// <param name="outward">The way out through the door (a unit direction).</param>
+        public static bool AtTheDoor(GroundPoint monster, GroundPoint door, GroundPoint outward, bool monsterInside)
+        {
+            if (monsterInside) return false;
+            float ahead = (monster.X - door.X) * outward.X + (monster.Z - door.Z) * outward.Z;
+            return ahead >= -BesideDoor && ColonyRules.Distance(monster, door) <= DoorClear;
+        }
+
+        /// <summary>
+        /// A monster's hit while they shelter in a hut: they leave it for another (or run) unless the monster stands outside at
+        /// its door (<see cref="AtTheDoor"/>), where out is into it (1.5.1, the player's 1.5.0 try: a Troll at the hut hit the
+        /// forager inside, who walked out). One in there with them sends them on as since 0.5, wherever it stands; one
+        /// elsewhere outside leaves the door clear. Hurt to half (<see cref="StandUp.BreakOffHealth"/>) they make a run for it
+        /// even past one at the door: staying, nothing ends it (the review).
+        /// </summary>
+        public static bool LeavesAfterHit(bool monsterInside, bool atTheDoor, float health01) =>
+            monsterInside || !atTheDoor || health01 <= StandUp.BreakOffHealth;
+
         /// <summary>An attack first (he's in danger now), then a raid at the colony, then night; the last two only with their setting on.</summary>
         public static IndoorReason Reason(bool fleeing, bool raidAtColony, bool shelterInRaids, bool night, bool indoorsAtNight)
         {
@@ -122,13 +152,22 @@ namespace VikingColonies.Core
         /// </summary>
         /// <param name="inward">The way into the hut through the door (a unit direction); a spot in that way is passed over
         /// for the next one, as a settler standing there would block the next one coming in.</param>
-        public static GroundPoint Spot(GroundPoint chest, GroundPoint door, GroundPoint inward, string settlerId)
+        public static GroundPoint Spot(GroundPoint chest, GroundPoint door, GroundPoint inward, string settlerId) =>
+            Spot(chest, door, inward, settlerId, null);
+
+        /// <param name="hutTakes">Whether the hut can take a settler standing there (the game looks: inside its walls, clear of
+        /// its furniture); null takes every spot. Spots it can't take are passed over; with none left, a spot between the chest
+        /// and the door (1.5.1: in a level-1 Watchtower or Lumberjack's Hut some spots were outside a wall or in the workbench).</param>
+        public static GroundPoint Spot(GroundPoint chest, GroundPoint door, GroundPoint inward, string settlerId, Func<GroundPoint, bool> hutTakes)
         {
             uint hash = StableHash(settlerId);
-            int clear = 0, best = 0;
+            int clear = 0, best = -1;
             float bestScore = float.MinValue;
+            var takes = new bool[SpotCount];
             for (int slot = 0; slot < SpotCount; slot++)
             {
+                takes[slot] = hutTakes == null || hutTakes(SpotAt(chest, door, slot));
+                if (!takes[slot]) continue;
                 float score = Clearness(SpotAt(chest, door, slot), door, inward);
                 if (score >= 1f) clear++;
                 if (score > bestScore)
@@ -137,12 +176,17 @@ namespace VikingColonies.Core
                     best = slot;
                 }
             }
+            if (best < 0)   // none it can take: off the chest towards the door, if it takes that; else as before 1.5.1
+            {
+                GroundPoint towards = TowardsDoor(chest, door);
+                return hutTakes(towards) ? towards : Spot(chest, door, inward, settlerId, null);
+            }
             if (clear == 0) return SpotAt(chest, door, best);   // a hut too small for a clear one: the one least in the way
             int pick = (int)(hash % (uint)clear);   // settlers share out the clear spots evenly
             for (int slot = 0; slot < SpotCount; slot++)
             {
                 GroundPoint spot = SpotAt(chest, door, slot);
-                if (Clearness(spot, door, inward) < 1f) continue;
+                if (!takes[slot] || Clearness(spot, door, inward) < 1f) continue;
                 if (pick-- == 0) return spot;
             }
             return SpotAt(chest, door, best);
@@ -150,6 +194,15 @@ namespace VikingColonies.Core
 
         public static GroundPoint Spot(GroundPoint chest, GroundPoint door, string settlerId) =>
             SpotAt(chest, door, (int)(StableHash(settlerId) % SpotCount));
+
+        /// <summary>Off the chest towards the door: 0.8 m, or half the way when the door is nearer than 1.6 m.</summary>
+        private static GroundPoint TowardsDoor(GroundPoint chest, GroundPoint door)
+        {
+            float gap = ColonyRules.Distance(chest, door);
+            if (gap < 0.01f) return chest;
+            float off = Math.Min(0.8f, gap / 2f) / gap;
+            return new GroundPoint(chest.X + (door.X - chest.X) * off, chest.Z + (door.Z - chest.Z) * off);
+        }
 
         private static GroundPoint SpotAt(GroundPoint chest, GroundPoint door, int slot)
         {

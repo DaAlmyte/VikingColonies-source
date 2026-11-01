@@ -60,10 +60,10 @@ namespace VikingColonies.AI
         private readonly CitizenAI _ai;
         private readonly Citizen _citizen;
         private readonly List<Opened> _opened = new List<Opened>();
-        private readonly TargetBlacklist _failed = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: true));
-        private readonly TargetBlacklist _skipped = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: false));
-        private readonly DoorLoop _loop = new DoorLoop();
-        private readonly TargetBlacklist _noWay = new TargetBlacklist(DoorLoop.NoWayFor);   // doors that brought him no closer
+        private TargetBlacklist _failed = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: true));
+        private TargetBlacklist _skipped = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: false));
+        private DoorLoop _loop = new DoorLoop();
+        private TargetBlacklist _noWay = new TargetBlacklist(DoorLoop.NoWayFor);   // doors that brought him no closer
         private readonly HashSet<string> _explained = new HashSet<string>();   // goals whose door search went into the log
         private Stage _stage;
         private Door _door;
@@ -77,6 +77,20 @@ namespace VikingColonies.AI
         private float _throughCheckAt;
         /// <summary>The site of the hut this door belongs to, when he set off from inside it (<see cref="DoorRules.HutAround"/>).</summary>
         private Footprint _hutAround;
+        /// <summary>
+        /// The walls of the hut this door stands in (<see cref="HutWay.WallsOfDoor"/>): from outside them he goes round them
+        /// close by, a corner at a time (<see cref="HutWay"/>); null for a door that is no hut's, or once a corner couldn't be
+        /// got to this approach.
+        /// </summary>
+        private Footprint _doorWalls;
+        /// <summary>A walk to a corner of the hut that ends further than this from it didn't get there.</summary>
+        internal const float CornerReached = 1.5f;
+        /// <summary>The hut he just went out of by its door, to go round its walls close by to a goal behind it (<see cref="LeftHut"/>).</summary>
+        private readonly LeftHut _left = new LeftHut();
+        /// <summary>The corner of a hut his last walk to one got to (<see cref="CornerFailed"/>).</summary>
+        private Vector3? _cornerReached;
+        /// <summary>Opening from where he got stuck close in front of it is in the log for this passing.</summary>
+        private bool _stallSaid;
         private readonly StraightWalk _straightWalk = new StraightWalk();
         /// <summary>He walks straight to the door's spot for the rest of this approach (<see cref="DoorRules.WalkStraight"/>).</summary>
         private bool _straight;
@@ -89,7 +103,7 @@ namespace VikingColonies.AI
         /// <summary>Stepping through, he hops when he hasn't moved this far in a second (a lip, a step, a log).</summary>
         private const float ThroughProgress = 0.25f;
         /// <summary>Someone this near where his step through lands is in its way.</summary>
-        private const float LandingReach = 0.6f;
+        private const float LandingReach = DoorRules.LandingReach;
         /// <summary>Waiting spots straight back from the door are numbered from here (the side ones from 0).</summary>
         private const int BackOffIndex = 100;
         private bool _waitChosen;
@@ -184,7 +198,16 @@ namespace VikingColonies.AI
                     _waitIndex = -1;
                     // He opens it only standing at it on his own side, in front of its doorway and at its height, so going
                     // through is a real crossing (1.4.1's release run: opened from along its wall, and from its roof).
-                    if (SideOf(_door, me) == _startSide && DoorRules.ReadyToOpen(_doorway, V(me), _standOff))
+                    // Stuck close in front of it a moment (a low eave, a post by the spot: 1.5.1's walk check), he opens it from there.
+                    bool stalledClose = SideOf(_door, me) == _startSide && !DoorRules.ReadyToOpen(_doorway, V(me), _standOff)
+                                        && DoorRules.ReadyAfterStall(_doorway, V(me), _standOff, now - _closerAt);
+                    if (stalledClose && !_stallSaid)
+                    {
+                        _stallSaid = true;
+                        Log.Info($"{_citizen.CitizenName} opens the {Describe(_door)} from {Utils.DistanceXZ(me, centre):0.0} m out, stuck short of the spot in front of it " +
+                                 $"(standing at {At(me)})");
+                    }
+                    if (SideOf(_door, me) == _startSide && (stalledClose || DoorRules.ReadyToOpen(_doorway, V(me), _standOff)))
                     {
                         // Someone in the doorway who isn't going through with the door (a player, a settler walking through an open
                         // door or run by another computer): he waits for them, but not for ever (the approach clock runs on).
@@ -253,7 +276,20 @@ namespace VikingColonies.AI
                     // Longhouse).
                     if (!_straight)
                     {
-                        bool wayEnded = _ai.WalkTowards(stand, 0.5f);
+                        // Outside its hut he goes round its walls close by, a corner at a time: the game's own way bends at its
+                        // walking map's large triangles, 9-14 m out from a small hut and back (1.5.1's walk check, its game runs).
+                        Vector3 aim = RoundTo(me, stand);
+                        bool wayEnded = _ai.WalkLeg(aim, 0.5f);   // straight when nothing stands in the way
+                        if (aim != stand)
+                        {
+                            if (wayEnded && CornerFailed(me, aim))
+                            {
+                                Log.Info($"{_citizen.CitizenName} couldn't get to the corner of the hut at {At(aim)} on the way to the {Describe(_door)} " +
+                                         $"(standing at {At(me)}): the game's own way there from now");
+                                _doorWalls = null;
+                            }
+                            wayEnded = false;   // a corner, not the spot: on round the walls
+                        }
                         _straight = toSpot > 0.5f && DoorRules.WalkStraight(_hutAround != null, wayEnded, now - _closerAt);
                         if (_straight)
                         {
@@ -349,7 +385,9 @@ namespace VikingColonies.AI
         /// closed door is right ahead on his way, he goes through a colony door. True when he now is. <paramref name="early"/>:
         /// he hasn't walked that way yet, and only a door near him counts (<see cref="DoorRules.EarlyLookReach"/>).
         /// </summary>
-        public bool Consider(Vector3 goal, bool unreachable, float dt, bool early = false, float gapFromHere = float.NaN)
+        /// <param name="walledHut">The hut whose walls stand between his way's end and his goal (<see cref="WalledHut"/>): its
+        /// doors count from any distance when looking early.</param>
+        public bool Consider(Vector3 goal, bool unreachable, float dt, bool early = false, float gapFromHere = float.NaN, Footprint walledHut = null)
         {
             if (_stage != Stage.None) return false;
             float now = Time.time;
@@ -359,7 +397,7 @@ namespace VikingColonies.AI
             if (unreachable)
             {
                 if (Utils.DistanceXZ(goal, _checkedGoal) < 1f && now - _checkedAt < RecheckSeconds) return false;
-                chosen = DoorTowards(goal, me, early, gapFromHere, out side, out _standOff);
+                chosen = DoorTowards(goal, me, early, gapFromHere, out side, out _standOff, walledHut);
                 if (chosen == null && !early)   // looking early, a door far off may still lead there from the way's end
                 {
                     _checkedGoal = goal;   // no door leads there: don't look again for a moment
@@ -382,6 +420,10 @@ namespace VikingColonies.AI
             _reswung = false;
             _playerWaitFrom = -1f;
             _hutAround = unreachable ? DoorRules.HutAround(V(chosen.transform.position), V(chosen.transform.forward), V(me), s_huts, Construction.SiteSurvey.SiteMargin) : null;
+            _doorWalls = WallsOfDoor(chosen, me, goal);
+            _ai.NewLegs();
+            _cornerReached = null;
+            _stallSaid = false;
             _straight = false;
             NotCloserYet(now);
             _openedIt = false;
@@ -434,6 +476,21 @@ namespace VikingColonies.AI
             }
         }
 
+        /// <summary>
+        /// vc_walktest: the doors he went through, failed at or found no use lately are forgotten, so each test walk starts as
+        /// a first one (its review: the same chest walked to four times in a row refused the door just used).
+        /// </summary>
+        internal void ForgetForTest()
+        {
+            _failed = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: true));
+            _skipped = new TargetBlacklist(DoorRules.RetryAfter(failedPassing: false));
+            _loop = new DoorLoop();
+            _noWay = new TargetBlacklist(DoorLoop.NoWayFor);
+            _lastPass = "";
+            _checkedAt = -1000f;
+            _explained.Clear();
+        }
+
         /// <summary>He stops whatever door he was going through (his job changed).</summary>
         public void Reset()
         {
@@ -473,6 +530,54 @@ namespace VikingColonies.AI
                     return;
             }
             _ai.StepTowards(spot);
+        }
+
+        /// <summary>
+        /// Where he heads now for his goal: a corner round the hut he just went out of by its door, while its walls stand
+        /// between him and the goal (<see cref="LeftHut"/>), or the goal itself.
+        /// </summary>
+        public Vector3 RoundAfterLeaving(Vector3 me, Vector3 goal)
+        {
+            Vec3 next = _left.Next(V(me), V(goal), Time.time);
+            if (Mathf.Abs(next.X - goal.x) < 0.01f && Mathf.Abs(next.Z - goal.z) < 0.01f) return goal;
+            var corner = new Vector3(next.X, me.y, next.Z);
+            if (ZoneSystem.instance != null) corner.y = ZoneSystem.instance.GetGroundHeight(corner);
+            return corner;
+        }
+
+        /// <summary>A corner round the hut just left that he couldn't get to: the game's own way from here.</summary>
+        public void ForgetLeft() => _left.Forget();
+
+        /// <summary>
+        /// A walk to a corner of a hut ended: true when it didn't get him round it, ending far from it or at the same corner
+        /// again (something at the corner: the review of 2026-10-24, where he would have stood there till the passing gave up).
+        /// </summary>
+        internal bool CornerFailed(Vector3 me, Vector3 corner)
+        {
+            bool failed = Utils.DistanceXZ(me, corner) > CornerReached
+                          || (_cornerReached.HasValue && Utils.DistanceXZ(_cornerReached.Value, corner) < 0.3f);
+            _cornerReached = failed ? (Vector3?)null : corner;
+            return failed;
+        }
+
+        /// <summary>Where he heads now for the door's spot: the next corner round its hut's walls in the way, or the spot itself.</summary>
+        private Vector3 RoundTo(Vector3 me, Vector3 stand)
+        {
+            if (_doorWalls == null) return stand;
+            Vec3 next = HutWay.Next(V(me), V(stand), _doorWalls);
+            if (Mathf.Abs(next.X - stand.x) < 0.01f && Mathf.Abs(next.Z - stand.z) < 0.01f) return stand;
+            var corner = new Vector3(next.X, me.y, next.Z);
+            if (ZoneSystem.instance != null) corner.y = ZoneSystem.instance.GetGroundHeight(corner);
+            return corner;
+        }
+
+        private static readonly List<Footprint> s_doorHuts = new List<Footprint>();
+
+        /// <summary>The walls of the colony hut the door stands in (<see cref="HutWay.WallsOfDoor"/>), or null.</summary>
+        private static Footprint WallsOfDoor(Door door, Vector3 me, Vector3 goal)
+        {
+            HutsNear(me, goal, s_doorHuts);
+            return HutWay.WallsOfDoor(V(door.transform.position), s_doorHuts, Construction.SiteSurvey.SiteMargin);
         }
 
         /// <summary>The clock for getting closer to the door's spot starts again (setting off, or after waiting his turn).</summary>
@@ -520,6 +625,10 @@ namespace VikingColonies.AI
                                  $"{At(_goal)}: no way there through it for now");
                     }
                 }
+                // Out through a hut's door to a goal behind it: round its walls close by from here (LeftHut).
+                _left.Left(!failed && through ? _doorWalls : null, V(_citizen.transform.position), V(_goal), Time.time);
+                _ai.NewLegs();
+                _cornerReached = null;
                 Opened known = _opened.FirstOrDefault(o => o.Door == _door);
                 if (known != null) known.WentThrough |= through;
                 else if (_openedIt && !_door.m_canNotBeClosed) _opened.Add(new Opened { Door = _door, WentThrough = through });
@@ -556,8 +665,9 @@ namespace VikingColonies.AI
         /// whose far side gets him closer to the goal, closed or open; and the side he goes through it from (the side he
         /// can walk to). A door that doesn't fit from where he stands is tried again a few seconds later.
         /// </summary>
-        private Door DoorTowards(Vector3 goal, Vector3 me, bool early, float gapFromHere, out int side, out float standOff)
+        private Door DoorTowards(Vector3 goal, Vector3 me, bool early, float gapFromHere, out int side, out float standOff, Footprint walledHut = null)
         {
+            Footprint walledDoors = walledHut?.Grow(DoorRules.OwnDoorMargin - Construction.SiteSurvey.SiteMargin);   // its own doors stand within this
             side = 0;
             standOff = DoorRules.StandOff;
             s_candidates.Clear();
@@ -591,7 +701,7 @@ namespace VikingColonies.AI
                 Vector3 at = door.transform.position;
                 if (Utils.DistanceXZ(at, me) > DoorRules.SearchRange && Utils.DistanceXZ(at, goal) > DoorRules.SearchRange) continue;
                 if (Utils.DistanceXZ(at, goal) <= DoorRules.SearchRange) doorNearGoal = true;
-                if (early && !DoorRules.NearEnoughToLookEarly(Utils.DistanceXZ(at, me))) continue;
+                if (early && !DoorRules.NearEnoughToLookEarly(Utils.DistanceXZ(at, me), walledDoors != null && walledDoors.Contains(V(at)))) continue;
                 if (Blocked(Key(door, goal)))
                 {
                     why?.Append($"; {Describe(door)}: tried lately");
@@ -666,19 +776,7 @@ namespace VikingColonies.AI
         private static void KeepOwnDoors(Vector3 me, Vector3 goal, StringBuilder why, Door roomDoor = null)
         {
             if (s_candidates.Count == 0) return;
-            s_huts.Clear();
-            foreach (ColonyBuilding building in ColonyBuilding.All)
-            {
-                if (building == null || !building.IsValid) continue;
-                Vector3 at = building.transform.position;
-                if (Utils.DistanceXZ(at, me) > HutNear && Utils.DistanceXZ(at, goal) > HutNear) continue;
-                Construction.ConstructionModule construction = building.GetComponent<Construction.ConstructionModule>();
-                // The Town Hall's camp has no walls or doors: a goal in it isn't behind a hut's door (the review of
-                // 2026-10-19: a palisade gate on the way was dropped, and a walled colony lost its way to the hall).
-                if (construction == null || construction.IsCamp) continue;
-                Footprint site = construction.RoomFootprint;   // inside the hut is within its walls, not its whole outline
-                if (site != null) s_huts.Add(site);
-            }
+            HutsNear(me, goal, s_huts);
             List<int> own = DoorRules.OwnDoors(s_candidates.Select(d => V(d.transform.position)).ToList(), V(me), V(goal), s_huts, Construction.SiteSurvey.SiteMargin,
                 roomDoor != null ? s_candidates.IndexOf(roomDoor) : -1);
             if (own.Count == s_candidates.Count) return;
@@ -690,6 +788,36 @@ namespace VikingColonies.AI
 
         /// <summary>Huts this near him or his goal are looked at for <see cref="KeepOwnDoors"/>.</summary>
         private const float HutNear = 40f;
+
+        /// <summary>The walls of the colony's huts near him or his goal (each hut's room outline; never the camp's).</summary>
+        private static void HutsNear(Vector3 me, Vector3 goal, List<Footprint> into)
+        {
+            into.Clear();
+            foreach (ColonyBuilding building in ColonyBuilding.All)
+            {
+                if (building == null || !building.IsValid) continue;
+                Vector3 at = building.transform.position;
+                if (Utils.DistanceXZ(at, me) > HutNear && Utils.DistanceXZ(at, goal) > HutNear) continue;
+                Construction.ConstructionModule construction = building.GetComponent<Construction.ConstructionModule>();
+                // The Town Hall's camp has no walls or doors: a goal in it isn't behind a hut's door (the review of
+                // 2026-10-19: a palisade gate on the way was dropped, and a walled colony lost its way to the hall).
+                if (construction == null || construction.IsCamp) continue;
+                Footprint site = construction.RoomFootprint;   // inside the hut is within its walls, not its whole outline
+                if (site != null) into.Add(site);
+            }
+        }
+
+        private static readonly List<Footprint> s_wallHuts = new List<Footprint>();
+
+        /// <summary>
+        /// The hut whose walls stand between the end of his way and his goal (<see cref="DoorRules.HutWallsBetween"/>), or
+        /// null: its door is his way there now, from however far (1.5.1: settlers ran round the back of a hut first).
+        /// </summary>
+        public Footprint WalledHut(Vector3 wayEnd, Vector3 goal)
+        {
+            HutsNear(_citizen.transform.position, goal, s_wallHuts);
+            return DoorRules.HutWallsBetween(V(wayEnd), V(goal), s_wallHuts, Construction.SiteSurvey.SiteMargin);
+        }
 
         /// <summary>A closed door he is walking straight through, with his goal beyond it, that he may open; and the side he is on.</summary>
         private Door DoorAhead(Vector3 goal, Vector3 me, out int side)

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Jotunn.Configs;
@@ -58,6 +59,19 @@ namespace VikingColonies.Construction
                     if (ColonyPermissions.LocalMayBuildAt(SiteScanner.ColonyFor(at), at)) return true;
                     Log.Info($"Placing a field marker at {at}: refused, someone else's colony");
                     __instance.Message(MessageHud.MessageType.Center, Localization.instance.Localize("$vc_site_red_not_yours"));
+                    __result = false;
+                    return false;
+                }
+                // The memorial stone (1.5.1): only in a colony the player may manage, and one per colony.
+                if (Utils.GetPrefabName(piece.gameObject) == SaveKeys.MemorialPiece && ghost != null && ghost.activeSelf)
+                {
+                    Vector3 at = ghost.transform.position;
+                    ColonyBuilding colony = SiteScanner.ColonyFor(at);
+                    string refusal = !ColonyPermissions.LocalMayBuildAt(colony, at) ? "$vc_site_red_not_yours"
+                        : !MemorialRules.MayRaise(colony?.ColonyId, Colony.MemorialStone.All.Select(s => s.ColonyId)) ? "$vc_memorial_one" : null;
+                    if (refusal == null) return true;
+                    Log.Info($"Placing a memorial stone at {at}: refused ({refusal})");
+                    __instance.Message(MessageHud.MessageType.Center, Localization.instance.Localize(refusal));
                     __result = false;
                     return false;
                 }

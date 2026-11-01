@@ -131,11 +131,13 @@ namespace VikingColonies.Construction
         /// change (and the stone for it), and every reason the hut can't stand here. <paramref name="clear"/> and
         /// <paramref name="blockers"/> are filled as by <see cref="SiteScanner.Scan"/>. An <paramref name="upgrade"/>'s
         /// ground is judged as the upgrade levels it (<see cref="GroundRule.Judge"/>). <paramref name="type"/> is the kind being
-        /// placed (a building's own when <paramref name="self"/> is given), for its own rules (the storehouse's, 1.5).
+        /// placed (a building's own when <paramref name="self"/> is given), for its own rules (the storehouse's, 1.5). An upgrade
+        /// keeps the player's own pieces (<see cref="KeepOwnPieces"/>); <paramref name="putBacks"/>, when given, gets those the
+        /// builder takes down and puts back.
         /// </summary>
         public static SiteFindings Look(IReadOnlyList<PlannedPiece> plan, Vector3 chest, Quaternion rotation, ConstructionModule self,
             GameObject ignore, Func<Piece, bool> matchesPlan, float stonePerCubicMetre, List<SiteThing> clear, List<Piece> blockers,
-            bool upgrade = false, BuildingType type = null)
+            bool upgrade = false, BuildingType type = null, List<Piece> putBacks = null)
         {
             var findings = new SiteFindings();
             Footprint site = SiteFootprint(plan, chest, rotation);
@@ -165,7 +167,11 @@ namespace VikingColonies.Construction
             foreach (SiteThing thing in clear.Where(t => t.Kind != ClearKind.Rock)) findings.Add(thing.Kind, thing.Tier);
             foreach (IGrouping<GameObject, SiteThing> rock in clear.Where(t => t.Kind == ClearKind.Rock).GroupBy(t => t.Root))
                 findings.Add(ClearKind.Rock, rock.Max(t => t.Tier));   // a big rock counts once, however many parts are on the site
-            if (upgrade && self != null && self.Building != null && self.Building.Storehouse != null) KeepStoreChests(plan, self.Building.Storehouse, blockers);
+            if (upgrade && self != null && self.Building != null)
+            {
+                AddOwnPiecesOnOldParts(self, chest, rotation, bottom, top, ignore, matchesPlan, blockers);
+                KeepOwnPieces(self, plan, chest, rotation, clear, blockers, findings, putBacks);
+            }
             if (blockers.Count > 0) findings.AddRed(RedReason.OtherBuilding);
             LastBlockersForTest = string.Join(", ", blockers.Where(b => b != null).Select(b => $"{Utils.GetPrefabName(b.gameObject)} at {b.transform.position}"));
 
@@ -180,34 +186,127 @@ namespace VikingColonies.Construction
         }
 
         /// <summary>
-        /// A storehouse's upgrade (1.5, its review): the chests the player stood inside it stay, a personal one too, unless a
-        /// piece of the new level goes where one stands or nothing of it holds one up
-        /// (<see cref="StorehouseRules.ChestStaysThroughUpgrade"/>).
+        /// The player's pieces on old parts outside the new level's outline (a porch it drops, a lantern on their beam just
+        /// outside) are judged too, as they'd fall with them (1.6, the review's finding 8): the old outline is looked at as well.
         /// </summary>
-        private static void KeepStoreChests(IReadOnlyList<PlannedPiece> plan, StorehouseModule store, List<Piece> blockers)
+        private static void AddOwnPiecesOnOldParts(ConstructionModule self, Vector3 chest, Quaternion rotation, float bottom, float top,
+            GameObject ignore, Func<Piece, bool> matchesPlan, List<Piece> blockers)
         {
-            var chests = new HashSet<GameObject>(store.StandingInside.Where(c => c != null).Select(c => c.gameObject));
-            if (chests.Count == 0) return;
-            List<PlannedPiece> placed = plan.Where(p => p.IsValid && PiecePlacer.Prefab(p.Prefab) != null).ToList();
-            List<PieceBox> newPieces = placed.Select(PiecePlacer.PlannedBox).ToList();
-            blockers.RemoveAll(b =>
-            {
-                if (b == null || !chests.Contains(b.gameObject)) return false;
-                PieceBox box = PiecePlacer.BoxOf(b);
-                if (StorehouseRules.ChestStaysThroughUpgrade(box, newPieces, OnGround(box))) return true;
-                int way = StorehouseRules.InTheWayOf(box, newPieces);
-                string why = way >= 0 ? $"the new level's {placed[way].Prefab} goes there ({Describe(newPieces[way])})" : "nothing of the new level holds it up";
-                string line = $"a chest inside the storehouse ({Describe(box)}) is in its upgrade's way: {why}";
-                if (line != s_lastChestWay) Log.Info(line);   // once, not every look of the window
-                s_lastChestWay = line;
-                return false;
-            });
+            IReadOnlyList<PlannedPiece> oldPlan = self.Plan;
+            if (oldPlan == null || oldPlan.Count == 0) return;
+            var oldClear = new List<SiteThing>();
+            var oldBlockers = new List<Piece>();
+            SiteScanner.Scan(SiteFootprint(oldPlan, chest, rotation), bottom, top, self.Building, ignore, matchesPlan, false, oldClear, oldBlockers);
+            foreach (Piece piece in oldBlockers)
+                if (PiecePlacer.IsPlayersOwn(piece) && !blockers.Contains(piece)) blockers.Add(piece);
         }
 
-        private static string s_lastChestWay = "";
+        /// <summary>
+        /// An upgrade and the player's own pieces in its lot (1.6, the own-pieces design): each stays, or the builder takes it
+        /// down and puts it back, and neither is in the way; the upgrade waits only for one where a new piece goes, one
+        /// holding things, a player's bed, or one nothing of the new level would hold (<see cref="OwnPieceRules.Fates"/>).
+        /// All of the player's pieces come out of <paramref name="blockers"/>: the first the upgrade waits for is named in
+        /// <paramref name="findings"/> (RedReason.OwnPiece), with the put-backs' count. Every box is measured in the hut's frame.
+        /// </summary>
+        private static void KeepOwnPieces(ConstructionModule self, IReadOnlyList<PlannedPiece> plan, Vector3 chest, Quaternion turn,
+            List<SiteThing> clear, List<Piece> blockers, SiteFindings findings, List<Piece> putBacks)
+        {
+            List<Piece> own = blockers.Where(PiecePlacer.IsPlayersOwn).Distinct().ToList();
+            if (own.Count == 0)
+            {
+                s_lastOwnPieces = "";
+                return;
+            }
+            blockers.RemoveAll(b => own.Contains(b));
+            IReadOnlyList<PlannedPiece> oldPlan = self.Plan;
+            DesignDiff diff = DesignDiff.Compare(oldPlan, plan);
+            List<PlannedPiece> built = diff.Build.Select(i => plan[i]).Where(p => p.IsValid).ToList();
+            List<PlannedPiece> keptPlan = diff.Kept.Select(i => plan[i]).Where(p => p.IsValid).ToList();
+            var takenAway = new List<PieceBox>();
+            var takenNames = new List<string>();
+            foreach (PlannedPiece old in diff.TakeAway.Select(i => oldPlan[i]).Where(p => p.IsValid))
+            {
+                takenAway.Add(PiecePlacer.BoxIn(old, chest, turn));
+                takenNames.Add(old.Prefab);
+            }
+            foreach (SiteThing leftover in clear.Where(t => t.Kind == ClearKind.Leftover && t.Piece != null))   // the leftovers it clears
+            {
+                takenAway.Add(PiecePlacer.BoxIn(leftover.Piece, chest, turn));
+                takenNames.Add(Utils.GetPrefabName(leftover.Piece.gameObject));
+            }
+            Func<PieceBox, bool> onGround = box => OnGroundIn(box, chest, turn);
+            List<PieceBox> keptBoxes = keptPlan.Select(p => PiecePlacer.BoxIn(p, chest, turn)).ToList();
+            var forAWhile = new HashSet<int>(OwnPieceRules.KeptForAWhile(keptBoxes, takenAway, onGround));
+            var kept = new List<PieceBox>();
+            var keptForAWhile = new List<PieceBox>();
+            for (int i = 0; i < keptBoxes.Count; i++)
+            {
+                if (forAWhile.Contains(i))
+                {
+                    keptForAWhile.Add(keptBoxes[i]);
+                    takenNames.Add(keptPlan[i].Prefab + " (kept, taken down for a while)");   // after the taken-away ones, as Fates counts them
+                }
+                else kept.Add(keptBoxes[i]);
+            }
+            Piece hutChest = self.GetComponent<Piece>();
+            if (hutChest != null) kept.Add(PiecePlacer.BoxIn(hutChest, chest, turn));
 
-        private static string Describe(PieceBox box) =>
-            $"{box.Min.X:0.00},{box.Min.Y:0.00},{box.Min.Z:0.00} to {box.Max.X:0.00},{box.Max.Y:0.00},{box.Max.Z:0.00}";
+            var pieces = new List<OwnPiece>();
+            var holdsWhy = new List<OwnPieceWhy>();
+            foreach (Piece piece in own)
+            {
+                PieceBox box = PiecePlacer.BoxIn(piece, chest, turn);
+                bool holds = PiecePlacer.HoldsThings(piece, out OwnPieceWhy why);
+                pieces.Add(new OwnPiece(box, onGround(box), holds, PiecePlacer.IsPlayersBed(piece)));
+                holdsWhy.Add(why);
+            }
+            List<OwnPieceVerdict> verdicts = OwnPieceRules.Fates(pieces, built.Select(p => PiecePlacer.BoxIn(p, chest, turn)).ToList(), kept,
+                keptForAWhile, takenAway);
+
+            int first = OwnPieceRules.FirstWait(verdicts);
+            if (first >= 0)
+            {
+                OwnPieceVerdict waits = verdicts[first];
+                findings.AddRed(RedReason.OwnPiece);
+                findings.OwnPiece = own[first].m_name;
+                findings.OwnPieceWhy = OwnPieceRules.WhyOf(waits, holdsWhy[first]);
+                findings.OwnPieceNewPiece = waits.Fate == OwnPieceFate.InTheWay ? PieceName(built[waits.Which].Prefab) : "";
+            }
+            findings.PutBacks = OwnPieceRules.PutBackCount(verdicts);
+            var lines = new List<string>();
+            for (int i = 0; i < own.Count; i++)
+            {
+                OwnPieceVerdict v = verdicts[i];
+                if (v.Fate == OwnPieceFate.PutBack) putBacks?.Add(own[i]);
+                if (v.Fate == OwnPieceFate.Stays) continue;
+                string what = $"{PiecePlacer.Whose(own[i].GetCreator())} {Utils.GetPrefabName(own[i].gameObject)} at {own[i].transform.position}";
+                if (v.Fate == OwnPieceFate.InTheWay) lines.Add($"{what} is in the upgrade's way: the new level's {built[v.Which].Prefab} goes there");
+                else if (v.Fate == OwnPieceFate.PutBack)
+                    lines.Add($"{what} is taken down and put back after ({(v.Which >= 0 ? "it touches the old " + takenNames[v.Which] : "it touches another of their pieces")})");
+                else lines.Add($"{what} makes the upgrade wait ({v.Wait})");
+            }
+            string said = string.Join("; ", lines);
+            if (said.Length > 0 && said != s_lastOwnPieces)   // once, not every look of the window
+                Log.Info($"{self.Building.TypeId} {self.Building.Id}: the player's pieces through its upgrade: {said}");
+            s_lastOwnPieces = said;
+        }
+
+        private static string s_lastOwnPieces = "";
+
+        /// <summary>A piece's own name token (<c>$piece_…</c>), so each player reads it in their language; its prefab's name without one.</summary>
+        private static string PieceName(string prefabName)
+        {
+            GameObject prefab = PiecePlacer.Prefab(prefabName);
+            Piece piece = prefab != null ? prefab.GetComponent<Piece>() : null;
+            return piece != null && !string.IsNullOrEmpty(piece.m_name) ? piece.m_name : prefabName;
+        }
+
+        /// <summary><see cref="OnGround"/> for a box measured in a hut's frame (<see cref="PiecePlacer.BoxIn(Piece, Vector3, Quaternion)"/>).</summary>
+        public static bool OnGroundIn(PieceBox box, Vector3 origin, Quaternion turn)
+        {
+            Vector3 middle = origin + turn * new Vector3((box.Min.X + box.Max.X) / 2f, 0f, (box.Min.Z + box.Max.Z) / 2f);
+            return origin.y + box.Min.Y <= GroundAt(middle.x, middle.z) + 0.3f;
+        }
 
         /// <summary>vc_storehousetest: the pieces in the way at the last site check.</summary>
         internal static string LastBlockersForTest = "";

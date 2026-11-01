@@ -381,7 +381,7 @@ namespace VikingColonies.DevTools
         }
 
         /// <summary>A hut put up and raised to the level at once (the test shortcut), waiting for each step.</summary>
-        private static IEnumerator AtOnceToLevel(ColonyBuilding hut, int level)
+        internal static IEnumerator AtOnceToLevel(ColonyBuilding hut, int level)
         {
             ConstructionModule site = hut != null ? hut.GetComponent<ConstructionModule>() : null;
             if (site == null) yield break;

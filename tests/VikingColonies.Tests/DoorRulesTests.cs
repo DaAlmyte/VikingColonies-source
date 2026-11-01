@@ -335,6 +335,24 @@ namespace VikingColonies.Tests
             Assert.False(DoorRules.ReadyToOpen(WoodDoor, new Vec3(0f, -1f, 3f - 4f), 2.8f));       // too far out
         }
 
+        // 1.5.1's walk check (2026-10-24): coming along a Builder's Hut's front, a settler running in to shelter stopped 2.1 m
+        // from the door under its low eave, 0.9 m short of the spot in front of it, where nothing got them going again; at
+        // 2.0 m they may open it, so they stood 8 s and gave the door up. Stuck that close, in front of it, they open it.
+        [Fact]
+        public void Stuck_close_in_front_of_a_door_a_moment_he_opens_it_from_there()
+        {
+            var stuck = new Vec3(0.2f, -1f, 3f - 2.1f);
+            Assert.False(DoorRules.ReadyToOpen(WoodDoor, stuck, DoorRules.StandOff));                                  // not otherwise
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, stuck, DoorRules.StandOff, 0.5f));                       // walking on
+            Assert.True(DoorRules.ReadyAfterStall(WoodDoor, stuck, DoorRules.StandOff, DoorRules.StallOpenSeconds));
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, new Vec3(3.4f, -1f, 2.9f), DoorRules.StandOff, 5f));     // along its wall
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, new Vec3(0.6f, 3.3f, 2f), DoorRules.StandOff, 5f));      // on its roof
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, new Vec3(0f, -1f, 3f - 3.5f), DoorRules.StandOff, 5f));  // still a way off
+            // The review: from a spot further out the reach doesn't grow with it, and it stays in front of the doorway.
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, new Vec3(0f, -1f, 3f - 4f), 2.8f, 5f));
+            Assert.False(DoorRules.ReadyAfterStall(WoodDoor, new Vec3(1.8f, -1f, 3f - 1.5f), DoorRules.StandOff, 5f));   // well to its side
+        }
+
         [Fact]
         public void Only_a_step_through_the_doorway_counts_as_going_through()
         {
@@ -429,6 +447,18 @@ namespace VikingColonies.Tests
         {
             Assert.False(DoorRules.AskAgain(sinceAsked: 0.3f));
             Assert.True(DoorRules.AskAgain(sinceAsked: 1.2f));
+        }
+
+        // The 1.6.0 self-test a6d3: one making way for the storehouse going up at once was put 1.7 m out of its door, on the
+        // landing of anyone stepping out, and its courier gave up at the door 26 times. Every make-way spot is past that
+        // landing with room for a body (0.4 m), nearest first.
+        [Fact]
+        public void One_making_way_stands_past_the_landing_of_anyone_stepping_out()
+        {
+            Assert.NotEmpty(DoorRules.MakeWayDistances);
+            foreach (float d in DoorRules.MakeWayDistances)
+                Assert.True(d >= DoorRules.StepBeyond + DoorRules.LandingReach + 0.4f, $"{d} m is on the landing");
+            Assert.Equal(DoorRules.MakeWayDistances.OrderBy(d => d), DoorRules.MakeWayDistances);
         }
     }
 }

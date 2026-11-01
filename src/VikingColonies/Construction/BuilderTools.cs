@@ -39,15 +39,18 @@ namespace VikingColonies.Construction
         /// <summary>
         /// What the colony's chests hold that builders may take: all of a Builder's Hut's chest (its builder's own), what
         /// other chests spare beyond what they keep (0.21). The Town Hall's "Still to bring" and Hand over (0.23) count it.
+        /// For one order (<paramref name="forSite"/>): another hut's chest leaves what it holds for its own order (1.5.1);
+        /// for all the orders together (null), what each hut holds for its own order counts, as it goes to that order.
         /// </summary>
-        public static Dictionary<string, int> StoresForBuilders(string colonyId, Vector3 near)
+        public static Dictionary<string, int> StoresForBuilders(string colonyId, Vector3 near, ColonyBuilding forSite = null)
         {
             var stock = new Dictionary<string, int>();
             foreach (StorageModule store in ColonyStores(colonyId, null, near))
             {
                 ColonyBuilding owner = store.GetComponent<ColonyBuilding>();
                 bool builders = owner != null && owner.TypeId == BuildingTypes.BuilderHutId;
-                NeedsTally.Add(stock, builders ? store.Contents() : store.SpareContents());
+                bool ownOrder = forSite == null || owner == forSite;
+                NeedsTally.Add(stock, builders ? store.Contents() : store.SpareContents(forOwnOrder: ownOrder));
             }
             return stock;
         }
@@ -64,7 +67,9 @@ namespace VikingColonies.Construction
         /// The colony's chests in the order a settler tries them (<see cref="StorehouseRules.Rank"/>): the hut's own, the
         /// storehouse's store (1.5), the Town Hall's, then the colony's other huts, nearest first.
         /// </summary>
-        public static List<StorageModule> ColonyStores(string colonyId, ColonyBuilding hut, Vector3 near)
+        /// <param name="site">A builder's: the building they build, tried right after their own hut (its chest holds what
+        /// its order needs for them alone: 1.5.1).</param>
+        public static List<StorageModule> ColonyStores(string colonyId, ColonyBuilding hut, Vector3 near, ColonyBuilding site = null)
         {
             var buildings = new List<ColonyBuilding>();
             if (hut != null) buildings.Add(hut);
@@ -73,7 +78,7 @@ namespace VikingColonies.Construction
             buildings.AddRange(ColonyBuilding.All.Where(b => b != null && b.IsValid && b.ColonyId == colonyId && b != hut && !b.IsTownHall));
             var stores = new List<StorageModule>();
             foreach (ColonyBuilding b in buildings
-                         .OrderBy(b => StorehouseRules.Rank(b == hut, b.IsStorehouse, b.IsTownHall))
+                         .OrderBy(b => StorehouseRules.Rank(b == hut, b.IsStorehouse, b.IsTownHall, site != null && b == site && !b.IsTownHall && !b.IsStorehouse))
                          .ThenBy(b => Vector3.Distance(b.transform.position, near)))
                 foreach (StorageModule store in b.Stores)
                     if (!stores.Contains(store)) stores.Add(store);

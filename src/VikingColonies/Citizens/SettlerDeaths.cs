@@ -63,6 +63,14 @@ namespace VikingColonies.Citizens
             if (cairn != null) Log.Event($"{record.Name}'s cairn stands at ({cairn.transform.position.x:0.0}, {cairn.transform.position.z:0.0}) with {held.Serialize()}");
             DeathMessages.Send(record.Name, record.Job, cause, citizen.transform.position, record.ColonyPos, cairn != null, record.Id);
             Saga.Record(record.ColonyId, "died", record.Name, cause.Token, cause.Arg);
+            // The colony's fallen (1.5.1): remembered on its memorial stone; with the fallen return on, their way back too.
+            int day = EnvMan.instance != null && ZNet.instance != null ? EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()) : 0;
+            Fallen.Record(record.ColonyId, new FallenLine
+            {
+                Id = record.Id, Name = record.Name, Job = record.Job, Day = day, Cause = cause.Token, CauseArg = cause.Arg,
+                Record = Config.ColonyConfig.FallenReturn.Value ? record.Encode() : "",
+            });
+            Colony.Deeds.Count(record.ColonyId, DeedKinds.Lost);   // the colony's deeds (1.5.1)
         }
 
         /// <summary>"lumberjack_hut b1e10ec6 (level 1)", or the hut's id with "not loaded"; "" for a jobless settler.</summary>

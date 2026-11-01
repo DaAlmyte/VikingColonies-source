@@ -64,6 +64,16 @@ namespace VikingColonies.DevTools
             return total > 0 && standing == total;
         }
 
+        /// <summary>AllStand for a check's line: True, or False with the first pieces that don't stand (1.5.1's creative run of
+        /// 26 Oct failed "stands: False" with nothing to say which).</summary>
+        private static string StandNote(ConstructionModule site)
+        {
+            if (site == null || !site.IsValid) return "False (no site)";
+            List<string> lines = site.StandReport(out int total, out int standing);
+            if (total > 0 && standing == total) return "True";
+            return $"False ({standing} of {total}; {string.Join(", ", lines.Where(l => l.StartsWith("missing")).Take(4))})";
+        }
+
         private static int Pieces(ColonyBuilding building)
         {
             var near = new List<Piece>();
@@ -150,7 +160,7 @@ namespace VikingColonies.DevTools
                 yield return WaitFor(() => placed != null && placed.Level >= 3 && placedSite.IsBuilt, 60f);
                 yield return new WaitForSeconds(3f);
                 Check($"A Lumberjack's Hut placed with level 3 picked goes up at once at level 3, every piece standing (level {(placed != null ? placed.Level : 0)}, " +
-                      $"stands: {AllStand(placedSite)})", placed != null && placed.Level == 3 && AllStand(placedSite));
+                      $"stands: {StandNote(placedSite)})", placed != null && placed.Level == 3 && AllStand(placedSite));
 
                 // 2. The same on a site with a tree: the tree cleared, every piece standing.
                 Vector3 at2 = Spot(32f, -12f);
@@ -163,7 +173,7 @@ namespace VikingColonies.DevTools
                 yield return WaitFor(() => forager != null && forager.Level >= 2 && foragerSite.IsBuilt, 60f);
                 yield return new WaitForSeconds(3f);
                 Check($"A Forager's Hut placed at level 2 over a tree: the tree cleared, every piece standing (tree there: {tree != null}, " +
-                      $"level {(forager != null ? forager.Level : 0)}, stands: {AllStand(foragerSite)})",
+                      $"level {(forager != null ? forager.Level : 0)}, stands: {StandNote(foragerSite)})",
                     treePrefab != null && tree == null && forager != null && forager.Level == 2 && AllStand(foragerSite));
 
                 // 3. Upgrade now pressed twice at once on a level-1 hut: two levels.
@@ -207,7 +217,7 @@ namespace VikingColonies.DevTools
                 yield return WaitFor(() => placed != null && placed.Level >= 4 && placedSite.Order != null && placedSite.Order.State == BuildState.Done, 60f);
                 yield return new WaitForSeconds(2f);
                 Check($"Build now while an upgrade is going up is refused as busy, and the upgrade stands whole (busy answers {ConstructionModule.BusyRefusalsForTest - busyBefore}, " +
-                      $"level {(placed != null ? placed.Level : 0)}, stands: {AllStand(placedSite)})",
+                      $"level {(placed != null ? placed.Level : 0)}, stands: {StandNote(placedSite)})",
                     ConstructionModule.BusyRefusalsForTest > busyBefore && placed != null && placed.Level == 4 && AllStand(placedSite));
 
                 // 4d (its review). A rock on the site of a hut placed built is cleared too.
@@ -335,14 +345,15 @@ namespace VikingColonies.DevTools
                       $"Bronze {bronzeBefore} then {bronzeAfter}; built: {itemsSite != null && itemsSite.IsBuilt})",
                     itemsSite != null && itemsSite.IsBuilt && ironAfter == ironBefore + 20 && bronzeAfter == bronzeBefore + 10);
 
-                // 13. The review round: Upgrade now where the next level's site is red (a player's wall inside it) is refused, as
-                //     the builder's upgrade is: pieces left out and a repair blocked for good otherwise.
+                // 13. The review round: Upgrade now where the next level's site is red (another building's wall inside it) is refused,
+                //     as the builder's upgrade is: pieces left out and a repair blocked for good otherwise. (Since 1.6 a player's own
+                //     wall there may stay through the upgrade: the wall is the Town Hall's.)
                 townHall.SetLevelForTest(5);   // only the red site may refuse (back at level 1 from check 6, the old code was refused too)
                 yield return new WaitForSeconds(1f);
                 int foragerLevel = forager != null ? forager.Level : 0;
                 GameObject wallPrefab = ZNetScene.instance.GetPrefab("woodwall");
                 GameObject playersWall = forager != null && wallPrefab != null
-                    ? PiecePlacer.Place(wallPrefab, Centre(foragerSite, forager), facing, "", me) : null;
+                    ? PiecePlacer.Place(wallPrefab, Centre(foragerSite, forager), facing, hall.Id, me) : null;
                 yield return new WaitForSeconds(1f);
                 UpgradePreview red = foragerSite != null ? foragerSite.PreviewUpgrade() : null;
                 foragerSite?.RequestCreative(CreativeAction.Upgrade);
@@ -352,7 +363,7 @@ namespace VikingColonies.DevTools
                     yield return new WaitForSeconds(0.25f);
                     started |= foragerSite != null && foragerSite.IsUpgrading;   // its review: an upgrade still going up after 5 s passed too
                 }
-                Check($"Upgrade now is refused while the next level's site is red (a player's wall inside: {(red != null ? red.Site.Colour.ToString() : "no preview")}; " +
+                Check($"Upgrade now is refused while the next level's site is red (another building's wall inside: {(red != null ? red.Site.Colour.ToString() : "no preview")}; " +
                       $"an upgrade started: {started}; level {foragerLevel} then {(forager != null ? forager.Level : 0)})",
                     playersWall != null && red != null && red.Site.Colour == SiteColour.Red && !started && forager != null && forager.Level == foragerLevel);
                 if (playersWall != null) ZNetScene.instance.Destroy(playersWall);

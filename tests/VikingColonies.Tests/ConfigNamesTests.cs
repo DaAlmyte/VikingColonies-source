@@ -13,6 +13,13 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void The_scarecrows_setting_has_its_section_in_the_list()
+        {
+            Assert.Contains(ConfigNames.ScarecrowSection, ConfigNames.All);
+            Assert.Contains(ConfigNames.Enabled, ConfigNames.All);
+        }
+
+        [Fact]
         public void The_builder_settings_have_names_in_the_list()
         {
             Assert.Contains("Builder Hut", ConfigNames.All);
@@ -27,6 +34,10 @@ namespace VikingColonies.Tests
             Assert.Contains("Creative", ConfigNames.All);
             Assert.Contains("Storehouse", ConfigNames.All);   // 1.5
             Assert.Contains("Courier", ConfigNames.All);
+            Assert.Contains("Mead Hall", ConfigNames.All);   // 1.6, the cook
+            Assert.Contains("Cook", ConfigNames.All);
+            Assert.Equal("Mead Hall", ConfigNames.MeadHallSection);
+            Assert.Equal("Cook", ConfigNames.CookSection);
             Assert.Contains("CarryPerLevel", ConfigNames.All);
             Assert.Contains("CreativeMode", ConfigNames.All);
             Assert.Contains("LevelUpKey", ConfigNames.All);
@@ -62,6 +73,13 @@ namespace VikingColonies.Tests
             Assert.Contains("EveningGathering", ConfigNames.All);
             Assert.Contains("SleepInBeds", ConfigNames.All);
             Assert.Contains("TendFires", ConfigNames.All);
+        }
+
+        [Fact]
+        public void The_pastimes_setting_has_its_name_in_the_list()
+        {
+            Assert.Equal("Pastimes", ConfigNames.Pastimes);
+            Assert.Contains("Pastimes", ConfigNames.All);
         }
 
         [Fact]

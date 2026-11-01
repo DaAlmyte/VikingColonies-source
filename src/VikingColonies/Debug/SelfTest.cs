@@ -237,6 +237,26 @@ namespace VikingColonies.DevTools
                 Check($"The Work orders tab lists both orders, the set-aside one marked, and what the other still needs ({ordersText}; expected '{expectedNeeds}')",
                     ordersText.Contains(string.Format(Loc("$vc_orders_count"), campOpen ? 3 : 2, 1)) && ordersText.Contains("— " + Loc("$vc_order_status_aside"))
                     && ordersText.Contains(expectedNeeds));
+                // 1.5.1, the camp's new window (review 8's picture): it opens on the Overview; People has a page for each
+                // settler; the Saga has the colony's deeds; The camp has its levels and its Keep in stock.
+                Windows.TownHall.Close();
+                Windows.TownHall.Open(hall);   // a fresh opening starts on the Overview
+                string overview = DevHelpers.Plain(Windows.TownHall.TextForTest());
+                Check($"The camp's window opens on the Overview: settlers, food, the next newcomer ({overview})",
+                    overview.Contains(Loc("$vc_overview_settlers")) && overview.Contains(Loc("$vc_overview_food")) && overview.Contains(Loc("$vc_overview_newcomer")));
+                Windows.TownHall.ShowTabForTest("people");
+                bool chose = Windows.TownHall.ChooseForTest(builder.CitizenName);
+                string personPage = DevHelpers.Plain(Windows.TownHall.TextForTest());
+                Check($"People: a settler's page has their name, their saga lines and Recall ({personPage})",
+                    chose && personPage.Contains(builder.CitizenName) && personPage.Contains(Loc("$vc_page_saga"))
+                    && personPage.Contains(string.Format(Loc("$vc_recall_who"), builder.CitizenName)));
+                Windows.TownHall.ShowTabForTest("saga");
+                string sagaTab = DevHelpers.Plain(Windows.TownHall.TextForTest());
+                Windows.TownHall.ShowTabForTest("camp");
+                string campTab = DevHelpers.Plain(Windows.TownHall.TextForTest());
+                Check($"The Saga has the colony's deeds, and The camp its levels and Keep in stock (saga: {sagaTab}; camp: {campTab})",
+                    sagaTab.Contains(Loc("$vc_deeds_heading")) && sagaTab.Contains(Loc("$vc_deeds_felled"))
+                    && campTab.Contains(Loc("$vc_camp_part_levels")) && campTab.Contains(Loc("$vc_tab_stock")));
                 Windows.TownHall.Close();
                 // Leaving a world and entering one again in the same game destroys the windows (Jötunn makes its GUI anew at
                 // every scene change): they are built again and open (the whole-mod review of 1.4.1: they never opened again).
@@ -935,18 +955,31 @@ namespace VikingColonies.DevTools
                         // You turn away from him, sideways (the camera stands behind you: with your back to him it could
                         // stand behind him too): his words go, not left drawn at an odd place on the screen (the player,
                         // 2026-10-19: "messages stack up in weird places on the screen" just out of view).
+                        // A settler a step away can stay on the screen at 90 degrees (the camera stands metres behind you:
+                        // ColonyVPlus 29 Oct, twice, just after Bring back), so you turn further until the camera loses him.
                         Vector3 toHim = newcomer.transform.position - player.GetEyePoint();
                         toHim.y = 0f;
-                        Vector3 aside = Vector3.Cross(Vector3.up, toHim.normalized);
-                        for (int f = 0; f < 4; f++)
+                        bool offScreen = false;
+                        int turned = 0;
+                        foreach (int angle in new[] { 90, -90, 120, -120, 150, -150 })
                         {
-                            player.SetLookDir(aside);
-                            yield return new WaitForSeconds(0.2f);
+                            Vector3 aside = Quaternion.AngleAxis(angle, Vector3.up) * toHim.normalized;
+                            for (int f = 0; f < 4; f++)
+                            {
+                                player.SetLookDir(aside);
+                                yield return new WaitForSeconds(0.2f);
+                            }
+                            turned = angle;
+                            if (!SettlerWords.OnScreenForTest(newcomer)) { offScreen = true; break; }
                         }
                         SettlerWords.RefreshForTest();
                         string behindWords = SettlerWords.ShownForTest(newcomer);
-                        Check($"Words show only for a settler on the screen: with your back to him his words go ('{hisWords}' -> '{behindWords}')",
-                            hisWords == HelpWords.HungryToken && string.IsNullOrEmpty(behindWords));
+                        float hisDistance = Utils.DistanceXZ(newcomer.transform.position, player.transform.position);
+                        if (offScreen)
+                            Check($"Words show only for a settler on the screen: with your back to him his words go ('{hisWords}' -> '{behindWords}', turned {turned} deg, {hisDistance:0.0} m away)",
+                                hisWords == HelpWords.HungryToken && string.IsNullOrEmpty(behindWords));
+                        else
+                            Check($"Words off the screen skipped: {hisDistance:0.0} m away he stayed on the screen at every turn ('{hisWords}')", true);
                         LookAtHim();
                         yield return new WaitForSeconds(0.3f);   // the camera follows a moment later
                         LookAtHim();
@@ -1315,6 +1348,14 @@ namespace VikingColonies.DevTools
                 ColonyConfig.SettlersEat.Value = eatWas;
                 foreach (ConstructionModule s in setAside) if (s != null && s.IsValid) s.RequestPause(false);
             }
+
+            // 1.5.1: the colony's deeds, counted on its camp (the one that took the colony over: a death before that counted on
+            // the old one). Since the takeover this test has built the Longhouse and the Farm, and the builder mended pieces.
+            ZNetView hallView = hall != null ? hall.GetComponent<ZNetView>() : null;
+            ColonyDeeds deeds = ColonyDeeds.Decode(hallView != null && hallView.IsValid() ? hallView.GetZDO().GetString(SaveKeys.ColonyDeeds, "") : "");
+            Check($"The colony's deeds are counted on its camp (built {deeds.AllTime(DeedKinds.Built)}, mended {deeds.AllTime(DeedKinds.Mended)}, " +
+                  $"felled {deeds.AllTime(DeedKinds.Felled)}, gathered {deeds.AllTime(DeedKinds.Gathered)})",
+                deeds.AllTime(DeedKinds.Built) > 0 && deeds.AllTime(DeedKinds.Mended) > 0);
 
             EnvMan.instance.m_debugTimeOfDay = false;   // time runs again
             EnvMan.instance.SetForceEnvironment("");   // and the weather

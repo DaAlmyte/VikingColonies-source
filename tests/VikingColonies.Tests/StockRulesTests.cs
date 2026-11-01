@@ -156,5 +156,76 @@ namespace VikingColonies.Tests
             Assert.True(StockRules.FetchPause(taken: 0) > 0f);
             Assert.Equal(0f, StockRules.FetchPause(taken: 1));
         }
+
+        // 1.5.1: a hut's chest keeps what its own open build order still needs (the build-through saw a builder on the
+        // Forager's Hut take the Resin put in the Lumberjack's Hut's chest for its own level 2).
+
+        [Fact]
+        public void A_huts_chest_keeps_what_its_own_order_still_needs()
+        {
+            var contents = new Dictionary<string, int> { ["Resin"] = 3, ["Wood"] = 30 };
+            var ordered = new Dictionary<string, int> { ["Resin"] = 1, ["Wood"] = 20 };
+            Assert.Equal(2, StockRules.Spare(contents, null, "Resin", IsFood, ownUse: false, null, ordered));
+            Assert.Equal(10, StockRules.Spare(contents, null, "Wood", IsFood, ownUse: false, null, ordered));
+        }
+
+        [Fact]
+        public void What_a_hut_keeps_and_what_its_order_needs_add_up()   // the fix pass's review: as the larger, the order was starved again
+        {
+            var contents = new Dictionary<string, int> { ["Resin"] = 9 };
+            var keep = new StockList();
+            keep.Add("Resin", 5, 50);
+            var ordered = new Dictionary<string, int> { ["Resin"] = 4 };
+            Assert.Equal(0, StockRules.Spare(contents, keep, "Resin", IsFood, ownUse: false, null, ordered));   // anyone else
+            Assert.Equal(4, StockRules.Spare(contents, keep, "Resin", IsFood, ownUse: false, null, null));      // the order's own builder
+        }
+
+        [Fact]
+        public void The_workers_stock_and_the_order_are_both_kept()
+        {
+            var contents = new Dictionary<string, int> { ["PineCone"] = 15, ["Wood"] = 30 };
+            var working = new Dictionary<string, int> { ["PineCone"] = 10, ["Wood"] = 5 };
+            var ordered = new Dictionary<string, int> { ["Wood"] = 20 };
+            Assert.Equal(5, StockRules.Spare(contents, null, "PineCone", IsFood, ownUse: false, working, ordered));
+            Assert.Equal(5, StockRules.Spare(contents, null, "Wood", IsFood, ownUse: false, working, ordered));
+        }
+
+        [Fact]
+        public void An_order_never_makes_less_than_nothing_spare() =>
+            Assert.Equal(0, StockRules.Spare(new Dictionary<string, int> { ["Wood"] = 3 }, null, "Wood", IsFood, false, null,
+                new Dictionary<string, int> { ["Wood"] = 20 }));
+
+        [Fact]
+        public void A_builder_tries_their_own_hut_then_the_site_they_build_then_the_storehouse_the_camp_and_the_rest()
+        {
+            int own = StorehouseRules.Rank(true, false, false, false), site = StorehouseRules.Rank(false, false, false, true);
+            int store = StorehouseRules.Rank(false, true, false, false), hall = StorehouseRules.Rank(false, false, true, false);
+            int rest = StorehouseRules.Rank(false, false, false, false);
+            Assert.True(own < site && site < store && store < hall && hall < rest);
+            Assert.True(StorehouseRules.Rank(false, true, false) < StorehouseRules.Rank(false, false, true));   // everyone else as before
+        }
+
+        [Fact]
+        public void A_shortage_held_for_a_huts_own_order_is_told_as_such()
+        {
+            var chests = new List<KeptChest>
+            {
+                new KeptChest("$vc_hut_farm", held: 10, spare: 10),
+                new KeptChest("$vc_hut_lumberjack", held: 4, spare: 0, forOrder: 4),
+            };
+            KeptChest? most = StockRules.MostKept(chests);
+            Assert.Equal("$vc_hut_lumberjack", most?.Building);
+            Assert.True(most?.ForItsOrder);
+            Assert.False(new KeptChest("$vc_hut_lumberjack", held: 10, spare: 0, forOrder: 2).ForItsOrder);   // mostly its Keep in stock
+            Assert.False(new KeptChest("$vc_hut_lumberjack", held: 10, spare: 0).ForItsOrder);
+        }
+
+        [Fact]
+        public void Huts_keep_for_their_order_but_the_camp_and_the_storehouse_are_the_colonys_stores()
+        {
+            Assert.True(WorkingStock.HoldsOrder(isCamp: false, isStorehouse: false));
+            Assert.False(WorkingStock.HoldsOrder(isCamp: true, isStorehouse: false));
+            Assert.False(WorkingStock.HoldsOrder(isCamp: false, isStorehouse: true));
+        }
     }
 }

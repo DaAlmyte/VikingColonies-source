@@ -21,7 +21,49 @@ namespace VikingColonies.Construction
         private static readonly Dictionary<string, Dictionary<string, int>> s_needs = new Dictionary<string, Dictionary<string, int>>();
         private static readonly List<Piece> s_one = new List<Piece>();
 
-        public static GameObject Prefab(string name) => ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(name) : null;
+        private static BuildablePieces s_buildable;
+        private static ObjectDB s_buildableFrom;
+        private static float s_buildableReadAt = -1000f;
+        private static readonly HashSet<string> s_refusedWarned = new HashSet<string>();
+        private static readonly HashSet<string> s_rereadFor = new HashSet<string>();
+
+        /// <summary>
+        /// A piece a builder may put up, or null: only one on a player's build tool's list (<see cref="BuildablePieces"/>;
+        /// the security sweep of 27 Oct 2026: a design or a saved plan naming a boss or an item had it put up, for nothing).
+        /// </summary>
+        public static GameObject Prefab(string name)
+        {
+            if (ZNetScene.instance == null || string.IsNullOrEmpty(name)) return null;
+            if (Buildable(name)) return ZNetScene.instance.GetPrefab(name);
+            if (ZNetScene.instance.GetPrefab(name) != null && s_refusedWarned.Add(name))
+                Log.Warn($"'{name}' isn't a piece on any build tool's list: a builder won't put it up (a design or a saved plan names it)");
+            return null;
+        }
+
+        /// <summary>
+        /// Whether a build tool makes it. The tools' lists are read again for a new item list (a new world), and on a name
+        /// they don't have: at once the first time that name is asked about, then at most every 10 seconds (another mod's
+        /// pieces may join a tool late; the sweep's review: a builder gives a piece up after three refusals).
+        /// </summary>
+        private static bool Buildable(string name)
+        {
+            ObjectDB db = ObjectDB.instance;
+            bool stale = s_buildable == null || s_buildableFrom != db;
+            if (!stale && s_buildable.Allows(name)) return true;
+            // at most 200 names read again at once: a saved plan of a thousand made-up names mustn't read them a thousand times
+            if (!stale && Time.time - s_buildableReadAt < 10f && (s_rereadFor.Count >= 200 || !s_rereadFor.Add(name))) return false;
+            var lists = new List<IEnumerable<string>>();
+            if (db != null)
+                foreach (GameObject item in db.m_items)
+                {
+                    PieceTable table = item != null ? item.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_buildPieces : null;
+                    if (table != null && table.m_pieces != null) lists.Add(table.m_pieces.Where(p => p != null).Select(p => p.name).ToList());
+                }
+            s_buildable = new BuildablePieces(lists);
+            s_buildableFrom = db;
+            s_buildableReadAt = Time.time;
+            return s_buildable.Allows(name);
+        }
 
         /// <summary>The piece standing where the plan wants this one (same kind, within 10 cm and 5°), or null.</summary>
         public static Piece FindStanding(PlannedPiece planned)
@@ -189,7 +231,7 @@ namespace VikingColonies.Construction
                     needs[item] = (needs.TryGetValue(item, out int n) ? n : 0) + requirement.m_amount;
                 }
             }
-            s_needs[prefabName] = needs;
+            if (prefab != null) s_needs[prefabName] = needs;   // a piece refused for a moment isn't "free" for good (the sweep's review)
             return needs;
         }
 
@@ -204,7 +246,8 @@ namespace VikingColonies.Construction
         /// <summary>The box a standing piece takes in the world (sides along the world's axes).</summary>
         public static PieceBox BoxOf(Piece piece)
         {
-            GameObject prefab = Prefab(Utils.GetPrefabName(piece.gameObject));
+            // Any piece standing near a site, a design's or not: only measured, so not through the build tools' check.
+            GameObject prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(Utils.GetPrefabName(piece.gameObject)) : null;
             return BoxAt(PieceShape.Of(prefab != null ? prefab : piece.gameObject).Extents, piece.transform.position, piece.transform.rotation);
         }
 
@@ -214,6 +257,146 @@ namespace VikingColonies.Construction
             GameObject prefab = Prefab(planned.Prefab);
             return prefab != null ? BoxAt(PieceShape.Of(prefab).Extents, U(planned.Position), U(planned.Rotation))
                 : new PieceBox(planned.Position, planned.Position);
+        }
+
+        /// <summary>
+        /// The box a standing piece takes, measured in a hut's own frame (<see cref="OwnPieceRules.BoxIn"/>, 1.6): along the
+        /// world's axes a turned hut's walls swell and "touch" what stands near them.
+        /// </summary>
+        public static PieceBox BoxIn(Piece piece, Vector3 origin, Quaternion turn)
+        {
+            GameObject prefab = Prefab(Utils.GetPrefabName(piece.gameObject));
+            Bounds shape = PieceShape.Of(prefab != null ? prefab : piece.gameObject).Extents;
+            return OwnPieceRules.BoxIn(V(shape.min), V(shape.max), V(piece.transform.position), Q(piece.transform.rotation), V(origin), Q(turn));
+        }
+
+        /// <summary>The same for a planned piece (a point where the game has no such piece).</summary>
+        public static PieceBox BoxIn(PlannedPiece planned, Vector3 origin, Quaternion turn)
+        {
+            GameObject prefab = Prefab(planned.Prefab);
+            Bounds shape = prefab != null ? PieceShape.Of(prefab).Extents : new Bounds(Vector3.zero, Vector3.zero);
+            return OwnPieceRules.BoxIn(V(shape.min), V(shape.max), planned.Position, planned.Rotation, V(origin), Q(turn));
+        }
+
+        /// <summary>
+        /// The piece holds something a put-back can't carry (1.6): a chest with something in it, an item stand or armour
+        /// stand with something on it, a smelter, kiln or spinning wheel still at work or holding what it made, a fermenter,
+        /// a cooking station with food on it, a beehive's honey, a map table's map, a ward (its list). <paramref name="why"/>:
+        /// what the window says (Full, HasItem, or KeepsWhat for a ward or a map table). What a put-back does carry is
+        /// <see cref="KeptValues"/> (the review's finding 1).
+        /// </summary>
+        public static bool HoldsThings(Piece piece, out OwnPieceWhy why)
+        {
+            why = OwnPieceWhy.Full;
+            Container chest = piece.GetComponentInChildren<Container>();
+            Inventory held = chest != null ? chest.GetInventory() : null;
+            if (held != null && held.NrOfItems() > 0) return true;
+            ItemStand item = piece.GetComponentInChildren<ItemStand>();
+            ArmorStand armour = piece.GetComponentInChildren<ArmorStand>();
+            if (chest == null && (item != null || armour != null)) why = OwnPieceWhy.HasItem;
+            if ((item != null && item.HaveAttachment()) || (armour != null && armour.GetNrOfAttachedItems() > 0)) return true;
+            ZNetView nview = piece.GetComponent<ZNetView>();
+            ZDO zdo = nview != null && nview.IsValid() ? nview.GetZDO() : null;
+            if (zdo == null) return false;
+            why = OwnPieceWhy.Full;
+            if (piece.GetComponentInChildren<Smelter>() != null && (zdo.GetInt(ZDOVars.s_queued) > 0 || zdo.GetInt(ZDOVars.s_spawnAmount) > 0)) return true;
+            if (piece.GetComponentInChildren<Fermenter>() != null && zdo.GetString(ZDOVars.s_content).Length > 0) return true;
+            if (Jobs.CookJob.Filled(piece.GetComponentInChildren<CookingStation>()) > 0) return true;
+            if ((piece.GetComponentInChildren<Beehive>() != null || piece.GetComponentInChildren<SapCollector>() != null) && zdo.GetInt(ZDOVars.s_level) > 0) return true;
+            why = OwnPieceWhy.KeepsWhat;
+            byte[] map = piece.GetComponentInChildren<MapTable>() != null ? zdo.GetByteArray(ZDOVars.s_data) : null;
+            if (map != null && map.Length > 0) return true;
+            if (piece.GetComponentInChildren<PrivateArea>() != null) return true;
+            why = OwnPieceWhy.None;
+            return false;
+        }
+
+        // What a put-back carries through its take-down, by the game's own saved names (1.6, the review's finding 1): a
+        // sign's text, a portal's tag, the fuel of a fire, smelter, oven or shield, a turret's ammo. Anything else a piece
+        // keeps makes the upgrade wait (HoldsThings).
+        private static readonly string[] s_keptTexts = { "text", "author", "authorDisplayName", "tag", "tagauthor", "ammoType" };
+        private static readonly int[] s_keptTextKeys =
+            { ZDOVars.s_text, ZDOVars.s_author, ZDOVars.s_authorDisplayName, ZDOVars.s_tag, ZDOVars.s_tagauthor, ZDOVars.s_ammoType };
+
+        /// <summary>What this piece carries back (saved with its put-back as it comes down): "" for nothing.</summary>
+        public static string KeptValues(Piece piece)
+        {
+            ZNetView nview = piece != null ? piece.GetComponent<ZNetView>() : null;
+            ZDO zdo = nview != null && nview.IsValid() ? nview.GetZDO() : null;
+            if (zdo == null) return "";
+            var fields = new List<KeyValuePair<string, string>>();
+            for (int i = 0; i < s_keptTexts.Length; i++)
+            {
+                string value = zdo.GetString(s_keptTextKeys[i], "");
+                if (value.Length > 0) fields.Add(new KeyValuePair<string, string>("s." + s_keptTexts[i], value));
+            }
+            float fuel = zdo.GetFloat(ZDOVars.s_fuel, float.NaN);
+            if (!float.IsNaN(fuel)) fields.Add(new KeyValuePair<string, string>("f.fuel", RecordCodec.FormatFloats(new[] { fuel })));
+            int ammo = zdo.GetInt(ZDOVars.s_ammo, int.MinValue);
+            if (ammo != int.MinValue) fields.Add(new KeyValuePair<string, string>("i.ammo", RecordCodec.FormatInt(ammo)));
+            return fields.Count == 0 ? "" : RecordCodec.Encode(fields);
+        }
+
+        /// <summary>A put-back's saved values (<see cref="KeptValues"/>) set on the piece that went back; names it doesn't know are left.</summary>
+        public static void SetKeptValues(GameObject go, string kept)
+        {
+            if (go == null || string.IsNullOrEmpty(kept)) return;
+            ZNetView nview = go.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid()) return;
+            ZDO zdo = nview.GetZDO();
+            foreach (KeyValuePair<string, string> field in RecordCodec.Decode(kept))
+            {
+                int text = field.Key.StartsWith("s.") ? Array.IndexOf(s_keptTexts, field.Key.Substring(2)) : -1;
+                if (text >= 0) zdo.Set(s_keptTextKeys[text], field.Value);
+                else if (field.Key == "f.fuel" && RecordCodec.TryParseFinite(field.Value, out float fuel)) zdo.Set(ZDOVars.s_fuel, fuel);
+                else if (field.Key == "i.ammo") zdo.Set(ZDOVars.s_ammo, RecordCodec.ParseInt(field.Value, 0));
+            }
+        }
+
+        /// <summary>The player's piece an upgrade's put-back is about, standing where it was (same kind and place), or null.</summary>
+        public static Piece FindPutBack(PutBackRecord putBack)
+        {
+            Piece piece = FindStanding(new PlannedPiece(0, putBack.Prefab, putBack.Position, putBack.Rotation));
+            return piece != null && SiteOf(piece.gameObject).Length == 0 ? piece : null;
+        }
+
+        /// <summary>
+        /// Takes one of the player's pieces off whole, to put back (1.6): nothing drops, its materials stay with it (they
+        /// are in the piece that goes back). Only for a piece that holds nothing (<see cref="HoldsThings"/>); what it carries
+        /// is read first (<see cref="KeptValues"/>).
+        /// </summary>
+        public static void TakeOffWhole(Piece piece)
+        {
+            if (piece == null) return;
+            ZNetView nview = piece.GetComponent<ZNetView>();
+            if (nview != null && nview.IsValid() && !nview.IsOwner()) nview.ClaimOwnership();
+            WearNTear wear = piece.GetComponent<WearNTear>();
+            if (wear != null) wear.m_destroyedEffect.Create(piece.transform.position, piece.transform.rotation);
+            ZNetScene.instance.Destroy(piece.gameObject);
+        }
+
+        /// <summary>
+        /// The materials of a piece that was taken off whole and can't go back (1.6): dropped where it stood, the player's
+        /// to pick up, as when a piece falls in the game.
+        /// </summary>
+        public static void DropMaterials(string prefabName, Vector3 at)
+        {
+            GameObject prefab = Prefab(prefabName);
+            Piece piece = prefab != null ? prefab.GetComponent<Piece>() : null;
+            if (piece == null || piece.m_resources == null) return;
+            foreach (Piece.Requirement need in piece.m_resources)
+                if (need.m_resItem != null && need.m_recover && need.m_amount > 0)
+                    ItemDrop.DropItem(need.m_resItem.m_itemData.Clone(), need.m_amount, at + Vector3.up * 0.3f, Quaternion.identity);
+        }
+
+        /// <summary>A piece a player placed that no colony site claims (1.6, the own-pieces design's point 1).</summary>
+        public static bool IsPlayersOwn(Piece piece) => piece != null && piece.IsPlacedByPlayer() && SiteOf(piece.gameObject).Length == 0;
+
+        /// <summary>"DaAlmyte's" for the log: the player who placed it, when they are about; else "a player's".</summary>
+        public static string Whose(long creator)
+        {
+            Player player = creator != 0L ? Player.GetPlayer(creator) : null;
+            return player != null ? player.GetPlayerName() + "'s" : "a player's";
         }
 
         private static PieceBox BoxAt(Bounds shape, Vector3 position, Quaternion rotation)

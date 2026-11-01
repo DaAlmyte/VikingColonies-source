@@ -49,6 +49,14 @@ namespace VikingColonies.Core
         public static readonly float[] StandOffs = { StandOff, 2f, 2.8f };
         /// <summary>He steps through to this far beyond the doorway.</summary>
         public const float StepBeyond = 1.5f;
+        /// <summary>One stepped through counts as there within this of the spot beyond (<see cref="StepBeyond"/>).</summary>
+        public const float LandingReach = 0.6f;
+        /// <summary>
+        /// How far out of a hut's door one making way (for a builder, a hut going up at once) is put, nearest first: past the
+        /// landing of anyone stepping out, body and all (the 1.6.0 self-test a6d3: put 1.7 m out, on the landing, a settler
+        /// kept the storehouse's courier in for minutes).
+        /// </summary>
+        public static readonly float[] MakeWayDistances = { 2.5f, 3.3f, 4.1f };
         /// <summary>While another settler goes through, he waits this far to the side of his spot, out of the way.</summary>
         public const float WaitAside = 1.4f;
 
@@ -443,10 +451,43 @@ namespace VikingColonies.Core
         /// </summary>
         public static bool LookForDoorNow(float wayEndGap) => wayEndGap >= EarlyLookGap;
 
+        /// <summary>
+        /// As <see cref="LookForDoorNow(float)"/>, and at once whatever the gap when a hut's walls stand between the way's end
+        /// and the goal (<see cref="HutWallsBetween"/>; 1.5.1: the way to a chest's open side ended under 2 m away, behind the
+        /// back wall, and was never looked at early).
+        /// </summary>
+        public static bool LookForDoorNow(float wayEndGap, bool wallsBetween) => wallsBetween || LookForDoorNow(wayEndGap);
+
         /// <summary>Looking early, only doors this near him count: going through one has to fit the time a passing gets.</summary>
         public const float EarlyLookReach = 12f;
 
         public static bool NearEnoughToLookEarly(float doorFromHim) => doorFromHim <= EarlyLookReach;
+
+        /// <summary>
+        /// As <see cref="NearEnoughToLookEarly(float)"/>; a door of the hut whose walls stand between his way's end and his
+        /// goal counts from any distance (1.5.1, the player's 1.5.0 watch: running to shelter from 25 m, the door was 22 m off
+        /// and not looked at, and 6 s later they stood behind the hut; the approach's time grows with the distance).
+        /// </summary>
+        public static bool NearEnoughToLookEarly(float doorFromHim, bool ofWalledHut) => ofWalledHut || NearEnoughToLookEarly(doorFromHim);
+
+        /// <summary>
+        /// The hut whose walls stand between the end of his way and his goal: one is inside it and the other isn't (inside is
+        /// its outline without the site's margin, as <see cref="OwnDoors"/> has it); null when none. The game's paths treat
+        /// a closed door as a wall, so the way to a goal inside a hut ends behind one of its walls, often the back one where
+        /// the chest stands; the way out to just behind a hut ends inside it, in its back corner. Its door is the way, now
+        /// (1.5.1: settlers ran round the back of the hut before going in at its door).
+        /// </summary>
+        public static Footprint HutWallsBetween(Vec3 wayEnd, Vec3 goal, IReadOnlyList<Footprint> huts, float siteMargin = 0f)
+        {
+            if (huts == null) return null;
+            foreach (Footprint site in huts)
+            {
+                if (site == null) continue;
+                Footprint inside = site.Grow(-siteMargin);
+                if (inside.Contains(goal) != inside.Contains(wayEnd)) return site;
+            }
+            return null;
+        }
 
         /// <summary>
         /// Where he steps next while going through an open door from <paramref name="startSide"/>: standing off to the side
@@ -480,6 +521,23 @@ namespace VikingColonies.Core
         public static bool ReadyToOpen(Doorway door, Vec3 settler, float standOff) =>
             ReadyToOpen(Vec3.Distance(settler.Flat, door.Middle.Flat), standOff) && Sideways(door, settler) <= OpenReach
             && AtDoorHeight(door, settler.Y);
+
+        /// <summary>Stuck this long close in front of a door, no closer to its spot, he opens it from where he stands (<see cref="ReadyAfterStall"/>).</summary>
+        public const float StallOpenSeconds = 1.5f;
+
+        /// <summary>... from this much further out than he may otherwise open it from the spot nearest it (2.8 m in all).</summary>
+        public const float StallOpenExtra = 0.8f;
+
+        /// <summary>
+        /// Stuck close in front of a door a moment, no closer to its spot: he opens it from there (1.5.1's walk check: under a
+        /// Builder's Hut's low eave a settler running in to shelter stood 2.1 m from its door, 0.9 m short of its spot, where
+        /// nothing got them going again, and gave the door up after 8 s). At its height and in front of its doorway, within
+        /// a step through's width of its middle; the reach doesn't grow with a spot further out (the review: from 4.4 m out
+        /// the step through would line up on the very spot he couldn't get to).
+        /// </summary>
+        public static bool ReadyAfterStall(Doorway door, Vec3 settler, float standOff, float secondsNotCloser) =>
+            secondsNotCloser >= StallOpenSeconds && Vec3.Distance(settler.Flat, door.Middle.Flat) <= OpenReach + StallOpenExtra
+            && Sideways(door, settler) <= ThroughSideways && AtDoorHeight(door, settler.Y);
 
         /// <summary>A step through stays within this of the doorway's middle, sideways (a hut's door or gate is 2 m wide).</summary>
         public const float ThroughSideways = 1.5f;

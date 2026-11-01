@@ -20,6 +20,8 @@ namespace VikingColonies.Core
         CantFloat,
         OnlyOneStorehouse,   // the storehouse (1.5): one per colony
         NeedsBuilderHut,     // the storehouse (1.5): a Builder's Hut builds it
+        OnlyOneMeadHall,     // the Mead Hall (1.6): one per colony
+        OwnPiece,            // an upgrade waits for one of the player's own pieces (1.6): SiteFindings.OwnPiece names it
     }
 
     /// <summary>

@@ -54,7 +54,31 @@ namespace VikingColonies.Citizens
                 __result += "\n<color=#c8c8c8>" + who + "</color>";
                 if (citizen.Record.Hungry && Colony.Creative.SettlersEat(citizen.Record.ColonyId))
                     __result += "\n<color=orange>" + Localization.instance.Localize("$vc_hungry") + "</color>";
+                string away = AwayLine(citizen);
+                if (away.Length > 0) __result += "\n<color=orange>" + away + "</color>";
             }
+        }
+
+        /// <summary>
+        /// A builder working elsewhere while a site waits on the player (1.6): "Waiting for Flint at the Lumberjack's Hut,
+        /// working here meanwhile"; "" for none (no note, its time up, the site not loaded here).
+        /// </summary>
+        private static string AwayLine(Citizen citizen)
+        {
+            if (citizen.Record.Job != SaveKeys.BuilderJob || ZNet.instance == null
+                || !AwayNote.Decode(citizen.AwayNote, out string id, out double until, out bool forLevel) || !AwayNote.Shows(ZNet.instance.GetTimeSeconds(), until)) return "";
+            Buildings.ColonyBuilding hut = Buildings.ColonyBuilding.FindById(id);
+            Construction.ConstructionModule site = hut != null ? hut.GetComponent<Construction.ConstructionModule>() : null;
+            // Not once that site is done, set aside by the player, or taken by another builder (its review).
+            if (site == null || site.Order == null || site.Order.State == BuildState.Done || site.Order.Paused
+                || site.Order.IsClaimedByOther(citizen.Id, ZNet.instance.GetTimeSeconds())) return "";
+            string name = Localization.instance.Localize(hut.Type?.NameToken ?? "");
+            string needs = site.Order.Needs;
+            // Left only for a builder from a higher Builder's Hut: no other work, so not "working here meanwhile" (v16's review).
+            if (forLevel) return string.Format(Localization.instance.Localize("$vc_builder_away_level"), name);
+            return needs.Length > 0
+                ? string.Format(Localization.instance.Localize("$vc_builder_away"), Localization.instance.Localize(needs), name)
+                : string.Format(Localization.instance.Localize("$vc_builder_away_other"), name);
         }
 
         /// <summary>
@@ -69,7 +93,7 @@ namespace VikingColonies.Citizens
             {
                 if (skill != Skills.SkillType.WoodCutting) return;
                 Citizen citizen = __instance.GetComponent<Citizen>();
-                if (citizen != null) __result = SettlerSkill.DamageFactor(citizen.Record.Woodcutting, UnityEngine.Random.value) * citizen.WorkSpeed;   // weaker when hungry
+                if (citizen != null) __result = SettlerSkill.DamageFactor(citizen.Record.Woodcutting, ModRandom.Value("roll", citizen.CitizenName)) * citizen.WorkSpeed;   // weaker when hungry
             }
         }
 
@@ -83,7 +107,7 @@ namespace VikingColonies.Citizens
                 if (!IsWeaponSkill(skill)) return;
                 Citizen citizen = __instance.GetComponent<Citizen>();
                 if (citizen != null && citizen.Record.Job == SaveKeys.GuardJob)
-                    __result = SettlerSkill.DamageFactor(citizen.Record.Fighting, UnityEngine.Random.value) * citizen.WorkSpeed;   // weaker when hungry
+                    __result = SettlerSkill.DamageFactor(citizen.Record.Fighting, ModRandom.Value("roll", citizen.CitizenName)) * citizen.WorkSpeed;   // weaker when hungry
             }
         }
 

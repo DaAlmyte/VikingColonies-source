@@ -49,6 +49,21 @@ namespace VikingColonies.Tests
         }
 
         [Fact]
+        public void One_reason_reads_as_the_line_does()
+        {
+            // The camp's Overview (1.6.0) puts each reason on its own line, those that take away in orange.
+            Assert.Equal("-10 Ingrid died", MoodLevels.ReasonText(new MoodReason("$vc_mood_death", -10, "Ingrid"), t => "{0} died"));
+            Assert.Equal("+5 home", MoodLevels.ReasonText(new MoodReason("$vc_mood_home", 5), t => "home"));
+        }
+
+        [Fact]
+        public void The_overviews_mood_says_mood_once()
+        {
+            // The player's look at 1.5.1: "Mood: Content (52)" under the heading "Mood". The box's big line is the level alone.
+            Assert.Contains("{ \"vc_overview_mood_line\", \"{0} ({1})\" }", Translations());
+        }
+
+        [Fact]
         public void Every_word_of_mood_is_translated()
         {
             string text = Translations();

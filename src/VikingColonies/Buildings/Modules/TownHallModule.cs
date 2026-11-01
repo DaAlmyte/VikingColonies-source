@@ -13,7 +13,7 @@ namespace VikingColonies.Buildings
     public enum TrophyPlace { None, Chest, Stand, Beaten }
 
     /// <summary>Founds the colony (adopt + top-up) and keeps the colony roster. Logic runs on the Town Hall's owner.</summary>
-    public class TownHallModule : MonoBehaviour
+    public partial class TownHallModule : MonoBehaviour
     {
         private const string FoundedKey = SaveKeys.Founded;
         private const string RosterKey = SaveKeys.Roster;
@@ -23,6 +23,7 @@ namespace VikingColonies.Buildings
         private const string NewcomerDayKey = SaveKeys.NewcomerDay;
         private const string SagaKey = SaveKeys.Saga;
         private const string RpcSaga = "vc_Saga";
+        private const string RpcDeed = "vc_Deed";   // the colony's deeds (1.5.1): a kind and an amount, checked by the owner
         /// <summary>A saga line holds at most this many words, each at most this long (anyone may send one).</summary>
         private const int MaxSagaWords = 6, MaxSagaWordLength = 64;
         private const float NewcomerCheckSeconds = 10f;
@@ -115,6 +116,44 @@ namespace VikingColonies.Buildings
             Log.Event($"Colony {_building?.ColonyId}: saga, day {today}: {kind} {string.Join(", ", words)}");
         }
 
+        /// <summary>
+        /// The colony's deeds (1.5.1, the camp's window): today and all time, read again only when the camp's saved data has
+        /// changed (as the Saga).
+        /// </summary>
+        public ColonyDeeds Deeds
+        {
+            get
+            {
+                if (_nview == null || !_nview.IsValid()) return new ColonyDeeds();
+                ZDO zdo = _nview.GetZDO();
+                if (_deeds == null || zdo.DataRevision != _deedsRevision)
+                {
+                    _deeds = ColonyDeeds.Decode(zdo.GetString(SaveKeys.ColonyDeeds, ""));
+                    _deedsRevision = zdo.DataRevision;
+                }
+                return _deeds;
+            }
+        }
+
+        private ColonyDeeds _deeds;
+        private uint _deedsRevision;
+
+        /// <summary>Counts a deed, dated today: on the camp's owner (from anywhere, the request goes there).</summary>
+        public void CountDeed(string kind, int amount)
+        {
+            if (_nview == null || !_nview.IsValid() || !DeedKinds.IsKnown(kind) || amount < 1) return;
+            _nview.InvokeRPC(RpcDeed, kind, amount);   // runs on the owner: right here when that's us
+        }
+
+        private void RPC_Deed(long sender, string kind, int amount)
+        {
+            if (_nview == null || !_nview.IsValid() || !_nview.IsOwner()) return;
+            int today = EnvMan.instance != null && ZNet.instance != null ? EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()) : 0;
+            ColonyDeeds deeds = Deeds;
+            if (!deeds.Add(kind, amount, today)) return;   // a kind the game doesn't know, or an amount out of range: dropped
+            _nview.GetZDO().Set(SaveKeys.ColonyDeeds, deeds.Encode());
+        }
+
         private void Awake()
         {
             _building = GetComponent<ColonyBuilding>();
@@ -122,12 +161,16 @@ namespace VikingColonies.Buildings
             if (_nview != null && _nview.IsValid())
             {
                 _nview.Register<ZPackage>(RpcSaga, RPC_Saga);
+                _nview.Register<string, int>(RpcDeed, RPC_Deed);
                 _nview.Register<string>(RpcBringBack, RPC_BringBack);
                 _nview.Register<string, string>(RpcBringBackResult, RPC_BringBackResult);
                 _nview.Register<bool, Vector3>(RpcAlarm, RPC_Alarm);
                 _nview.Register<int>(RpcRaise, RPC_Raise);
                 _nview.Register<string, string>(RpcRaiseResult, RPC_RaiseResult);
                 _nview.Register<int, int>(RpcCreativeHall, RPC_CreativeHall);
+                _nview.Register<string>(RpcFallen, RPC_Fallen);   // the colony's fallen (1.5.1)
+                WearNTear wear = GetComponent<WearNTear>();
+                if (wear != null) wear.m_onDestroyed += OnCampDestroyed;
             }
             ApplyLevel();
         }
@@ -343,7 +386,7 @@ namespace VikingColonies.Buildings
                         Answer(sender, "$vc_creative_cap", "");
                         break;
                     }
-                    var rng = new System.Random();
+                    var rng = ColonyRandom.For("creative", "");
                     for (int i = 0; i < add; i++)
                     {
                         Vector3 at = transform.position + Quaternion.Euler(0f, i * 360f / add, 0f) * Vector3.forward * (3f + i % 3);
@@ -456,7 +499,8 @@ namespace VikingColonies.Buildings
         private void RPC_Alarm(long sender, bool on, Vector3 at)
         {
             if (!_nview.IsOwner() || !ColonyPermissions.SenderMayManage(_building, sender)) return;
-            if (Utils.DistanceXZ(at, transform.position) > ColonyConfig.MaxReach.Value) at = transform.position;   // past the colony's reach: at the Town Hall
+            if (!RecordCodec.IsFinite(at.x, at.y, at.z) || Utils.DistanceXZ(at, transform.position) > ColonyConfig.MaxReach.Value)
+                at = transform.position;   // past the colony's reach, or no real place (the security sweep of 27 Oct 2026): at the Town Hall
             _nview.GetZDO().Set(SaveKeys.AlarmUntil, on ? (float)ColonyAlarm.Until(Now) : 0f);
             if (on) _nview.GetZDO().Set(SaveKeys.AlarmAt, at);
             Log.Event($"Colony {_building.ColonyId}: {(on ? $"the alarm sounds at ({at.x:0.0}, {at.z:0.0})" : "all clear")}");
@@ -515,6 +559,9 @@ namespace VikingColonies.Buildings
             {
                 _levelCheck = 2f;
                 ApplyLevel();   // raised on any computer: every computer's station follows
+                // Deaths this computer saw while the camp wasn't loaded here go to it now (1.5.1, the fallen list).
+                if (_nview != null && _nview.IsValid() && _building != null && !string.IsNullOrEmpty(_building.ColonyId))
+                    foreach (FallenLine waited in Colony.Fallen.TakeWaiting(_building.ColonyId)) RecordFallen(waited);
             }
             if (_nview != null && _nview.IsValid() && _building != null && !string.IsNullOrEmpty(_building.ColonyId)) TellAlarm();
             if (_nview == null || !_nview.IsValid() || !_nview.IsOwner())
@@ -542,6 +589,7 @@ namespace VikingColonies.Buildings
             else if (Founded) AdoptNearby();   // citizens who lost their colony, or v1 settlers whose hall is gone
             if (Founded) TrackRaid();
             if (Founded) TrackBoss();
+            if (Founded) CheckFallen();   // the colony's fallen and the fallen return (1.5.1)
             RefreshRoster();
         }
 
@@ -559,7 +607,7 @@ namespace VikingColonies.Buildings
 
             // Taking over a colony that lost its Town Hall brings no newcomers: its settlers belong to it already.
             int spawn = _building.TookOver ? 0 : ColonyRules.CitizensToSpawn(ColonyConfig.StartingCitizens.Value, members);
-            var rng = new System.Random();
+            var rng = ColonyRandom.For("founding", "");
             // The first settlers walk in together from the colony's edge (0.16); with no way in, they appear by the hall.
             Vector3? edge = spawn > 0 && ColonyConfig.NewcomersWalkIn.Value ? EdgeSpot(founding: true) : null;
             IReadOnlyList<string> callings = Callings.Founders(rng, spawn, Jobs.JobDefinitions.Ids);
@@ -701,6 +749,7 @@ namespace VikingColonies.Buildings
             string guards = GuardDuty.Names(GuardDuty.Guarding(Roster.Entries));   // the guards on duty (1.2)
             if (guards.Length > 0) Record("repelled", guards);
             else Record("repelled");
+            CountDeed(DeedKinds.Raids, 1);   // the colony's deeds (1.5.1)
         }
 
         /// <summary>
@@ -745,7 +794,7 @@ namespace VikingColonies.Buildings
             if (_building.Storage.Claim() != StorageModule.Access.Ready) return;   // a player has the chest open: next time
             ColonyNeeds needs = Needs();   // the chest as it is now
             int coming = Newcomers.HowMany(needs, NewcomerRules);
-            var rng = new System.Random();
+            var rng = ColonyRandom.For("newcomers", "");
             Vector3 hallPos = transform.position;
             int came = 0;
             Vector3? edge = ColonyConfig.NewcomersWalkIn.Value ? EdgeSpot(founding: false) : null;
@@ -778,7 +827,7 @@ namespace VikingColonies.Buildings
         }
 
         /// <summary>Self-test: a newcomer now, whatever the beds and food (walking in as the setting says).</summary>
-        internal Citizen NewcomerForTest() => SpawnNewcomer(new System.Random(), ColonyConfig.NewcomersWalkIn.Value ? EdgeSpot(founding: false) : null, 0);
+        internal Citizen NewcomerForTest() => SpawnNewcomer(ColonyRandom.For("newcomers", ""), ColonyConfig.NewcomersWalkIn.Value ? EdgeSpot(founding: false) : null, 0);
 
         /// <summary>The Saga's line for a settler who came (0.16): name, where from, his trade, his trait.</summary>
         private void RecordCame(CitizenRecord r) => Record("came", r.Name, r.Origin, CallingWord(r.Calling), Traits.Token(Traits.Parse(r.Trait, Trait.Cheerful)));
@@ -987,7 +1036,7 @@ namespace VikingColonies.Buildings
             if (kept.Id != citizenId) return "$vc_bring_back_none";
             kept.Life++;   // a body of his that turns up later is an old copy and goes (Keepsake.Outdated)
             Vector3 hallPos = transform.position;
-            Vector3 offset = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) * Vector3.forward * 3f;
+            Vector3 offset = ModRandom.Turn("bring back", kept.Name) * Vector3.forward * 3f;
             Citizen citizen = CitizenPrefab.Spawn(hallPos + offset + Vector3.up * 0.5f, Quaternion.identity);
             if (citizen == null) return "$vc_no_settler_body";   // his keepsake stays as it was
             citizen.InitRestored(kept, _building.ColonyId, hallPos);

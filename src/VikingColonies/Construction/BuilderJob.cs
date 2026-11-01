@@ -165,6 +165,7 @@ namespace VikingColonies.Construction
             }
             if (Prepare(order, dt)) return;   // the site is cleared and flattened first
             if (_piece < 0 && ChooseDoorway(order)) return;   // an upgrade: the old doorways come down before anything new goes up
+            if (_piece < 0 && PutOwnPiecesBack(order, dt)) return;   // an upgrade: the player's pieces back once what holds them stands (1.6)
             if (_piece < 0 && !ChoosePiece(order))
             {
                 if (_takeAway.Count > 0) ChooseTakeAway(order);   // an upgrade: an old piece comes down meanwhile
@@ -194,7 +195,11 @@ namespace VikingColonies.Construction
             SwingLog.EndSwing(Citizen);
         }
 
-        public override void Stop() => LeaveSite();
+        public override void Stop()
+        {
+            Citizen?.SetAwayNote("");   // fired or dropped: no "working here meanwhile" when they come back (its review)
+            LeaveSite();
+        }
 
         /// <summary>Night: the borrowed tool goes back and he leaves his site; in the morning he picks a site again, his own hut first.</summary>
         public override void OnNight()
@@ -212,7 +217,9 @@ namespace VikingColonies.Construction
             if (chosen == null) return;
             _chestRound.Relook(heldSite: false, newSite: true);   // a new site: every chest looked at afresh
             _roundSpots.Clear();
+            _behindTold.Clear();
             _site = chosen;
+            if (AwayNote.Decode(Citizen.AwayNote, out string awayFrom, out _) && awayFrom == chosen.Building.Id) Citizen.SetAwayNote("");   // back at it
             _mend = null;
             IReadOnlyList<PlannedPiece> plan = chosen.Plan;
             _sitePlan = plan;
@@ -331,7 +338,11 @@ namespace VikingColonies.Construction
             _asideUntil.Clear();
             _giveUps.Clear();   // a new site: nothing left over yet
             _chestRound.Relook(held, newSite: false);   // an idle look keeps what he learned (the bug hunt)
-            if (held) _roundSpots.Clear();
+            if (held)
+            {
+                _roundSpots.Clear();
+                _behindTold.Clear();
+            }
             _heldRocks.Clear();
             _toldHeldRock = false;
             _spaceLogged = -1;
@@ -343,6 +354,7 @@ namespace VikingColonies.Construction
             _clearTakeAway = -1;
             _clearKeptFor = -1;
             _keptDown.Clear();   // the site's own look for missing pieces finds them
+            ForgetOwnPieces();
             _takeAway = new List<PlannedPiece>();
             _reportedBlocked = "";
             _walksLogged = 0;
@@ -396,8 +408,9 @@ namespace VikingColonies.Construction
             if (_watching.Count > 0) Citizen.Status = BuildingStatus(order);   // waiting to see whether the last pieces hold
             else if (_cursor.Stuck && _cursor.LastTried >= 0)
             {
-                WaitOnPlayer();   // something in the way, or no support
-                if (_inTheWay.TryGetValue(_cursor.LastTried, out string blocker))
+                bool inTheWay = _inTheWay.TryGetValue(_cursor.LastTried, out string blocker);
+                WaitOnPlayer(hopeless: !inTheWay);   // something in the way (the player can move it), or no support (nothing to hand over)
+                if (inTheWay)
                 {
                     Citizen.Status = "$vc_status_in_the_way " + blocker;
                     ReportBlocked(blocker);   // shown in the hut window, so the player knows what to remove
@@ -422,14 +435,10 @@ namespace VikingColonies.Construction
             var standing = new Dictionary<int, Piece>();
             List<KeyValuePair<int, PieceBox>> old = StandingOld(order, pieces, standing);
             if (old.Count == 0) return;
-            // Taking a hut down (0.23): nothing stays, so every piece comes down from the top.
+            // Taking a hut down (0.23): nothing stays, so every piece comes down from the top. The player's own pieces (a
+            // storehouse's chests among them) are the upgrade's put-backs now (1.6): taken down first, not left to hold.
             List<PieceBox> staying = order.Kind == OrderKind.Remove ? new List<PieceBox>()
                 : pieces.Where(p => p != null && _site.MatchesPlan(p)).Select(PiecePlacer.BoxOf).ToList();
-            // A storehouse's chests the player stood inside stay too (1.5, its review): what holds them up comes down last.
-            StorehouseModule store = order.Kind == OrderKind.Remove ? null : _site.Building?.Storehouse;
-            if (store != null)
-                foreach (Piece piece in store.StandingInside)
-                    if (piece != null && !_site.MatchesPlan(piece)) staying.Add(PiecePlacer.BoxOf(piece));
             int next = RemovalOrder.Next(old, staying, OnGround, order.BuildHandled);
             if (next < 0) return;   // something new must stand first
             _clear = standing[next];
@@ -690,7 +699,7 @@ namespace VikingColonies.Construction
             Ai.Idle();
             if (store.Claim() != StorageModule.Access.Ready) return;   // its owner is handing it over, or a player has it open: he waits
             int taken = 0;
-            while (taken < step.Amount && store.TryTakeItem(step.Item, Citizen.Carry, ownUse: store == OwnStore, toBuildWith: true)) taken++;
+            while (taken < step.Amount && store.TryTakeItem(step.Item, Citizen.Carry, ownUse: store == OwnStore, toBuildWith: true, forOwnOrder: store == SiteStore)) taken++;
             if (taken > 0)
             {
                 Citizen.SaveCarry();
@@ -717,15 +726,20 @@ namespace VikingColonies.Construction
         private void PlanFetch(List<IReadOnlyDictionary<string, int>> upcoming)
         {
             _stores = ColonyStores();
-            // His own hut's chest is his to use; another building's kept items are left (0.21).
-            var stocks = _stores.Select(s => (IReadOnlyDictionary<string, int>)(s == OwnStore ? s.Contents() : s.SpareContents())).ToList();
+            // His own hut's chest is his to use; another building's kept items are left (0.21), and what another hut's chest
+            // holds for that hut's own order (1.5.1); what the site's own chest holds for this order is his.
+            var stocks = _stores.Select(s => (IReadOnlyDictionary<string, int>)(s == OwnStore ? s.Contents() : s.SpareContents(forOwnOrder: s == SiteStore))).ToList();
             _fetch = MaterialPlanner.Plan(upcoming, Citizen.Carry, ColonyConfig.BuilderCarryCapacity.Value, stocks);
         }
 
         private StorageModule OwnStore => _hut != null ? _hut.Storage : null;
 
-        /// <summary>His hut's storage, then the Town Hall's, then the colony's other huts, nearest first.</summary>
-        private List<StorageModule> ColonyStores() => BuilderTools.ColonyStores(Citizen.ColonyId, _hut, Citizen.transform.position);
+        /// <summary>The chest of the building he is building (its own order's materials are his: 1.5.1).</summary>
+        private StorageModule SiteStore => _site != null && _site.Building != null ? _site.Building.Storage : null;
+
+        /// <summary>His hut's storage, then the building he builds (1.5.1), the storehouse's, the Town Hall's, then the colony's other huts, nearest first.</summary>
+        private List<StorageModule> ColonyStores() =>
+            BuilderTools.ColonyStores(Citizen.ColonyId, _hut, Citizen.transform.position, _site != null ? _site.Building : null);
 
         /// <summary>Picks up building materials lying at the site — a fallen piece drops what it was made of. True while busy.</summary>
         private bool CollectFallenMaterials(float dt)
@@ -801,11 +815,24 @@ namespace VikingColonies.Construction
         private bool Reach(Transform chest)
         {
             string key = chest.GetInstanceID().ToString();
+            // A chest new to him on this site: straight to its open side (a player's report, 1.4.3: the walk to the chest
+            // itself ended behind the hut's back wall, and from there he went round to the door, almost every fetch).
+            if (_chestRound.IsNew(key))
+            {
+                bool open = OpenSideOf(chest, out Vector3 side);
+                if (_chestRound.FirstGoal(key, open) == ChestGoal.OpenSide)
+                {
+                    _roundSpots[key] = side;
+                    Log.Info($"{Citizen.CitizenName} goes to the chest at {chest.position} by its open side, {side}");
+                }
+            }
             bool goingRound = _chestRound.GoingRound(key) && _roundSpots.ContainsKey(key);
             Vector3 position = goingRound ? _roundSpots[key] : chest.position;
             if (Ai.GoTo(position, goingRound ? MoveRules.MinStopDistance : ChestReach))
             {
-                bool wall = !goingRound && Walls.StructureBetween(Citizen.transform.position, chest.position);
+                // A wall between matters until he has been round once (a post counting as a wall mustn't send him round again,
+                // 1.4.1); a first look's plan is checked here once (its review: it may come before the walls stand).
+                bool wall = _chestRound.ChecksOnArrival(key) && Walls.StructureBetween(Citizen.transform.position, chest.position);
                 if (_chestRound.AtReach(key, wall) == ChestStep.GoRound)
                 {
                     if (OpenSideOf(chest, out Vector3 spot))
@@ -818,6 +845,7 @@ namespace VikingColonies.Construction
                     }
                     _chestRound.Failed(key);   // no open side: from where he is, as before, and not looked for again
                 }
+                TellIfBehind(chest, key);
                 _walkStuck.Reset();
                 return true;
             }
@@ -847,6 +875,23 @@ namespace VikingColonies.Construction
             return false;
         }
 
+        /// <summary>
+        /// A take from behind a chest is logged once a chest a site (its review: the chest walk's game check must be able to
+        /// see the reported bug come back: the builder by a finished Builder's Hut's chest, outside its back wall). A hut
+        /// being built round its chest may have no way in yet (its fix run: the walk to its open side ended behind the wall,
+        /// as before the fix): told apart, as no fault of the walk.
+        /// </summary>
+        private void TellIfBehind(Transform chest, string key)
+        {
+            Vector3 from = Citizen.transform.position - chest.position;
+            if (!ChestSides.Behind(from.x, from.z, chest.forward.x, chest.forward.z) || !_behindTold.Add(key)) return;
+            bool building = chest.GetComponent<ConstructionModule>() is ConstructionModule site && site.Order != null;
+            if (building) Log.Info($"{Citizen.CitizenName} reaches the chest at {chest.position} from behind it while its hut is being built (standing at {Citizen.transform.position})");
+            else Log.Info($"{Citizen.CitizenName} takes from the chest at {chest.position} from behind it (standing at {Citizen.transform.position})");
+        }
+
+        private readonly HashSet<string> _behindTold = new HashSet<string>();
+
         // ---- Building ----
 
         private void Build(BuildOrderRecord order, float dt)
@@ -864,7 +909,7 @@ namespace VikingColonies.Construction
                     i => !_badSpots.Contains(i));
             if (_spot < 0)
             {
-                WaitOnPlayer();
+                WaitOnPlayer(hopeless: true);   // nothing to hand over helps
                 Citizen.Status = "$vc_status_cant_reach_site";
                 Ai.Idle();
                 _badSpots.Clear();   // try every spot again next time
@@ -967,6 +1012,7 @@ namespace VikingColonies.Construction
         private void Clear(float dt)
         {
             PutToolAway();   // the hammer does this
+            if (TakeOwnPieceFirst(dt)) return;   // the player's piece on it comes down first, to go back after (1.6)
             Piece target = _clear;
             BuildOrderRecord siteOrder = _site != null && _site.IsValid ? _site.Order : null;
             Citizen.Status = _clearTakeAway >= 0 && siteOrder != null && siteOrder.Kind == OrderKind.Remove ? BuildingStatus(siteOrder)   // review of 0.23
@@ -1302,12 +1348,18 @@ namespace VikingColonies.Construction
                     if (store == null || store == OwnStore) continue;
                     int held = store.Contents().TryGetValue(item, out int n) ? n : 0;
                     if (held <= 0) continue;
-                    chests.Add(new KeptChest(store.GetComponent<ColonyBuilding>()?.Type?.NameToken, held, store.Spare(item)));
+                    bool site = store == SiteStore;
+                    int spare = store.Spare(item, false, site);
+                    int forOrder = site ? 0 : store.Spare(item, false, true) - spare;   // held for that hut's own order (1.5.1)
+                    chests.Add(new KeptChest(store.GetComponent<ColonyBuilding>()?.Type?.NameToken, held, spare, forOrder));
                 }
-                string where = StockRules.KeptIn(chests);
-                if (string.IsNullOrEmpty(where)) continue;
+                KeptChest? most = StockRules.MostKept(chests);
+                if (most == null || string.IsNullOrEmpty(most.Value.Building)) continue;
+                string where = most.Value.Building;
                 string itemName = ObjectDB.instance?.GetItemPrefab(item)?.GetComponent<ItemDrop>()?.m_itemData.m_shared.m_name ?? item;
-                _keptNote = $" ($vc_needs_more {itemName} $vc_needs_kept_in {where})";
+                _keptNote = most.Value.ForItsOrder
+                    ? $" ($vc_needs_more {itemName} $vc_needs_held_in {where} $vc_needs_for_its_order)"
+                    : $" ($vc_needs_more {itemName} $vc_needs_kept_in {where})";
                 break;
             }
             return _keptNote;
@@ -1368,7 +1420,7 @@ namespace VikingColonies.Construction
         private static void Hold(Humanoid body, ItemDrop.ItemData item)
         {
             if (item.m_shared.m_useDurability && item.m_durability < item.GetMaxDurability()) item.m_durability = item.GetMaxDurability();
-            if (!body.IsItemEquiped(item) && !SettlerPose.IsHeld(body)) body.EquipItem(item, false);   // put away while he sits
+            if (!body.IsItemEquiped(item) && !SettlerPose.HandsBusy(body)) body.EquipItem(item, false);   // put away while seated or at archery
         }
 
         private static bool IsHammer(ItemDrop.ItemData item) =>

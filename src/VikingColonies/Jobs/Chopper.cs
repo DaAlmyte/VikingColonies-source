@@ -274,7 +274,7 @@ namespace VikingColonies.Jobs
             ItemDrop.ItemData axe = _citizen.Body.GetCurrentWeapon();
             if (destructible == null || axe == null) return;
             var hit = new HitData();
-            hit.m_damage.m_chop = axe.m_shared.m_damages.m_chop * SettlerSkill.DamageFactor(_citizen.Record.Woodcutting, Random.value);
+            hit.m_damage.m_chop = axe.m_shared.m_damages.m_chop * SettlerSkill.DamageFactor(_citizen.Record.Woodcutting, ModRandom.Value("roll", _citizen.CitizenName));
             hit.m_toolTier = (short)axe.m_shared.m_toolTier;
             hit.m_point = target.transform.position + Vector3.up;
             // The hit direction decides which way a tree falls; use the planned, building-free direction.

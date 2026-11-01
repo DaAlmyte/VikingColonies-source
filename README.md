@@ -1,8 +1,8 @@
 # VikingColonies: the code
 
-NPC settlers for your own Viking village: found a Town Hall, give settlers homes and jobs, and they build, farm, chop, forage, repair and guard the colony on their own. MineColonies-style. Server and clients.
+NPC settlers for your own Viking village: found a Chieftain's Camp, give settlers homes and jobs, and they build, farm, chop, forage, repair and guard the colony on their own. MineColonies-style. Server and clients.
 
-This is the code of **VikingColonies 1.5.0**, the version on [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/). It's refreshed with each release, without history.
+This is the code of **VikingColonies 1.6.0**, the version on [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/). It's refreshed with each release, without history.
 
 - **To play it:** [Thunderstore](https://thunderstore.io/c/valheim/p/DaAlmyte/VikingColonies/), with r2modman or the Thunderstore app.
 - **Bugs and ideas:** [the issues page](https://github.com/DaAlmyte/VikingColonies-issues), not here.

@@ -62,9 +62,16 @@ namespace VikingColonies.Construction
             }
             string file = BlueprintNames.FileName(name, level);
             blueprint.Name = file;
-            string path = BlueprintLibrary.Save(file, blueprint);
+            string path = BlueprintLibrary.Save(file, blueprint, out string kept, out string saveProblem);
+            if (path == null)
+            {
+                BuildCommand.Print("vc_blueprint: " + saveProblem + ".");
+                return;
+            }
             BlueprintLibrary.Forget(file);
             BuildCommand.Print($"vc_blueprint: saved {blueprint.Pieces.Count - 1} pieces around the {site.Building.TypeId} to {path} (level {level})");
+            if (kept != null)
+                BuildCommand.Print($"vc_blueprint: the design saved before is kept as {kept}; to go back to it, move the new {file}.blueprint out of the folder, then rename the copy to {file}.blueprint");
             if (BuildingTypes.Get(name) != null)
             {
                 string warning = EraTable.Warning(level, BlueprintLibrary.CostsOf(blueprint));
@@ -96,7 +103,10 @@ namespace VikingColonies.Construction
             blueprint.Pieces.Add(new BlueprintPiece(chest, "Misc", Vec3.Zero, Quat.Identity, new Vec3(1, 1, 1), ""));
             var pieces = new List<Piece>();
             Piece.GetAllPiecesInRadius(origin, radius, pieces);
-            foreach (Piece piece in pieces.Where(p => p != null).OrderBy(p => p.transform.position.y))
+            // Bottom up, and the same order every time (the game's list of pieces changes as an area reloads): the same
+            // building saved again gives the very same lines, so no copy is kept of it (the design copies' review).
+            foreach (Piece piece in pieces.Where(p => p != null).OrderBy(p => p.transform.position.y)
+                         .ThenBy(p => p.transform.position.x).ThenBy(p => p.transform.position.z).ThenBy(p => Utils.GetPrefabName(p.gameObject)))
             {
                 if (piece.GetComponent<ColonyBuilding>() != null) continue;   // huts' chests are buildings of their own
                 string siteId = PiecePlacer.SiteOf(piece.gameObject);

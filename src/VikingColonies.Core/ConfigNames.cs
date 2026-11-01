@@ -24,7 +24,13 @@ namespace VikingColonies.Core
         public const string MessagesSection = "Messages";
         public const string WatchtowerSection = "Watchtower";
         public const string StorehouseSection = "Storehouse";   // 1.5
+        public const string MemorialSection = "Memorial";   // 1.5.1
+        public const string ScarecrowSection = "Scarecrow";   // custom assets' first test (27 Oct 2026)
+        public const string WindowsSection = "Windows";   // 1.5.1
+        public const string WindowScale = "Scale";
         public const string CourierSection = "Courier";         // 1.5
+        public const string MeadHallSection = "Mead Hall";      // 1.6, the cook
+        public const string CookSection = "Cook";
         public const string Carry = "Carry";
         public const string CarryPerLevel = "CarryPerLevel";
         public const string GuardsSection = "Guards";
@@ -78,11 +84,13 @@ namespace VikingColonies.Core
         public const string FreeTime = "FreeTime";
         public const string SmallTalk = "SmallTalk";
         public const string EveningGathering = "EveningGathering";
+        public const string Pastimes = "Pastimes";
         public const string SleepInBeds = "SleepInBeds";
         public const string TendFires = "TendFires";
         public const string CarryToStock = "CarryToStock";
         public const string LeaveTreesNearBuildings = "LeaveTreesNearBuildings";
         public const string NewcomersWalkIn = "NewcomersWalkIn";
+        public const string FallenReturn = "FallenReturn", FallenReturnDays = "FallenReturnDays";   // 1.5.1
         public const string CallingBonus = "CallingBonus";
         public const string Mood = "Mood";
         public const string MaxReach = "MaxReach";
@@ -102,11 +110,15 @@ namespace VikingColonies.Core
             MessagesSection, SettlersSafeFromTrees, DeathMessage, SettlersGoIndoorsAtNight, SettlersShelterInRaids, SettlersFightBack,
             TownHallGraceDays, LonghouseSection, SettlersEat, HungryWorkSpeed, NewcomersPerDay, NewcomerFood, MaxSettlers,
             ForagerHutSection, ForagerSection, VerboseLog, HuginTips, AskForFeedback, WordsAboveHeads, FarmSection, FarmerSection,
-            RebuildMissingPieces, FreeTime, SmallTalk, EveningGathering, SleepInBeds, TendFires, CarryToStock, LeaveTreesNearBuildings, NewcomersWalkIn, CallingBonus,
+            RebuildMissingPieces, FreeTime, Pastimes, SmallTalk, EveningGathering, SleepInBeds, TendFires, CarryToStock, LeaveTreesNearBuildings, NewcomersWalkIn, CallingBonus,
             Mood, FieldSection, WatchtowerSection, GuardsSection, MaxReach, Enabled, ChaseBeyondPatrol, RetreatHealth, HelpRadius, LoadBallistas, StopsSpawns,
             Levels, SettlersAtLevel1, SettlersPerLevel, Level2Cost, Level3Cost, Level4Cost, Level5Cost, BeatenBossesCount,
             CreativeSection, CreativeMode, CreativeLevelUpKey, CreativeLevelDownKey, StorehouseSection,
             CourierSection, Carry, CarryPerLevel,
+            MeadHallSection, CookSection,
+            WindowsSection, WindowScale,
+            MemorialSection, FallenReturn, FallenReturnDays,
+            ScarecrowSection,
         };
     }
 }

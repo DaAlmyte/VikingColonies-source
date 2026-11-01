@@ -17,6 +17,8 @@ namespace VikingColonies.Construction
         private static readonly List<SiteThing> s_things = new List<SiteThing>();
         private static readonly List<Piece> s_blockers = new List<Piece>();
         private static readonly Dictionary<string, List<Vector3>> s_byPrefab = new Dictionary<string, List<Vector3>>();
+        /// <summary>Each hut's sites by level, unturned at the chest, while placing; worked out again next time (the player's designs may change).</summary>
+        private static readonly Dictionary<string, List<Footprint>> s_grow = new Dictionary<string, List<Footprint>>();
         private static List<PlannedPiece> s_plan;
         private static BuildingType s_type;
         private static Vector3 s_position;
@@ -59,7 +61,38 @@ namespace VikingColonies.Construction
                 if (!ColonyPermissions.LocalMayBuildAt(SiteScanner.ColonyFor(position), position)) Findings.AddRed(RedReason.NotYourColony);
                 Verdict = SiteCheck.Judge(Findings, SiteScanner.BuilderLevelFor(position), SiteScanner.ToolsAtHandFor(position));
             }
-            if (Verdict != null) Text = SiteText.Describe(Verdict, offset);
+            if (Verdict != null) Text = SiteText.Describe(Verdict, offset) + GrowLine(type, QuarterTurns(rotation));
+        }
+
+        /// <summary>
+        /// "\nBy level 5 it grows about 12 m toward you: leave room there", or "" for a hut that hardly grows past the level
+        /// it's placed at (GrowRoom). The sides are as the player sees them, <paramref name="quarterTurns"/> as GrowRoom.Seen has.
+        /// </summary>
+        internal static string GrowLine(BuildingType type, int quarterTurns)
+        {
+            if (!s_grow.TryGetValue(type.Id, out List<Footprint> byLevel))
+            {
+                byLevel = new List<Footprint>();
+                for (int level = 1; level <= HutLevels.MaxLevel; level++)
+                {
+                    BlueprintFile blueprint = BlueprintLibrary.For(type, level, out _);
+                    byLevel.Add(blueprint != null && BlueprintPlan.TryPlace(blueprint, type.PrefabName, V(Vector3.zero), Quat.Identity, out List<PlannedPiece> pieces, out _)
+                        && pieces.Count > 0 ? SiteSurvey.SiteFootprint(pieces, Vector3.zero, Quaternion.identity) : null);
+                }
+                s_grow[type.Id] = byLevel;
+            }
+            GrowRoom.Growth growth = GrowRoom.From(byLevel, CreativePlacing.Level);   // creative mode: from the level it goes up at
+            return growth != null && growth.Worth ? "\n" + SiteText.GrowsBy(GrowRoom.Seen(growth, quarterTurns)) : "";
+        }
+
+        /// <summary>Quarter turns the ghost is turned clockwise from facing straight away from the camera.</summary>
+        private static int QuarterTurns(Quaternion rotation)
+        {
+            Camera camera = Utils.GetMainCamera();
+            if (camera == null) return 0;
+            Vector3 look = Vector3.ProjectOnPlane(camera.transform.forward, Vector3.up);
+            Vector3 front = Vector3.ProjectOnPlane(rotation * Vector3.forward, Vector3.up);
+            return Mathf.RoundToInt(Vector3.SignedAngle(look, front, Vector3.up) / 90f);
         }
 
         public static void Clear()
@@ -72,6 +105,7 @@ namespace VikingColonies.Construction
             Findings = null;
             Text = "";
             s_nextCheck = 0f;
+            s_grow.Clear();
         }
 
         private static List<PlannedPiece> PlanAt(BuildingType type, Vector3 position, Quaternion rotation)

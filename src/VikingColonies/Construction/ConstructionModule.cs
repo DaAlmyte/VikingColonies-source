@@ -47,6 +47,7 @@ namespace VikingColonies.Construction
         private const string RpcPause = "vc_OrderPause";
         private const string RpcLeaveAsIs = "vc_OrderLeaveAsIs";
         private const string RpcRemoved = "vc_OrderPieceRemoved";
+        private const string RpcPutBack = "vc_OrderPutBack";   // the player's pieces an upgrade takes down and puts back (1.6)
         private const string RpcStartCamp = "vc_CampStart";
         private const string RpcCreative = "vc_Creative";   // creative mode (1.5): CreativeAction, checked by the owner
         private const string RpcPrepareNow = "vc_PrepareNow";   // a free builder's ask (1.5): only while the world has No build cost
@@ -118,6 +119,7 @@ namespace VikingColonies.Construction
             _nview.Register(RpcTakeDown, OnTakeDown);
             _nview.Register(RpcCancelTakeDown, OnCancelTakeDown);
             _nview.Register<int>(RpcTaken, OnTaken);
+            _nview.Register<int, int, string, long>(RpcPutBack, OnPutBack);
             _nview.Register(RpcFirst, OnFirst);
             _nview.Register<bool>(RpcPause, OnPause);
             _nview.Register(RpcLeaveAsIs, OnLeaveAsIs);
@@ -128,9 +130,9 @@ namespace VikingColonies.Construction
             s_all.Add(this);
             // The Town Hall's camp grows with the hall's level (huts round 2): looked at now and then by its owner.
             if (_building != null && _building.IsTownHall)
-                InvokeRepeating(nameof(CampTick), UnityEngine.Random.Range(5f, 5f + CampCheckSeconds), CampCheckSeconds);
+                InvokeRepeating(nameof(CampTick), ModRandom.Range("jitter", "camp", 5f, 5f + CampCheckSeconds), CampCheckSeconds);
             // Every minute (not every hut at once): is anything of the finished building gone? (Repair, 0.13)
-            InvokeRepeating(nameof(RepairCheck), UnityEngine.Random.Range(20f, 20f + RepairRules.CheckSeconds), RepairRules.CheckSeconds);
+            InvokeRepeating(nameof(RepairCheck), ModRandom.Range("jitter", "repair", 20f, 20f + RepairRules.CheckSeconds), RepairRules.CheckSeconds);
         }
 
         private void Start()
@@ -205,6 +207,7 @@ namespace VikingColonies.Construction
             PlacedTips tips = TipRules.TipsForPlaced(_building.TypeId == BuildingTypes.BuilderHutId, _building.IsStorehouse, HasBuilderHut(), placedBuilt);
             if ((tips & PlacedTips.Builder) != 0) Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.Builder);
             if ((tips & PlacedTips.Storehouse) != 0) Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.Storehouse);
+            if (_building.IsMeadHall) Gui.HuginTips.ShowNear(transform.position, Gui.HuginTips.MeadHall);   // 1.6
         }
 
         /// <summary>
@@ -573,6 +576,38 @@ namespace VikingColonies.Construction
             }
         }
 
+        /// <summary>
+        /// The player's own pieces resting on or hanging from this hut's building, which would fall when it is taken down
+        /// (1.6, the own-pieces design's point 7: the take-down's first click says so), with the first one's name token.
+        /// </summary>
+        public int OwnPiecesThatWouldFall(out string first)
+        {
+            first = "";
+            if (!IsValid || _building == null) return 0;
+            var near = new List<Piece>();
+            Piece.GetAllPiecesInRadius(transform.position, PlanRadius(Plan) + 1f, near);
+            Vector3 origin = transform.position;
+            Quaternion turn = transform.rotation;
+            var hut = new List<PieceBox>();
+            var own = new List<Piece>();
+            foreach (Piece piece in near)
+            {
+                if (piece == null) continue;
+                if (piece.gameObject == gameObject || PiecePlacer.SiteOf(piece.gameObject) == _building.Id) hut.Add(PiecePlacer.BoxIn(piece, origin, turn));
+                else if (PiecePlacer.IsPlayersOwn(piece)) own.Add(piece);
+            }
+            if (own.Count == 0 || hut.Count == 0) return 0;
+            var pieces = new List<OwnPiece>();
+            foreach (Piece piece in own)
+            {
+                PieceBox box = PiecePlacer.BoxIn(piece, origin, turn);
+                pieces.Add(new OwnPiece(box, SiteSurvey.OnGroundIn(box, origin, turn), false, false));
+            }
+            List<int> falls = OwnPieceRules.ForTakeDown(pieces, hut);
+            if (falls.Count > 0) first = own[falls[0]].m_name;
+            return falls.Count;
+        }
+
         /// <summary>The level operations for the site and the ground in front of its doors, keeping clear of other buildings.</summary>
         public List<GroundOp> GroundOps(float target)
         {
@@ -673,6 +708,7 @@ namespace VikingColonies.Construction
                 Log.Info($"{_building.TypeId} {_building.Id}: already going up at once: not finished twice");   // its review (1.5)
                 return 0;
             }
+            TakePutBacksDownNow();   // an upgrade's (1.6): before the site's clearing takes what holds them
             int cleared = ClearSiteNow();
             if (cleared > 0) Log.Info($"{_building.TypeId} {_building.Id}: {cleared} things cleared off the site at once");
             var levels = new List<Vector3>();
@@ -873,6 +909,7 @@ namespace VikingColonies.Construction
                 GameObject prefab = PiecePlacer.Prefab(piece.Prefab);
                 if (prefab != null) PiecePlacer.Place(prefab, U(piece.Position), U(piece.Rotation), _building.Id, creator);
             }
+            PutBacksBackNow();   // the player's pieces, once what holds them stands
             RequestMarkBuilt(true);
         }
 
@@ -1077,7 +1114,8 @@ namespace VikingColonies.Construction
             else
             {
                 if (order.Kind == OrderKind.Upgrade)
-                    lines.Add(string.Format(L("$vc_upgrading"), order.TargetLevel, order.DoneCount, order.Total, order.TakeAwayLeft));
+                    lines.Add(string.Format(L(order.PutBacksLeft > 0 ? "$vc_upgrading_own" : "$vc_upgrading"), order.TargetLevel, order.DoneCount,
+                        order.Total, order.TakeAwayLeft, order.PutBacksLeft));   // the player's pieces it puts back (1.6) counted too
                 else if (order.Kind == OrderKind.Remove)
                     lines.Add(string.Format(L("$vc_taking_down"), order.TakeAwayLeft, order.TakeAwayTotal));
                 else if (order.Kind == OrderKind.Repair)
@@ -1147,6 +1185,22 @@ namespace VikingColonies.Construction
         /// <summary>Test tool: a take-down as if <paramref name="sender"/> asked for it.</summary>
         internal void TakeDownForTest(long sender) => OnTakeDown(sender);
         public void ReportTaken(int index) => _nview.InvokeRPC(RpcTaken, index);
+        /// <summary>
+        /// One of the upgrade's put-backs (1.6) is down (with what it carries, <see cref="PiecePlacer.KeptValues"/>), back,
+        /// or left out (skipped). Each report carries the order's stamp: it counts only for the upgrade it was made for.
+        /// </summary>
+        public void ReportPutBack(int index, PutBackState state, string kept = "") => SendPutBack(index, (int)state, kept);
+        /// <summary>A put-back fell or couldn't be placed: after <see cref="BuildOrderRecord.MaxFailures"/> it is left out.</summary>
+        public void ReportPutBackFailed(int index) => SendPutBack(index, PutBackFailed, "");
+        /// <summary>
+        /// A put-back never taken down is gone, or holds something now: left out only if it still stands in the order there
+        /// (<see cref="BuildOrderRecord.LeaveOut"/>), never overruling "down" from another computer (the review's finding 5).
+        /// </summary>
+        public void ReportPutBackNotTaken(int index) => SendPutBack(index, PutBackNotTaken, "");
+        private void SendPutBack(int index, int state, string kept) =>
+            _nview.InvokeRPC(RpcPutBack, index, state, kept ?? "", Order?.Stamp ?? 0L);
+        private const int PutBackFailed = -1;
+        private const int PutBackNotTaken = -2;
         /// <summary>Town Hall › Work orders: builders take this order before the others (and it's resumed if set aside).</summary>
         public void RequestFirst() => _nview.InvokeRPC(RpcFirst);
         /// <summary>Town Hall › Work orders: no builder takes this order until it's resumed (false resumes it).</summary>
@@ -1722,7 +1776,7 @@ namespace VikingColonies.Construction
                     Log.Info($"{_building.TypeId} {_building.Id}: {items.NrOfItems()} of {before} stacks from its chest drop by it (the Town Hall's chest {(hallItems == null ? "wasn't free" : "is full")})");
                 foreach (ItemDrop.ItemData item in items.GetAllItems().ToList())
                 {
-                    ItemDrop.DropItem(item, item.m_stack, transform.position + Vector3.up + Random.insideUnitSphere * 0.5f, Quaternion.identity);
+                    ItemDrop.DropItem(item, item.m_stack, transform.position + Vector3.up + ModRandom.InsideUnitSphere("cosmetic", "drop") * 0.5f, Quaternion.identity);
                     items.RemoveItem(item);
                 }
             }
@@ -1817,6 +1871,44 @@ namespace VikingColonies.Construction
         });
 
         /// <summary>
+        /// A put-back only moves on (standing, down, back or skipped), and one back or skipped stays so (<see
+        /// cref="BuildOrderRecord.MovePutBack"/>: one down ends the cancel). One left out after it came down leaves its
+        /// materials where it stood, the player's. A report made for another order (before a cancel and a new upgrade) is
+        /// left alone (the review's finding 5).
+        /// </summary>
+        private void OnPutBack(long sender, int index, int state, string kept, long stamp) => Change(order =>
+        {
+            if (order.Kind != OrderKind.Upgrade || index < 0 || index >= order.PutBacks.Count) return false;
+            if (!order.IsStamped(stamp))
+            {
+                Log.Info($"{_building.TypeId} {_building.Id}: a report on put-back {index} made for an earlier order: left alone");
+                return false;
+            }
+            PutBackRecord putBack = order.PutBacks[index];
+            if (!putBack.Open) return false;
+            PutBackState was = putBack.State;
+            string what = $"{_building.TypeId} {_building.Id}: {PiecePlacer.Whose(putBack.Creator)} {putBack.Prefab} at {U(putBack.Position)}";
+            if (state == PutBackFailed)
+            {
+                if (putBack.MarkFailed()) Log.Info($"{what} is left out: it couldn't be put back ({putBack.Failures} tries)");
+            }
+            else if (state == PutBackNotTaken)
+            {
+                if (!order.LeaveOut(index)) return false;
+                Log.Info($"{what} is left out");
+            }
+            else if (order.MovePutBack(index, (PutBackState)state, kept))
+                Log.Info($"{what} {(putBack.State == PutBackState.Down ? "is down, to go back after" : putBack.State != PutBackState.Back ? "is left out" : was == PutBackState.Standing ? "stands where it was" : "is put back")}");
+            else return false;
+            if (was == PutBackState.Down && putBack.State == PutBackState.Skipped)
+            {
+                PiecePlacer.DropMaterials(putBack.Prefab, U(putBack.Position));
+                Log.Info($"{what}: its materials lie where it stood");
+            }
+            return true;
+        });
+
+        /// <summary>
         /// Owner only: the next level's design becomes the hut's plan. Pieces the same in both designs stay (done when they
         /// stand); the old design's other pieces are to be taken away. The old plan and order are kept for a cancel. The
         /// ground stays where the hut has it when the new design stands on it, so nothing is dug away under the old hut.
@@ -1829,6 +1921,10 @@ namespace VikingColonies.Construction
                 Log.Warn($"{_building.TypeId} {_building.Id}: can't upgrade to level {target} ({problem})");
                 return false;
             }
+            // The player's pieces the builder takes down and puts back (1.6), looked at while the old plan is still the hut's.
+            var putBacks = new List<Piece>();
+            SiteSurvey.Look(plan, transform.position, transform.rotation, this, null, MatchesPlan, GroundShaper.StonePerCubicMetre,
+                new List<SiteThing>(), new List<Piece>(), upgrade: true, putBacks: putBacks);
             IReadOnlyList<PlannedPiece> oldPlan = Plan;
             DesignDiff diff = DesignDiff.Compare(oldPlan, plan);
             var takeAway = new List<PlannedPiece>();
@@ -1851,9 +1947,12 @@ namespace VikingColonies.Construction
             };
             foreach (int kept in diff.Kept)
                 if (PiecePlacer.FindStanding(plan[kept]) != null) order.MarkKept(kept);
+            foreach (Piece own in putBacks.Where(p => p != null).Take(BuildOrderRecord.MaxPutBacks))
+                order.PutBacks.Add(new PutBackRecord(Utils.GetPrefabName(own.gameObject), V(own.transform.position), Q(own.transform.rotation),
+                    own.GetCreator(), own.m_name));
             zdo.Set(OrderKey, order.Encode());
             Log.Info($"{_building.TypeId} {_building.Id}: upgrade to level {target}: {diff.Kept.Count} pieces kept, {takeAway.Count} to take away, " +
-                     $"{diff.Build.Count} to build; ground level {order.Ground:0.00}");
+                     $"{diff.Build.Count} to build, {order.PutBacks.Count} of the player's pieces to put back; ground level {order.Ground:0.00}");
             return true;
         }
 
@@ -1863,6 +1962,7 @@ namespace VikingColonies.Construction
         /// </summary>
         private int TakeAwayAllNow()
         {
+            TakePutBacksDownNow();   // before what holds them goes: they'd fall
             IReadOnlyList<PlannedPiece> old = TakeAwayPlan;
             int removed = 0;
             for (int i = 0; i < old.Count; i++)
@@ -1883,10 +1983,64 @@ namespace VikingColonies.Construction
             return removed;
         }
 
+        /// <summary>
+        /// At once (creative's Upgrade now, the test shortcut, 1.6): each of the upgrade's put-backs still standing is taken
+        /// off, without materials, to go back once the new pieces stand (<see cref="PutBacksBackNow"/>); one the player
+        /// has taken away themselves is left out.
+        /// </summary>
+        private void TakePutBacksDownNow()
+        {
+            BuildOrderRecord order = Order;
+            if (order == null || order.Kind != OrderKind.Upgrade) return;
+            for (int i = 0; i < order.PutBacks.Count; i++)
+            {
+                PutBackRecord putBack = order.PutBacks[i];
+                if (putBack.State != PutBackState.Standing) continue;
+                Piece standing = PiecePlacer.FindPutBack(putBack);
+                // Gone (the player took it), or since filled or slept in: left to the player as the game would (it may fall,
+                // and drops what it holds then), never destroyed with its contents or a spawn point.
+                if (standing == null || PiecePlacer.HoldsThings(standing, out OwnPieceWhy _) || PiecePlacer.IsPlayersBed(standing))
+                {
+                    if (standing != null) Log.Info($"{_building.TypeId} {_building.Id}: {PiecePlacer.Whose(putBack.Creator)} {putBack.Prefab} " +
+                                                   "holds something now (or is slept in): left standing");
+                    ReportPutBackNotTaken(i);
+                    continue;
+                }
+                string kept = PiecePlacer.KeptValues(standing);   // a sign's text, a torch's fuel … go back with it
+                PiecePlacer.TakeOffWhole(standing);
+                ReportPutBack(i, PutBackState.Down, kept);
+            }
+        }
+
+        /// <summary>At once (1.6): each put-back that is down goes back where it was, as its player's, without materials.</summary>
+        private void PutBacksBackNow()
+        {
+            BuildOrderRecord order = Order;
+            if (order == null || order.Kind != OrderKind.Upgrade) return;
+            for (int i = 0; i < order.PutBacks.Count; i++)
+            {
+                PutBackRecord putBack = order.PutBacks[i];
+                if (!putBack.Open) continue;
+                if (PiecePlacer.FindPutBack(putBack) == null)
+                {
+                    GameObject prefab = PiecePlacer.Prefab(putBack.Prefab);
+                    if (prefab == null || putBack.State == PutBackState.Standing)   // never taken down, and gone: the player took it
+                    {
+                        if (putBack.State == PutBackState.Standing) ReportPutBackNotTaken(i);
+                        else ReportPutBack(i, PutBackState.Skipped);
+                        continue;
+                    }
+                    PiecePlacer.SetKeptValues(PiecePlacer.Place(prefab, U(putBack.Position), U(putBack.Rotation), "", putBack.Creator), putBack.Kept);
+                }
+                ReportPutBack(i, PutBackState.Back);
+            }
+        }
+
         /// <summary>Owner only: the upgrade is finished — the hut has its new level, and the upgrade's leftovers go.</summary>
         private void FinishUpgrade(BuildOrderRecord order)
         {
             ClearUpgradeKeys(_nview.GetZDO());
+            Colony.Deeds.Count(_building.ColonyId, DeedKinds.Built);   // the colony's deeds (1.5.1): a level finished
             if (IsCamp)
             {
                 SetCampLevel(order.TargetLevel);   // the hall keeps its own level
@@ -1900,6 +2054,7 @@ namespace VikingColonies.Construction
         /// <summary>The building of a Build order is finished: a hut's saga line, or the camp's first level.</summary>
         private void FinishBuild(BuildOrderRecord order)
         {
+            Colony.Deeds.Count(_building.ColonyId, DeedKinds.Built);   // the colony's deeds (1.5.1)
             if (IsCamp) SetCampLevel(order.TargetLevel);
             else Saga.Record(_building.ColonyId, "built", Saga.HutWord(_building));
         }

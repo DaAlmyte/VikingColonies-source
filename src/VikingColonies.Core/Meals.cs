@@ -42,15 +42,23 @@ namespace VikingColonies.Core
         /// meals, and the best food in a well-stocked colony is left for you (0.17 review I2: avoiding only the last meal,
         /// he alternated the two plainest for ever). Null when there's nothing to eat.
         /// </summary>
-        public static string Choose(IEnumerable<FoodStock> stock, IReadOnlyList<string> recent)
+        public static string Choose(IEnumerable<FoodStock> stock, IReadOnlyList<string> recent) => Choose(stock, recent, null);
+
+        /// <summary>
+        /// As <see cref="Choose(IEnumerable{FoodStock}, IReadOnlyList{string})"/>, but among the foods he hasn't had at his
+        /// last <see cref="AvoidLast"/> meals a hot one (the Mead Hall's cook, 1.6) comes first, the plainest hot one; so with
+        /// one kind of hot food he still eats varied meals. With every kind had lately, the same rule as without.
+        /// </summary>
+        public static string Choose(IEnumerable<FoodStock> stock, IReadOnlyList<string> recent, Func<string, bool> isHot)
         {
             List<string> plainestFirst = stock.Where(f => f.Count > 0 && f.Value > 0f).OrderBy(f => f.Value).ThenByDescending(f => f.Count)
                 .ThenBy(f => f.Item, StringComparer.Ordinal).Select(f => f.Item).ToList();
             if (plainestFirst.Count == 0) return null;
-            if (recent == null || recent.Count == 0) return plainestFirst[0];
-            List<string> lately = recent.Skip(Math.Max(0, recent.Count - AvoidLast)).ToList();
-            string fresh = plainestFirst.FirstOrDefault(i => !lately.Contains(i));
-            if (fresh != null) return fresh;
+            List<string> lately = recent == null ? new List<string>() : recent.Skip(Math.Max(0, recent.Count - AvoidLast)).ToList();
+            List<string> notLately = plainestFirst.Where(i => !lately.Contains(i)).ToList();
+            string hot = isHot == null ? null : notLately.FirstOrDefault(isHot);
+            if (hot != null) return hot;
+            if (notLately.Count > 0) return notLately[0];
             List<string> eaten = recent.ToList();
             return plainestFirst.OrderBy(i => eaten.LastIndexOf(i)).First();   // a stable sort: the plainest on a tie
         }

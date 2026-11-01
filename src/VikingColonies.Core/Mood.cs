@@ -24,6 +24,12 @@ namespace VikingColonies.Core
         public int DistinctFoods;
         /// <summary>The same food 5 meals running.</summary>
         public bool SameFoodRunning;
+        /// <summary>His last meal was hot food, a cook's (1.6); counts only while he's fed today and not hungry.</summary>
+        public bool LastMealHot;
+        /// <summary>How many kinds of pastime in their last 5, of the last two days (1.6).</summary>
+        public int DistinctPastimes;
+        /// <summary>They took their favourite pastime today (1.6).</summary>
+        public bool FavouriteToday;
         public bool EveningByFire;
         /// <summary>With at least two others at the fire (counts only with <see cref="EveningByFire"/>).</summary>
         public bool EveningCompany;
@@ -81,8 +87,8 @@ namespace VikingColonies.Core
         /// <summary>Every reason's token, in the table's order.</summary>
         public static readonly IReadOnlyList<string> ReasonTokens = new[]
         {
-            "$vc_mood_home", "$vc_mood_nohome", "$vc_mood_cosy", "$vc_mood_ate", "$vc_mood_hungry", "$vc_mood_varied", "$vc_mood_samefood",
-            "$vc_mood_evening", "$vc_mood_company", "$vc_mood_calling", "$vc_mood_jobless", "$vc_mood_death", "$vc_mood_hit",
+            "$vc_mood_home", "$vc_mood_nohome", "$vc_mood_cosy", "$vc_mood_ate", "$vc_mood_hungry", "$vc_mood_varied", "$vc_mood_samefood", "$vc_mood_hotmeal",
+            "$vc_mood_varied_free", "$vc_mood_favourite", "$vc_mood_evening", "$vc_mood_company", "$vc_mood_calling", "$vc_mood_jobless", "$vc_mood_death", "$vc_mood_hit",
             "$vc_mood_repelled", "$vc_mood_guarded", "$vc_mood_cheerful", "$vc_mood_grumpy",
         };
 
@@ -109,6 +115,10 @@ namespace VikingColonies.Core
             if (i.DistinctFoods >= 4) Add(true, "$vc_mood_varied", 10);
             else Add(i.DistinctFoods >= 3, "$vc_mood_varied", 5);
             Add(i.SameFoodRunning, "$vc_mood_samefood", -5);
+            Add(i.LastMealHot && i.AteToday && !i.Hungry, "$vc_mood_hotmeal", 5);   // only while fed (the cook's review, minor 11)
+            if (i.DistinctPastimes >= 4) Add(true, "$vc_mood_varied_free", 10);
+            else Add(i.DistinctPastimes >= 3, "$vc_mood_varied_free", 5);
+            Add(i.FavouriteToday, "$vc_mood_favourite", 3);
             Add(i.EveningByFire, "$vc_mood_evening", 5);
             Add(i.EveningByFire && i.EveningCompany, "$vc_mood_company", 5);
             Add(i.InCalling, "$vc_mood_calling", 5);
@@ -165,8 +175,11 @@ namespace VikingColonies.Core
 
         /// <summary>"+5 home, -10 Ingrid died": each reason's change and its words (<paramref name="words"/> gives a token's, with {0} for a name).</summary>
         public static string ReasonsLine(IEnumerable<MoodReason> reasons, Func<string, string> words) =>
-            string.Join(", ", (reasons ?? Enumerable.Empty<MoodReason>()).Select(r =>
-                (r.Change >= 0 ? "+" : "-") + Math.Abs(r.Change).ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + Named(words(r.Token) ?? "", r.Name)));
+            string.Join(", ", (reasons ?? Enumerable.Empty<MoodReason>()).Select(r => ReasonText(r, words)));
+
+        /// <summary>One reason as the line has it: "-10 Ingrid died".</summary>
+        public static string ReasonText(MoodReason r, Func<string, string> words) =>
+            (r.Change >= 0 ? "+" : "-") + Math.Abs(r.Change).ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + Named(words(r.Token) ?? "", r.Name);
 
         private static string Named(string text, string name)
         {
@@ -290,8 +303,13 @@ namespace VikingColonies.Core
         public static string RecentDeath(SagaLog saga, int today)
         {
             if (saga == null) return null;
+            var back = new HashSet<string>();   // returned since (the fallen return, 1.5.1): read newest first, so a return comes before its death
             foreach (SagaEntry e in saga.Page(0, SagaLog.MaxEntries))
-                if (e.Kind == "died" && e.Args.Count > 0 && e.Args[0].Length > 0 && MoodDays.Within(e.Day, today, DeathDays)) return e.Args[0];
+            {
+                if (e.Kind == "fallenback" && e.Args.Count > 0) back.Add(e.Args[0]);
+                else if (e.Kind == "died" && e.Args.Count > 0 && e.Args[0].Length > 0 && !back.Contains(e.Args[0]) && MoodDays.Within(e.Day, today, DeathDays))
+                    return e.Args[0];
+            }
             return null;
         }
 

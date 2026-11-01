@@ -38,6 +38,7 @@ namespace VikingColonies.AI
         private float _eatUntil;
         private float _nextBite;
         private SeatPlace _seat;
+        private float _seatReach = FreeTimeRules.SitFrom;
         private Vector3 _seatSpot;
         private int _gaveUpDay = Meals.NeverAte;
         private string _savedDoing = "";
@@ -126,10 +127,11 @@ namespace VikingColonies.AI
                 foreach (KeyValuePair<string, int> item in store.SpareContents())   // kept food is left (0.21)
                     if (FoodItems.Value(item.Key) > 0f) stock[item.Key] = (stock.TryGetValue(item.Key, out int n) ? n : 0) + item.Value;
             }
-            _food = Meals.Choose(FoodItems.In(stock), _citizen.Record.LastMeals) ?? "";   // not what he had lately, when there's a choice
+            // Not what they had lately, when there's a choice; a cook's hot food first among that (1.6).
+            _food = Meals.Choose(FoodItems.In(stock), _citizen.Record.LastMeals, FirstFor(r.ColonyId)) ?? "";
             Vector3 me = _citizen.transform.position;
             _chestId = LastChestForTest = Breakfast.Chest(chests.Select(b => new BreakfastChest(b.Id, new GroundPoint(b.transform.position.x, b.transform.position.z),
-                b.IsTownHall, _food.Length > 0 && SpareIn(b, _food) > 0, b.IsStorehouse)), new GroundPoint(me.x, me.z));
+                b.IsTownHall, _food.Length > 0 && SpareIn(b, _food) > 0, b.IsStorehouse, b.IsMeadHall)), new GroundPoint(me.x, me.z));
             if (_food.Length == 0 || _chestId.Length == 0)
             {
                 GiveUp("nothing to eat in the colony's chests");
@@ -140,6 +142,17 @@ namespace VikingColonies.AI
             _citizen.Status = "$vc_status_eating";
             SaveDoing("$vc_doing_eating");
             Log.Info($"{_citizen.CitizenName} goes to breakfast: {FoodItems.Name(_food)} from {_chestId}");
+        }
+
+        /// <summary>Hot food: an item the game's cooking stations, cauldron or oven make (the Mead Hall's cook, 1.6).</summary>
+        internal static bool IsHot(string item) => HotFood.Is(item, MeadHallModule.Cooked);
+
+        /// <summary>What comes first at a meal: hot food the colony's Mead Hall can spare (<see cref="HotFood.FirstAt"/>).</summary>
+        internal static System.Func<string, bool> FirstFor(string colonyId)
+        {
+            MeadHallModule hall = MeadHallModule.For(colonyId);
+            StorageModule larder = hall != null ? hall.Building.Storage : null;
+            return HotFood.FirstAt(MeadHallModule.Cooked, larder != null ? larder.SpareContents() : null);
         }
 
         /// <summary>How much of the food a building's chests spare (a storehouse: its whole store).</summary>
@@ -173,7 +186,7 @@ namespace VikingColonies.AI
             if (_seat != null)
             {
                 FreeTimeClaims.TryClaim(_seat.Id, _seat.Point, _citizen.Id);
-                _seatSpot = FreeTimeRoutine.SeatApproach(_seat);
+                _seatSpot = FreeTimeRoutine.SeatApproach(_seat, out _seatReach);
                 _step = Step.ToSeat;
             }
             else StartEating(now);
@@ -190,9 +203,16 @@ namespace VikingColonies.AI
                 return;
             }
             Vector3 me = _citizen.transform.position, point = _seat.Point;
-            bool close = Utils.DistanceXZ(me, point) <= 1.3f && Mathf.Abs(me.y - point.y) <= 1f && _ai.NothingBetween(point);
+            bool close = FreeTimeRoutine.CanSitFrom(_ai, me, _seat, _seatReach);
             if (!close && !_ai.GoTo(_seatSpot, 0.4f)) return;
             _ai.Idle();
+            if (!close && FreeTimeRoutine.CantSitFromWalksEnd(_ai, me, _seat, _seatReach))
+            {
+                FreeTimeClaims.Release(_seat.Id, _citizen.Id);
+                _seat = null;
+                StartEating(now);   // standing, where he is
+                return;
+            }
             _pose?.SitOn(_seat.Chair);
             StartEating(now);
         }

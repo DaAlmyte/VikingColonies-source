@@ -149,6 +149,29 @@ namespace VikingColonies.Tests
             Assert.Equal(5, GameSpeed.Clamp(12));
         }
 
+        // ---- The heartbeat's game clock (the fast clock, 2026-10-25) ----
+
+        [Fact]
+        public void The_heartbeat_tells_the_runner_the_games_own_clock_and_speed_with_a_point_for_decimals()
+        {
+            var was = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                // The game runs with the system's culture: a Swedish PC writes "1234,5" (buildrun.txt's "4,0 game min").
+                System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+                string text = Heartbeat.Text(new System.DateTime(2026, 10, 25, 20, 5, 9), 1200, "VCTestRun-1", "", 1234.56, 3f);
+                Assert.Equal("time 2026-10-25T20:05:09\nframes 1200\nworld VCTestRun-1\npopup none\ngametime 1234.6\nspeed 3\n", text);
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = was; }
+        }
+
+        [Fact]
+        public void At_the_menu_the_heartbeat_has_no_game_clock()
+        {
+            string text = Heartbeat.Text(new System.DateTime(2026, 10, 25, 20, 5, 9), 7, "menu", "Lost connection", -1, 1f);
+            Assert.Equal("time 2026-10-25T20:05:09\nframes 7\nworld menu\npopup Lost connection\n", text);
+        }
+
         // ---- The command file ----
 
         [Fact]
@@ -292,6 +315,43 @@ namespace VikingColonies.Tests
             Assert.Contains("No colonies.", text);
             Assert.Contains("Without a colony:", text);
             Assert.Contains("Sigrid, jobless: -, at (1.0, 2.0, 3.0), carrying nothing", text);
+        }
+
+        // 1.5.1, a player's report (Adina O., 2026-10-24): a colony whose Town Hall this computer can't see read
+        // "Town Hall at (0.0, 0.0, 0.0)".
+        [Fact]
+        public void A_colony_whose_Town_Hall_isnt_seen_says_so_not_a_place_at_zero()
+        {
+            string text = ColonyReport.Format("h", new[] { new ReportColony { Id = "a3d636e8 (no Town Hall)" } }, new List<ReportSettler>());
+            Assert.Contains("Colony a3d636e8 (no Town Hall): no Town Hall here", text);
+            Assert.DoesNotContain("(0.0, 0.0, 0.0)", text);
+        }
+
+        [Fact]
+        public void The_reports_date_is_the_common_calendar_on_any_PC()   // a Thai PC wrote 2569-10-24
+        {
+            var thai = new System.Globalization.CultureInfo("th-TH");
+            System.Globalization.CultureInfo was = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture = thai;
+                Assert.Equal("2026-10-24 13:05:09", BugReport.Stamp(new System.DateTime(2026, 10, 24, 13, 5, 9)));
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = was; }
+        }
+
+        [Fact]
+        public void The_reports_warning_times_use_colons_on_any_PC()   // a PC whose times read 14.53.07
+        {
+            var dots = (System.Globalization.CultureInfo)System.Globalization.CultureInfo.InvariantCulture.Clone();
+            dots.DateTimeFormat.TimeSeparator = ".";
+            System.Globalization.CultureInfo was = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture = dots;
+                Assert.Equal("14:53:07", BugReport.Clock(new System.DateTime(2026, 10, 24, 14, 53, 7)));
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = was; }
         }
     }
 }

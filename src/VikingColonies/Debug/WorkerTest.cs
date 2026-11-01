@@ -559,7 +559,8 @@ namespace VikingColonies.DevTools
                 // builder's current order: once the camp's design ships (1.4.0) that can be the camp's, not the Forager's Hut.
                 ConstructionModule handSite = (builderHut != null && builder != null ? ConstructionModule.CurrentFor(builderHut, builder.Id) : null) ?? foragerSite;
                 int expected = Mathf.Min(bagBefore, NeedsTally.Shortfall(handSite != null ? handSite.RemainingNeeds() : needs,
-                    HandOver.Available(BuilderTools.StoresForBuilders(hall.ColonyId, handSite != null ? handSite.transform.position : origin),
+                    HandOver.Available(BuilderTools.StoresForBuilders(hall.ColonyId, handSite != null ? handSite.transform.position : origin,
+                        handSite != null ? handSite.Building : null),
                         HandOverFromBag.BuilderCarries(handSite))).TryGetValue("Wood", out int short1) ? short1 : 0);
                 string handed = "";
                 if (builderHut != null)

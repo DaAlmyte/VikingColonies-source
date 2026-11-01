@@ -272,4 +272,154 @@ namespace VikingColonies.Core
             return level <= 1 ? typeId : typeId + "_" + level;
         }
     }
+
+    /// <summary>The player's design folder, as <see cref="BlueprintBackups.Save"/> uses it (the game: the files on disk).</summary>
+    public interface IDesignFolder
+    {
+        /// <summary>The names of the files in the folder.</summary>
+        IEnumerable<string> Names();
+        bool Exists(string name);
+        /// <exception cref="System.IO.IOException">It can't be read.</exception>
+        IList<string> ReadLines(string name);
+        void WriteLines(string name, IList<string> lines);
+        /// <summary>Copies a file to a name not taken (never over another file).</summary>
+        void Copy(string from, string to);
+        void Delete(string name);
+        void Move(string from, string to);
+    }
+
+    /// <summary>What a save did: saved or not, the copy of the design before it, and why nothing was saved.</summary>
+    public sealed class DesignSave
+    {
+        public DesignSave(bool saved, string kept, string problem)
+        {
+            Saved = saved;
+            Kept = kept;
+            Problem = problem;
+        }
+
+        public bool Saved { get; }
+        /// <summary>The copy of the design saved before (e.g. "farm.blueprint.bak2"), or null when none was made.</summary>
+        public string Kept { get; }
+        /// <summary>Why nothing was saved (the console's words), or null.</summary>
+        public string Problem { get; }
+    }
+
+    /// <summary>
+    /// A saved design is kept before a save replaces it (1.6, the player's yes of 2026-10-25): copied beside it as
+    /// "&lt;file&gt;.blueprint.bak", the next time ".bak2", then ".bak3" … (the highest number the newest), and never deleted,
+    /// as the game keeps a world's save before the last.
+    /// </summary>
+    public static class BlueprintBackups
+    {
+        /// <summary>More copies of one design than anyone keeps; past it nothing is saved rather than one written over.</summary>
+        public const int MaxCopies = 9999;
+
+        /// <summary>
+        /// The name for the next copy of <paramref name="fileName"/> (e.g. "farm_3.blueprint") among the folder's
+        /// <paramref name="existing"/> names: ".bak" on its end for the first, then one past the highest number there
+        /// (".bak2", ".bak3" …), so the highest is always the newest and no copy is written over; null past
+        /// <see cref="MaxCopies"/>. It never ends in ".blueprint", so neither the mod nor PlanBuild reads it as a design.
+        /// </summary>
+        public static string CopyName(string fileName, IEnumerable<string> existing)
+        {
+            string stem = fileName + ".bak";
+            int highest = 0;
+            foreach (string name in existing ?? Enumerable.Empty<string>())
+            {
+                if (name == null || !name.StartsWith(stem, StringComparison.OrdinalIgnoreCase)) continue;   // file names on Windows ignore case
+                string rest = name.Substring(stem.Length);
+                int n;
+                if (rest.Length == 0) n = 1;
+                else if (rest.Length > 9 || !rest.All(c => c >= '0' && c <= '9')) continue;
+                else n = int.Parse(rest, System.Globalization.CultureInfo.InvariantCulture);
+                highest = Math.Max(highest, n);
+            }
+            if (highest >= MaxCopies) return null;
+            return highest == 0 ? stem : stem + (highest + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Whether the design saved before (<paramref name="oldLines"/>; null when it couldn't be read) is kept before
+        /// <paramref name="newLines"/> replace it: always, unless it holds the very same lines (saving twice keeps one).
+        /// </summary>
+        public static bool KeepOld(IList<string> oldLines, IList<string> newLines) =>
+            oldLines == null || !oldLines.SequenceEqual(newLines);
+
+        /// <summary>
+        /// Saves <paramref name="lines"/> as <paramref name="fileName"/> in <paramref name="folder"/>, never losing the
+        /// design saved there before (the fresh review of 2026-10-25): the very same lines aren't written again; the new
+        /// design is written to "&lt;file&gt;.tmp" first, then the old one copied (<see cref="CopyName"/>), then the new one
+        /// takes its place. When a step fails nothing more is done, and the problem says where each design is.
+        /// </summary>
+        public static DesignSave Save(IDesignFolder folder, string fileName, IList<string> lines)
+        {
+            bool existing = folder.Exists(fileName);
+            if (existing && !KeepOld(TryRead(folder, fileName), lines)) return new DesignSave(true, null, null);   // already saved
+            string temp = fileName + ".tmp";
+            try
+            {
+                folder.WriteLines(temp, lines);
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                TryDelete(folder, temp);
+                return new DesignSave(false, null, $"{fileName} couldn't be written ({e.Message}), so nothing was saved");
+            }
+            string kept = null;
+            if (existing)
+            {
+                try
+                {
+                    kept = CopyName(fileName, folder.Names());
+                    if (kept == null)
+                    {
+                        TryDelete(folder, temp);
+                        return new DesignSave(false, null, $"there are already {MaxCopies} copies of {fileName}, so a copy of the design saved before couldn't be kept and nothing was saved");
+                    }
+                    folder.Copy(fileName, kept);
+                }
+                catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+                {
+                    TryDelete(folder, temp);
+                    return new DesignSave(false, null, $"a copy of the design saved before couldn't be kept ({e.Message}), so nothing was saved");
+                }
+            }
+            try
+            {
+                if (existing) folder.Delete(fileName);
+                folder.Move(temp, fileName);
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                return new DesignSave(false, kept, $"the new design couldn't take the place of {fileName} ({e.Message}): it is in {temp}" +
+                    (kept != null ? $", and the design saved before is in {kept}" : ""));
+            }
+            return new DesignSave(true, kept, null);
+        }
+
+        private static IList<string> TryRead(IDesignFolder folder, string name)
+        {
+            try
+            {
+                return folder.ReadLines(name);
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                return null;   // kept as it is: the copy is the safe side
+            }
+        }
+
+        private static void TryDelete(IDesignFolder folder, string name)
+        {
+            try
+            {
+                if (folder.Exists(name)) folder.Delete(name);
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                // a half-written new design stays as .tmp: never read as a design
+            }
+        }
+    }
 }

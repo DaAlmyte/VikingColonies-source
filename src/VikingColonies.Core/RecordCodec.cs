@@ -66,6 +66,10 @@ namespace VikingColonies.Core
         public static bool TryParseFinite(string text, out float value) =>
             float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !float.IsNaN(value) && !float.IsInfinity(value);
 
+        /// <summary>A place made of real numbers: a network message's NaN or infinity is refused (the security sweep of 27 Oct 2026).</summary>
+        public static bool IsFinite(float x, float y, float z) =>
+            !float.IsNaN(x) && !float.IsNaN(y) && !float.IsNaN(z) && !float.IsInfinity(x) && !float.IsInfinity(y) && !float.IsInfinity(z);
+
         /// <summary>As the float one, for a double.</summary>
         public static bool TryParseFinite(string text, out double value) =>
             double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && !double.IsNaN(value) && !double.IsInfinity(value);

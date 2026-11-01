@@ -34,21 +34,6 @@ namespace VikingColonies.Core
         /// <summary>A piece runs through another when they overlap by more than this every way (touching doesn't count).</summary>
         public const float Through = 0.1f;
 
-        /// <summary>
-        /// A player's chest standing inside a storehouse stays through its upgrade (the spec: the player's own chests there
-        /// don't block it) when no piece of the new level runs through it and something of the new level, or the ground,
-        /// still holds it up. Else it is in the way, as any other building's piece.
-        /// </summary>
-        public static bool ChestStaysThroughUpgrade(PieceBox chest, IReadOnlyList<PieceBox> newPieces, bool onGround)
-        {
-            if (InTheWayOf(chest, newPieces) >= 0) return false;
-            bool held = onGround;
-            if (newPieces != null)
-                foreach (PieceBox piece in newPieces)
-                    if (RemovalOrder.RestsOn(chest, piece)) held = true;
-            return held;
-        }
-
         /// <summary>The first new piece that runs through the chest, or -1.</summary>
         public static int InTheWayOf(PieceBox chest, IReadOnlyList<PieceBox> newPieces)
         {
@@ -64,12 +49,19 @@ namespace VikingColonies.Core
             && System.Math.Min(a.Max.Z, b.Max.Z) - System.Math.Max(a.Min.Z, b.Min.Z) > Through;
 
         /// <summary>Which chests a settler tries first (lower first): their own hut, the storehouse, the Town Hall, the rest.</summary>
-        public static int Rank(bool isOwnHut, bool isStorehouse, bool isTownHall)
+        public static int Rank(bool isOwnHut, bool isStorehouse, bool isTownHall) => Rank(isOwnHut, isStorehouse, isTownHall, false);
+
+        /// <summary>
+        /// A builder's order (1.5.1, the chest-hold fix's review): their own hut, then the building they build (its chest holds
+        /// what its order needs, for them alone), then the storehouse, the Town Hall and the rest.
+        /// </summary>
+        public static int Rank(bool isOwnHut, bool isStorehouse, bool isTownHall, bool isSite)
         {
             if (isOwnHut) return 0;
-            if (isStorehouse) return 1;
-            if (isTownHall) return 2;
-            return 3;
+            if (isSite) return 1;
+            if (isStorehouse) return 2;
+            if (isTownHall) return 3;
+            return 4;
         }
     }
 

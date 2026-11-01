@@ -71,7 +71,7 @@ namespace VikingColonies.Citizens
             }
             // Kept food is left alone, unless there is nothing else in the colony: then he eats it rather than go hungry.
             bool keptOnly = spare.Count == 0;
-            string food = Meals.Choose(FoodItems.In(keptOnly ? stock : spare), r.LastMeals);   // not what he had lately, when there's a choice
+            string food = Meals.Choose(FoodItems.In(keptOnly ? stock : spare), r.LastMeals, AI.BreakfastRoutine.FirstFor(r.ColonyId));   // not what they had lately; the Mead Hall's hot food first (1.6)
             if (food != null && where[food].Any(chest => chest.TryTakeItem(food, _plate, ownUse: keptOnly)))   // a busy chest, or none spare there: the next one
             {
                 _plate.Clear();

@@ -81,6 +81,7 @@ namespace VikingColonies.DevTools
             BuildOrderRecord o = site.Order;
             if (o == null) return "";
             string line = $"{o.Kind} to level {o.TargetLevel}, {o.State}, {o.DoneCount} of {o.Total} pieces, {o.TakeAwayLeft} old left, {o.SkippedCount} skipped";
+            if (o.PutBacks.Count > 0) line += $", the player's pieces: {o.PutBacksLeft} of {o.PutBacks.Count} to put back";   // 1.6
             if (o.Builder.Length > 0) line += $", builder {NameOf(o.Builder)}";
             if (o.Needs.Length > 0) line += $", needs '{Localization.instance.Localize(o.Needs)}'";
             if (o.Blocked.Length > 0) line += $", blocked by '{o.Blocked}'";
@@ -117,7 +118,7 @@ namespace VikingColonies.DevTools
             Player p = Player.m_localPlayer;
             string where = p != null ? string.Format(CultureInfo.InvariantCulture, "({0:0.0}, {1:0.0}, {2:0.0})", p.transform.position.x, p.transform.position.y, p.transform.position.z) : "-";
             string day = EnvMan.instance != null ? string.Format(CultureInfo.InvariantCulture, "day {0}, time of day {1:0.00}", EnvMan.instance.GetDay(), EnvMan.instance.GetDayFraction()) : "";
-            return $"VikingColonies report {System.DateTime.Now:yyyy-MM-dd HH:mm:ss}, world {ZNet.instance?.GetWorldName()}, {day}, " +
+            return $"VikingColonies report {BugReport.Stamp(System.DateTime.Now)}, world {ZNet.instance?.GetWorldName()}, {day}, " +
                    $"player at {where}{(p != null && p.InGodMode() ? " (god mode)" : "")}, game speed {DevRunner.Speed}x";
         }
 

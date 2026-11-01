@@ -95,6 +95,17 @@ namespace VikingColonies.Core
         public static bool MoveOn(double sinceProgress, double waitSeconds, bool anotherOrder, int needsLevel, int highestBuilderHutLevel) =>
             sinceProgress >= waitSeconds && (anotherOrder || (needsLevel > 0 && highestBuilderHutLevel >= needsLevel));
 
+        /// <summary>
+        /// Whether a builder may set their site aside at all (1.6, the player's pick): not their own hut before it first
+        /// stands (its first build), as a MineColonies builder builds their own hut before anything else; any other site,
+        /// and their own hut's later upgrades, as before. Their own unbuilt hut too (the review of 1.6) when the wait is one
+        /// the player can't answer there: a Builder's Hut level (<paramref name="needsLevel"/>; it can't come before the hut
+        /// stands), no support or a site out of reach (<paramref name="hopeless"/>); or when another site has everything it
+        /// needs (<paramref name="otherReady"/>: the colony gets on with something).
+        /// </summary>
+        public static bool MayLeave(bool ownSite, OrderKind kind, int needsLevel = 0, bool hopeless = false, bool otherReady = false) =>
+            !(ownSite && kind == OrderKind.Build) || needsLevel > 0 || hopeless || otherReady;
+
         /// <summary>The highest level among the colony's Builder's Huts (level, has a builder) that have a builder; 0 for none.</summary>
         public static int BestStaffedLevel(IEnumerable<KeyValuePair<int, bool>> builderHuts)
         {
@@ -103,5 +114,50 @@ namespace VikingColonies.Core
                 if (hut.Value && hut.Key > best) best = hut.Key;
             return best;
         }
+    }
+
+    /// <summary>
+    /// A builder's note of the site they left for now (1.6: the player's 1.4.2 watch saw a builder leave a hut for the camp
+    /// with no word why): the building's id and until when (game seconds), and after it <c>|level</c> when left only for a
+    /// builder from a higher Builder's Hut; saved on the builder so every computer's hover can say "Waiting for Flint at the
+    /// Lumberjack's Hut, working here meanwhile" (or that it waits for a higher-level builder).
+    /// </summary>
+    public static class AwayNote
+    {
+        /// <summary>The note's mark for a site left only so a builder from a higher Builder's Hut can take it (no other work).</summary>
+        private const string LevelMark = "|level";
+
+        /// <param name="forHigherLevel">Left only so a builder from a higher Builder's Hut can take it: they have no other
+        /// work, so the hover doesn't say "working here meanwhile" (v16's review).</param>
+        public static string Encode(string buildingId, double until, bool forHigherLevel = false) =>
+            (buildingId ?? "") + "|" + until.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + (forHigherLevel ? LevelMark : "");
+
+        /// <summary>Never throws; false for no note or a broken one.</summary>
+        public static bool Decode(string note, out string buildingId, out double until) => Decode(note, out buildingId, out until, out _);
+
+        /// <summary>Never throws; false for no note or a broken one. <paramref name="forHigherLevel"/>: see <see cref="Encode"/>.</summary>
+        public static bool Decode(string note, out string buildingId, out double until, out bool forHigherLevel)
+        {
+            buildingId = "";
+            until = 0;
+            forHigherLevel = false;
+            if (string.IsNullOrEmpty(note)) return false;
+            if (note.EndsWith(LevelMark, System.StringComparison.Ordinal))
+            {
+                forHigherLevel = true;
+                note = note.Substring(0, note.Length - LevelMark.Length);
+            }
+            int bar = note.LastIndexOf('|');
+            if (bar <= 0) return false;
+            buildingId = note.Substring(0, bar);
+            return double.TryParse(note.Substring(bar + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out until)
+                && !double.IsNaN(until) && !double.IsInfinity(until);
+        }
+
+        /// <summary>The note shows until the site's time aside is up, and never longer than that (a clock put back).</summary>
+        public static bool Shows(double now, double until) => now < until && until - now <= OrderPatience.AsideSeconds + 1;
+
+        /// <summary>Until when a note made now shows: the site's time aside (<see cref="OrderPatience.AsideSeconds"/>).</summary>
+        public static double Until(double now) => now + OrderPatience.AsideSeconds;
     }
 }

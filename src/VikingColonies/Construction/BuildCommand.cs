@@ -11,7 +11,7 @@ namespace VikingColonies.Construction
     internal sealed class BuildCommand : ConsoleCommand
     {
         public override string Name => "vc_build";
-        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build earth' paints the earth under its roof as trodden earth now (a finished building does it on its own within a minute), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build stations' each of its crafting stations' level, roof and cover, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
+        public override string Help => "VikingColonies: 'vc_build done' counts the hut you look at as built, 'vc_build finish' puts up the rest of its building at once, 'vc_build ready' skips clearing and flattening its site, 'vc_build clear' removes the pieces the builder put up for it (and counts it as built), 'vc_build leftovers' removes the pieces the builder put up for it that its design no longer has, 'vc_build upgrade' upgrades it to its next level at once, 'vc_build halllevel <1-5>' sets a Town Hall's level at once (no trophies or materials), 'vc_build order' and 'vc_build cancel' do what the window's Upgrade and Cancel buttons do, 'vc_build window' opens its window, 'vc_build stock' puts what its next level needs in its chest, 'vc_build replant [kind on|off]' shows or changes a Lumberjack's Hut's replanting list, 'vc_build pick [kind on|off]' a Forager's Hut's \"What to pick\" list, 'vc_build give <item> [amount]' puts an item in it, 'vc_build status' shows its build order, 'vc_build costchest' sets a chest beside it holding what its level cost the builder, with a sign naming it (the hut gallery), 'vc_build mend' puts its design's missing pieces back at once (as the builder's repairs do in time), 'vc_build earth' paints the earth under its roof as trodden earth now (a finished building does it on its own within a minute), 'vc_build stands' lists its design's pieces that don't stand (fell, or never went up) and those nearest to falling, 'vc_build fuel' fills each of its fires (a hearth, a fire pit, the oven's own) with fuel, 'vc_build stations' each of its crafting stations' level, roof and cover (and whether one that needs a fire has it), and each cooking station's fire, 'vc_build support <x> <y> <z>' tells how the game holds up the piece standing nearest that spot of the design (its support boxes, what they find, its support); '@<hut>' anywhere names the hut (the nearest of that kind within 40 m) instead of the one you look at";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -116,6 +116,26 @@ namespace VikingColonies.Construction
                     break;
                 case "stations":
                     foreach (string line in Stations(site)) Print(line);
+                    break;
+                case "fuel":
+                    int fed = 0;
+                    foreach (Fireplace place in Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+                    {
+                        ZNetView view = place != null && PiecePlacer.SiteOf(place.gameObject) == site.Building.Id ? place.GetComponent<ZNetView>() : null;
+                        if (view == null || !view.IsValid()) continue;
+                        if (!view.IsOwner()) view.ClaimOwnership();
+                        view.GetZDO().Set(ZDOVars.s_fuel, place.m_maxFuel);
+                        fed++;
+                    }
+                    foreach (CookingStation oven in Object.FindObjectsByType<CookingStation>(FindObjectsSortMode.None))
+                    {
+                        ZNetView view = oven != null && oven.m_useFuel && PiecePlacer.SiteOf(oven.gameObject) == site.Building.Id ? oven.GetComponent<ZNetView>() : null;
+                        if (view == null || !view.IsValid()) continue;
+                        if (!view.IsOwner()) view.ClaimOwnership();
+                        view.GetZDO().Set(ZDOVars.s_fuel, (float)oven.m_maxFuel);
+                        fed++;
+                    }
+                    Print($"vc_build: fed {fed} fires of {site.Building.TypeId} full");
                     break;
                 case "cancel":
                     if (!site.CanCancelUpgrade) Print($"vc_build: nothing to cancel ({(site.IsUpgrading ? "the builder has changed a piece already" : "no upgrade under way")}).");
@@ -275,11 +295,69 @@ namespace VikingColonies.Construction
                 Cover.GetCoverForPoint(check.position, out float cover, out bool underRoof);
                 lines.Add(hut + $"{Utils.GetPrefabName(station.gameObject)} level {station.GetLevel()}, under a roof {underRoof}, " +
                           $"cover {cover.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" +
-                          (station.m_craftRequireRoof ? " (needs a roof)" : ""));
+                          (station.m_craftRequireRoof ? " (needs a roof)" : "") +
+                          (!station.m_craftRequireFire ? "" : FireWords(HaveFire(station), ", a fire burns under it", ", no fire under it")));
+            }
+            // The Mead Hall's cooking stations (1.6): whether the game counts a fire burning under each (an iron cooking
+            // station over the hearth, a cooking station over a fire pit, the oven's own).
+            foreach (CookingStation station in Object.FindObjectsByType<CookingStation>(FindObjectsSortMode.None))
+            {
+                if (station == null || PiecePlacer.SiteOf(station.gameObject) != site.Building.Id) continue;
+                string fire;
+                if (station.m_useFuel) fire = $" burns its own wood (fuel {Fuel(station.GetComponent<ZNetView>()).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)})";   // the oven
+                else fire = FireWords(FireLit(station), " cooks over a burning fire", " has no fire burning");
+                lines.Add(hut + Utils.GetPrefabName(station.gameObject) + fire);
+            }
+            foreach (Fireplace place in Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+            {
+                if (place == null || PiecePlacer.SiteOf(place.gameObject) != site.Building.Id) continue;
+                Vector3 at = place.transform.position - site.transform.position;
+                lines.Add(hut + $"{Utils.GetPrefabName(place.gameObject)} at height {at.y.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}, " +
+                          $"fuel {Fuel(place.GetComponent<ZNetView>()).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}" +
+                          (place.IsBurning() ? ", burning" : ", out"));
             }
             if (lines.Count == 0) lines.Add(hut + "none");
             return lines;
         }
+
+        private static float Fuel(ZNetView view) => view != null && view.IsValid() ? view.GetZDO().GetFloat(ZDOVars.s_fuel, 0f) : 0f;
+
+        // The game's own fire checks, private: looked up when first asked (review of the Mead Hall's designs: at the
+        // class's load, a renamed member after a game update would break every vc_build command, not only this list).
+        private static HarmonyLib.AccessTools.FieldRef<CraftingStation, bool> s_haveFire;
+        private static System.Func<CookingStation, bool> s_fireLit;
+        private static bool s_fireChecksLooked;
+
+        private static void LookUpFireChecks()
+        {
+            if (s_fireChecksLooked) return;
+            s_fireChecksLooked = true;
+            try { s_haveFire = HarmonyLib.AccessTools.FieldRefAccess<CraftingStation, bool>("m_haveFire"); }
+            catch (System.Exception e) { Log.Warn($"vc_build stations: the game's m_haveFire wasn't found ({e.Message})"); }
+            try
+            {
+                System.Reflection.MethodInfo isFireLit = HarmonyLib.AccessTools.Method(typeof(CookingStation), "IsFireLit");
+                if (isFireLit != null) s_fireLit = HarmonyLib.AccessTools.MethodDelegate<System.Func<CookingStation, bool>>(isFireLit);
+                else Log.Warn("vc_build stations: the game's IsFireLit wasn't found");
+            }
+            catch (System.Exception e) { Log.Warn($"vc_build stations: the game's IsFireLit wasn't found ({e.Message})"); }
+        }
+
+        /// <summary>Whether the game counts a fire under this station; null when its check can't be read.</summary>
+        private static bool? HaveFire(CraftingStation station)
+        {
+            LookUpFireChecks();
+            return s_haveFire != null ? s_haveFire(station) : (bool?)null;
+        }
+
+        private static bool? FireLit(CookingStation station)
+        {
+            LookUpFireChecks();
+            return s_fireLit != null ? s_fireLit(station) : (bool?)null;
+        }
+
+        private static string FireWords(bool? fire, string burns, string none) =>
+            fire == null ? ", the fire unknown (the game's check wasn't found)" : fire.Value ? burns : none;
 
         /// <summary>Puts the materials the hut's next level needs into its chest, as far as they fit.</summary>
         private static string Stock(ConstructionModule site)
@@ -444,7 +522,7 @@ namespace VikingColonies.Construction
                 $"; level {next.Level}'s site: {next.Site.Colour}, red [{string.Join(", ", f.Red)}], floor {f.Floor:0.00}, reaches {f.ReachBelow:0.00} below it, " +
                 $"ground at the chest {f.Natural:0.00}, to flatten to {f.Target:0.00}, dig {f.Dig}, raise {f.Raise}";
             return $"{hut}: level {site.Building.Level}, {order.Kind} to level {order.TargetLevel}, {order.State}, {order.DoneCount} of {order.Total} pieces up, " +
-                   $"{order.TakeAwayLeft} old pieces to take away, {order.SkippedCount} skipped, " +
+                   $"{order.TakeAwayLeft} old pieces to take away, {order.PutBacksLeft} of the player's to put back, {order.SkippedCount} skipped, " +
                    $"plan of {site.Plan.Count}, ground level {ground} (chest at {site.transform.position.y:0.00}), " +
                    $"builder '{order.Builder}' ({claim}), needs '{order.Needs}'{nextLevel}";
         }

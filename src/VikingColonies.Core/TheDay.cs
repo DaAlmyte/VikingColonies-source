@@ -23,7 +23,7 @@ namespace VikingColonies.Core
     /// <summary>A fire the colony might gather at in the evening.</summary>
     public struct GatheringFire
     {
-        public GatheringFire(string id, GroundPoint at, bool burning, bool roofed, bool atHall = false, bool inHut = false)
+        public GatheringFire(string id, GroundPoint at, bool burning, bool roofed, bool atHall = false, bool inHut = false, bool cooks = false)
         {
             Id = id ?? "";
             At = at;
@@ -31,7 +31,14 @@ namespace VikingColonies.Core
             Roofed = roofed;
             AtHall = atHall;
             InHut = inHut;
+            Cooks = cooks;
         }
+
+        /// <summary>
+        /// The cook's (1.6, <see cref="FreeTimeRules.IsCooksFire"/>): a cooking station stands over it in the Mead Hall.
+        /// The colony doesn't gather round it in the evening, as in their free time (the player's look at the Mead Hall).
+        /// </summary>
+        public bool Cooks { get; }
 
         /// <summary>Part of one of the colony's huts (the Longhouse's fire pit): that hut's hearth, not the colony's evening fire.</summary>
         public bool InHut { get; }
@@ -72,8 +79,8 @@ namespace VikingColonies.Core
             {
                 GatheringFire f = fires[i];
                 // A hut's own hearth isn't where the whole colony gathers (1.4.1: in the Longhouse the places round its fire
-                // pit fell among the walls and beds, and nobody sat).
-                if (!f.Burning || f.InHut || ColonyRules.Distance(f.At, hall) > colonyRadius) continue;
+                // pit fell among the walls and beds, and nobody sat). Nor the cook's fire (1.6).
+                if (!f.Burning || f.InHut || f.Cooks || ColonyRules.Distance(f.At, hall) > colonyRadius) continue;
                 if (best < 0 || Better(f, fires[best], hall)) best = i;
             }
             return best;
@@ -137,14 +144,18 @@ namespace VikingColonies.Core
     /// <summary>A colony chest a settler might eat breakfast at.</summary>
     public struct BreakfastChest
     {
-        public BreakfastChest(string id, GroundPoint at, bool townHall, bool hasFood, bool storehouse = false)
+        public BreakfastChest(string id, GroundPoint at, bool townHall, bool hasFood, bool storehouse = false, bool meadHall = false)
         {
             Id = id ?? "";
             At = at;
             TownHall = townHall;
             HasFood = hasFood;
             Storehouse = storehouse;
+            MeadHall = meadHall;
         }
+
+        /// <summary>The Mead Hall (1.6): breakfast at its table first, when its chest has the food.</summary>
+        public bool MeadHall { get; }
 
         /// <summary>The storehouse (1.5): meals come from it first.</summary>
         public bool Storehouse { get; }
@@ -156,8 +167,8 @@ namespace VikingColonies.Core
     }
 
     /// <summary>
-    /// Breakfast at the table (0.15): at the storehouse when it has the food (1.5), else the nearest colony chest with it,
-    /// the Town Hall's when as near.
+    /// Breakfast at the table (0.15): at the Mead Hall when its chest has the food (1.6), else at the storehouse when it
+    /// has it (1.5), else the nearest colony chest with it, the Town Hall's when as near.
     /// </summary>
     public static class Breakfast
     {
@@ -180,7 +191,8 @@ namespace VikingColonies.Core
 
         public static string Chest(IEnumerable<BreakfastChest> chests, GroundPoint me) =>
             chests.Where(c => c.HasFood)
-                  .OrderByDescending(c => c.Storehouse)
+                  .OrderByDescending(c => c.MeadHall)
+                  .ThenByDescending(c => c.Storehouse)
                   .ThenBy(c => Math.Round(ColonyRules.Distance(c.At, me), 1))
                   .ThenByDescending(c => c.TownHall)
                   .Select(c => c.Id)

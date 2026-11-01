@@ -238,6 +238,11 @@ namespace VikingColonies.Gui
             {
                 _takeDownArmedUntil = Time.time + TakeDownConfirmSeconds;   // the first click asks
                 UiKit.SetLabel(_takeDown, L("$vc_takedown_sure"));
+                // The player's own pieces resting on the building fall with it (1.6): the first click says so.
+                int falls = site.OwnPiecesThatWouldFall(out string first);
+                if (falls > 0)
+                    _message.text = falls == 1 ? string.Format(L("$vc_takedown_own_falls_one"), L(first))
+                        : string.Format(L("$vc_takedown_own_falls"), L(first), falls - 1);
                 return;
             }
             _takeDownArmedUntil = 0f;
@@ -378,6 +383,8 @@ namespace VikingColonies.Gui
                 return $"<color=orange>{string.Format(L("$vc_upgrade_lock_site"), SiteText.Describe(preview.Site, 0f))}</color>";
             string needs = preview.Needs.Count > 0 ? PiecePlacer.DescribeItems(preview.Needs) : L("$vc_upgrade_nothing");
             string line = string.Format(L("$vc_upgrade_needs"), level + 1, L(needs));
+            string putBacks = SiteText.PutBackLine(preview.Site);   // the player's pieces it takes down and puts back (1.6)
+            if (putBacks.Length > 0) line += "\n" + putBacks;
             string above = SiteText.AboveLevel(preview.Site);
             return above.Length > 0 ? $"{line}\n<color=orange>{above}</color>" : line;
         }
@@ -444,6 +451,8 @@ namespace VikingColonies.Gui
                 return string.Format(L("$vc_perks_farm"), FieldAssignment.Capacity(level), rows);
             if (hut.IsStorehouse)
                 return string.Format(L("$vc_perks_storehouse"), Jobs.CourierJob.LoadAt(hut), rows);
+            if (hut.IsMeadHall)
+                return string.Format(L("$vc_perks_meadhall"), rows);
             if (hut.TypeId == BuildingTypes.WatchtowerId)
                 return string.Format(L("$vc_perks_watchtower"), GuardLevels.Radius(level).ToString("0"), rows);
             return string.Format(L("$vc_perks_builder"), axe, ToolName(ToolKind.Pickaxe, HutLevels.ToolTierCap(ToolKind.Pickaxe, level)), rows);

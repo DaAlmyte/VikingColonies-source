@@ -516,7 +516,10 @@ namespace VikingColonies.DevTools
                 for (float t = 0f; t < 60f && !gatherers.All(AtTheFire); t += 0.5f) yield return new WaitForSeconds(0.5f);
                 Check($"In the evening the settlers gather round the burning fire ({gatherers.Count(AtTheFire)} of {gatherers.Count} there; " +
                       $"at a fire: {gatherers.Count > 0 && Routine(gatherers[0]).EveningAtFire}; '{(gatherers.Count > 0 ? gatherers[0].GetComponent<Character>().GetHoverText().Replace("\n", " / ") : "")}'; " +
-                      $"the test's fire {(fire == null ? "gone" : fire.IsBurning() ? "burning" : "out")})",
+                      $"the test's fire {(fire == null ? "gone" : fire.IsBurning() ? "burning" : "out")}; not counted: " +
+                      // Each one not counted, and why (v16's first life.txt: 6 of 7, and nothing said which or why).
+                      string.Join(", ", gatherers.Where(c => !AtTheFire(c)).Select(c => $"{c.CitizenName} doing {Routine(c).Doing}, arrived {Routine(c).Arrived}, " +
+                          $"pose {c.GetComponent<SettlerPose>().Current}, {(fire != null ? Utils.DistanceXZ(c.transform.position, fire.transform.position) : -1f):0.0} m from the fire")) + ")",
                     gatherers.Count > 0 && gatherers.All(AtTheFire));
 
                 // 10. Night: nobody stays out by the fire; the one with a home lies in his bed.

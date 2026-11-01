@@ -15,7 +15,7 @@ namespace VikingColonies.DevTools
     internal sealed class PoseCommand : ConsoleCommand
     {
         public override string Name => "vc_pose";
-        public override string Help => "VikingColonies (test worlds): 'vc_pose [name] seat|bed|ground|stand|list|where', 'vc_pose [name] trigger <animation>', " +
+        public override string Help => "VikingColonies (test worlds): 'vc_pose [name] seat|bed|ground|dance|rest|kneel|stand|pullseat|list|where' (pullseat: their seat taken away under them; fireon [metres]: a bonfire put up on them, its middle that far from them, as a builder puts the camp's up), 'vc_pose [name] trigger <animation>', " +
                                        "'vc_pose [name] bool <animation> on|off'. The settler's own brain pauses for a minute; seat and bed use one within 15 m, " +
                                        "or place a bench or a bed in front of them.";
         public override bool IsCheat => true;
@@ -23,7 +23,7 @@ namespace VikingColonies.DevTools
         /// <summary>The settler the last pose was given to: 'look' looks at him.</summary>
         private static string s_lastName = "";
 
-        private static readonly string[] Verbs = { "seat", "bed", "ground", "stand", "list", "where", "trigger", "bool", "look" };
+        private static readonly string[] Verbs = { "seat", "bed", "ground", "stand", "pullseat", "fireon", "list", "where", "trigger", "bool", "look", "dance", "rest", "kneel" };
 
         public override void Run(string[] args)
         {
@@ -41,7 +41,7 @@ namespace VikingColonies.DevTools
                 return;
             }
             string name = string.Join(" ", args.Take(verbAt)).Trim();
-            if (name.Length == 0 && args[verbAt] == "look") name = s_lastName;
+            if (name.Length == 0 && (args[verbAt] == "look" || args[verbAt] == "pullseat" || args[verbAt] == "fireon")) name = s_lastName;
             Citizen c = Citizen.All.Where(x => x != null && (name.Length == 0 || x.CitizenName == name))
                 .OrderBy(x => Vector3.Distance(x.transform.position, p.transform.position)).FirstOrDefault();
             SettlerPose pose = c != null ? c.GetComponent<SettlerPose>() : null;
@@ -88,10 +88,49 @@ namespace VikingColonies.DevTools
                     pose.SitGround();
                     BuildCommand.Print($"vc_pose: {c.CitizenName} sits down");
                     break;
+                case "dance":
+                case "rest":
+                case "kneel":
+                    pose.Hold(verb == "dance" ? SettlerPose.Kind.Dance : verb == "rest" ? SettlerPose.Kind.Rest : SettlerPose.Kind.Kneel);
+                    BuildCommand.Print($"vc_pose: {c.CitizenName} holds {verb}");
+                    break;
                 case "stand":
                     pose.Stand();
                     BuildCommand.Print($"vc_pose: {c.CitizenName} stands up");
                     break;
+                case "pullseat":
+                    // The seat they're on taken away under them, as a builder's upgrade takes down a camp's log bench.
+                    Transform held = pose.Point;
+                    // The seat or bed piece itself, never a ship a seat stands in (vc_pose seat skips those).
+                    WearNTear seatPiece = held != null && (held.GetComponentInParent<Chair>() is Chair inChair ? !inChair.m_inShip : held.GetComponentInParent<Bed>() != null)
+                        ? held.GetComponentInParent<WearNTear>() : null;
+                    if (seatPiece == null || seatPiece.GetComponent<Ship>() != null)
+                    {
+                        BuildCommand.Print($"vc_pose: {c.CitizenName} sits on no piece");
+                        break;
+                    }
+                    ZNetView seatView = seatPiece.GetComponent<ZNetView>();
+                    if (seatView != null && seatView.IsValid() && !seatView.IsOwner()) seatView.ClaimOwnership();
+                    seatPiece.Remove();
+                    ai?.PauseForTest(95f);   // held still while followed: another seat of their own choosing would read as held (the camp's build-through tests the routine)
+                    Log.Event($"vc_pose: {c.CitizenName}'s seat taken away");
+                    Plugin.Instance.StartCoroutine(Follow(c));
+                    return;
+                case "fireon":
+                {
+                    // A bonfire put up where they stand, as the builder puts the camp's (its pivot half a metre over the ground),
+                    // its middle this far off (the builders' test of 27 Oct: the camp's bonfire, its level's last piece, went up
+                    // on a settler walking to a chat spot inside it; later the settler was under the ground and the bonfire gone).
+                    float off = float.TryParse(arg, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float m) ? m : 0f;
+                    GameObject bonfirePrefab = PiecePlacer.Prefab("bonfire");
+                    Vector3 middle = c.transform.position + c.transform.forward * off;
+                    middle.y = ZoneSystem.instance.GetGroundHeight(middle) + 0.4962f;
+                    GameObject fire = bonfirePrefab != null ? PiecePlacer.Place(bonfirePrefab, middle, Quaternion.identity, "probe", 0L) : null;
+                    ai?.PauseForTest(95f);
+                    Log.Event($"vc_pose: a bonfire put up at {middle} on {c.CitizenName} at {c.transform.position}: {fire != null}");
+                    if (fire != null) Plugin.Instance.StartCoroutine(FollowFire(c, fire));
+                    return;
+                }
                 case "trigger":
                     pose.Gesture(arg);
                     BuildCommand.Print($"vc_pose: {c.CitizenName} plays {arg}");
@@ -107,6 +146,40 @@ namespace VikingColonies.DevTools
                     break;
             }
             Plugin.Instance.StartCoroutine(Report(c, pose, verb == "list" ? "." : "emote|attach|eat|sit"));
+        }
+
+        /// <summary>After 'pullseat': where they are, the ground under them and whether the game still holds them, every 5 s for 90 s.</summary>
+        private static System.Collections.IEnumerator Follow(Citizen c)
+        {
+            for (int i = 0; i < 18; i++)
+            {
+                yield return new WaitForSeconds(i == 0 ? 1f : 5f);
+                if (c == null) yield break;
+                Vector3 at = c.transform.position;
+                Rigidbody rb = c.GetComponent<Rigidbody>();
+                float ground = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(at) : float.NaN;
+                bool below = !float.IsNaN(ground) && at.y < ground - 1f;
+                Log.Event($"vc_pose: {c.CitizenName} after the seat went: at {at}, ground {ground:0.00}, {(below ? "under the ground" : "on the ground")}, " +
+                          $"{(c.Body.IsAttached() ? "still held as seated" : "let go")}, gravity {(rb != null && rb.useGravity ? "on" : "off")}, status {c.Status}");
+            }
+        }
+
+        /// <summary>After 'fireon': where they are and whether the bonfire still stands, every 5 s for 90 s.</summary>
+        private static System.Collections.IEnumerator FollowFire(Citizen c, GameObject fire)
+        {
+            for (int i = 0; i < 18; i++)
+            {
+                yield return new WaitForSeconds(i == 0 ? 1f : 5f);
+                if (c == null) yield break;
+                Vector3 at = c.transform.position;
+                float ground = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(at) : float.NaN;
+                WearNTear wear = fire != null ? fire.GetComponent<WearNTear>() : null;
+                ZNetView view = fire != null ? fire.GetComponent<ZNetView>() : null;
+                string support = view != null && view.IsValid() ? view.GetZDO().GetFloat(ZDOVars.s_support, -1f).ToString("0") : "-";
+                string health = view != null && view.IsValid() ? view.GetZDO().GetFloat(ZDOVars.s_health, -1f).ToString("0") : "-";
+                Log.Event($"vc_pose: {c.CitizenName} by the bonfire: at {at}, ground {ground:0.00}, {(at.y < ground - 1f ? "under the ground" : "on the ground")}; " +
+                          $"the bonfire {(fire != null ? $"stands (support {support}, health {health})" : "is gone")}");
+            }
         }
 
         private static System.Collections.IEnumerator Report(Citizen c, SettlerPose pose, string match)

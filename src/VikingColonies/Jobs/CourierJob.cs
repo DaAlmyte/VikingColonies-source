@@ -182,6 +182,7 @@ namespace VikingColonies.Jobs
             {
                 Citizen.SaveCarry();
                 Citizen.Practise(WorkSkill.Hauling);
+                Colony.Deeds.Count(Citizen.ColonyId, DeedKinds.Carried, had - Citizen.Carry.Total);   // the colony's deeds (1.5.1)
                 TripsForTest++;
             }
             if (waiting) return;   // a busy chest there: waited for

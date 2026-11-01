@@ -19,7 +19,7 @@ namespace VikingColonies.Construction
             if (player == null || site == null || !site.IsValid || site.Building == null || chest == null || site.IsTakingDown) return L("$vc_handover_no_order");
             Dictionary<string, int> needs = site.RemainingNeeds();
             // What his builder already carries counts as there, in "nothing needed" too (0.26, review of 0.23 and of 0.26).
-            Dictionary<string, int> stores = HandOver.Available(BuilderTools.StoresForBuilders(site.Building.ColonyId, site.transform.position),
+            Dictionary<string, int> stores = HandOver.Available(BuilderTools.StoresForBuilders(site.Building.ColonyId, site.transform.position, site.Building),
                 BuilderCarries(site));
             if (NeedsTally.Shortfall(needs, stores).Count == 0) return L("$vc_handover_nothing_needed");
             Inventory bag = player.GetInventory();

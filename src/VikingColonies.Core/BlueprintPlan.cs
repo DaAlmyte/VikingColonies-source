@@ -50,5 +50,28 @@ namespace VikingColonies.Core
             problem = pieces.Count == 0 ? "the blueprint has no pieces besides the chest" : null;
             return pieces.Count > 0;
         }
+
+        /// <summary>A hut's chest or the Town Hall's: the piece a hut's design is placed by, never put up with it.</summary>
+        public static bool IsChest(string name) =>
+            name != null && (name.StartsWith("vc_hut_", System.StringComparison.Ordinal) || name == SaveKeys.TownHallPiece);
+
+        /// <summary>
+        /// vc_preview (the build tools, 2026-10-25): a design laid out round its own origin, which goes to
+        /// <paramref name="origin"/> turned by <paramref name="turn"/>; a showcase design has no chest line (a hut's chest
+        /// and the Town Hall's are left out; the mod's other pieces, the field marker or the scarecrow, are put up: until
+        /// the scarecrow's preview of 27 Oct 2026 every "vc_" line was left out). A missing design is an empty plan.
+        /// </summary>
+        public static List<PlannedPiece> PlaceAround(BlueprintFile blueprint, Vec3 origin, Quat turn)
+        {
+            var pieces = new List<PlannedPiece>();
+            if (blueprint == null) return pieces;
+            Quat t = turn.Normalized;
+            foreach (BlueprintPiece piece in blueprint.Pieces)
+            {
+                if (IsChest(piece.Name)) continue;
+                pieces.Add(new PlannedPiece(pieces.Count, piece.Name, origin + t.Rotate(piece.Position), (t * piece.Rotation.Normalized).Normalized));
+            }
+            return pieces;
+        }
     }
 }

@@ -54,7 +54,7 @@ namespace VikingColonies
             if (text.Length > 400) text = text.Substring(0, 400) + "…";
             lock (s_recent)
             {
-                s_recent.Enqueue($"{System.DateTime.Now:HH:mm:ss} {level}: {text}");
+                s_recent.Enqueue($"{BugReport.Clock(System.DateTime.Now)} {level}: {text}");
                 while (s_recent.Count > RecentKept) s_recent.Dequeue();
             }
         }

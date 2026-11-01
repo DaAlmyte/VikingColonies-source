@@ -264,7 +264,9 @@ namespace VikingColonies.DevTools
                 yield return null;
                 UpgradePreview withChest = site.PreviewUpgrade();
                 string inTheWay = SiteSurvey.LastBlockersForTest;
-                bool blocked = withChest != null && withChest.Findings != null && withChest.Findings.Red.Contains(RedReason.OtherBuilding);
+                bool blocked = withChest != null && withChest.Findings != null
+                    && (withChest.Findings.Red.Contains(RedReason.OtherBuilding) || withChest.Findings.Red.Contains(RedReason.OwnPiece));
+                if (withChest?.Findings != null && withChest.Findings.OwnPiece.Length > 0) inTheWay += $"; waits for {withChest.Findings.OwnPiece} ({withChest.Findings.OwnPieceWhy})";
                 int levelWas = store.Level;
                 site.RequestUpgradeNow();
                 for (float t = 0f; store.Level == levelWas && t < 60f; t += 0.5f) yield return new WaitForSeconds(0.5f);
@@ -479,8 +481,11 @@ namespace VikingColonies.DevTools
             farmChest.SetInUse(true);
             for (float t = 0f; t < 90f && Job()?.TaskForTest?.From != farm.Id; t += 0.5f) yield return new WaitForSeconds(0.5f);
             bool pickupGiven = Job()?.TaskForTest?.From == farm.Id;
+            string pickupKey = pickupGiven ? Job().TaskForTest.Key : null;
             yield return new WaitForSeconds(15f);
-            bool failedWhileBusy = CourierJob.LastFailedForTest != failedBefore;
+            // This pickup's own failure only: another task dropped meanwhile (29 Oct's release run: a raspberry delivery
+            // set aside for this pickup) isn't a courier giving up at the busy chest.
+            bool failedWhileBusy = CourierJob.LastFailedForTest != failedBefore && CourierJob.LastFailedForTest == pickupKey;
             farmChest.SetInUse(false);
             yield return Watch(120f, () => InStore("Feathers") == 40);
             Check($"A courier waits at a busy chest instead of giving up (pickup given {pickupGiven}, failed while busy {failedWhileBusy}, " +
@@ -729,12 +734,18 @@ namespace VikingColonies.DevTools
         private static int FoodIn(ColonyBuilding b) =>
             b != null && b.Storage != null ? b.Storage.Contents().Where(i => FoodItems.Value(i.Key) > 0f).Sum(i => i.Value) : 0;
 
-        /// <summary>A spot inside the walls, clear of them, where no piece of this level or the next stands and the next one's floor holds a chest.</summary>
+        /// <summary>
+        /// A spot inside the walls, clear of them, where no piece of this level or the next stands and a floor both levels keep
+        /// holds a chest: the player's chest stays there through the upgrade (1.6, OwnPieceRules).
+        /// </summary>
         private static Vector3 ClearSpot(ConstructionModule site, Footprint room, float floor, Quaternion facing, Vector3 fallback, Vector3? awayFrom = null)
         {
             List<PieceBox> now = site.Plan.Where(p => p.IsValid).Select(PiecePlacer.PlannedBox).ToList();
             List<PlannedPiece> next = site.NextLevelPlanForTest();
             List<PieceBox> later = next != null ? next.Where(p => p.IsValid).Select(PiecePlacer.PlannedBox).ToList() : new List<PieceBox>();
+            List<PieceBox> kept = next != null
+                ? DesignDiff.Compare(site.Plan, next).Kept.Select(i => next[i]).Where(p => p.IsValid).Select(PiecePlacer.PlannedBox).ToList()
+                : new List<PieceBox>();
             Footprint walls = room.Grow(-SiteSurvey.SiteMargin);
             Footprint clear = walls.Grow(-0.8f);
             for (float dz = -2f; dz <= 2f; dz += 0.5f)
@@ -745,7 +756,7 @@ namespace VikingColonies.DevTools
                     if (!clear.Contains(V(at))) continue;
                     if (awayFrom.HasValue && Utils.DistanceXZ(at, awayFrom.Value) < 1.6f) continue;   // another chest stands there
                     PieceBox box = PiecePlacer.PlannedBox(new PlannedPiece(0, "piece_chest_wood", V(at), Q(facing)));
-                    if (StorehouseRules.InTheWayOf(box, now) >= 0 || !StorehouseRules.ChestStaysThroughUpgrade(box, later, false)) continue;
+                    if (StorehouseRules.InTheWayOf(box, now) >= 0 || StorehouseRules.InTheWayOf(box, later) >= 0 || !kept.Any(k => RemovalOrder.RestsOn(box, k))) continue;
                     return at;
                 }
             Log.Warn("vc_storehousetest: no clear spot inside the storehouse for a chest; the middle it is");
@@ -766,6 +777,9 @@ namespace VikingColonies.DevTools
             GameObject prefab = ZNetScene.instance.GetPrefab(prefabName);
             if (prefab == null) return null;
             GameObject chest = Object.Instantiate(prefab, at, rotation);
+            // A player's chest, as the hammer places it: the upgrade keeps the player's own pieces (1.6).
+            Piece piece = chest.GetComponent<Piece>();
+            if (piece != null && Player.m_localPlayer != null) piece.SetCreator(Player.m_localPlayer.GetPlayerID(), default(Splatform.PlatformUserID));
             made.Add(chest);
             return chest;
         }

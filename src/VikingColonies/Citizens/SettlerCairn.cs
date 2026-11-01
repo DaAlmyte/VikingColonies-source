@@ -77,7 +77,7 @@ namespace VikingColonies.Citizens
         public static SettlerCairn Raise(Vector3 at, string name, string jobId, DeathCause cause, CarryLoad carry)
         {
             if (Prefab == null || !Graves.HasGrave(carry)) return null;
-            GameObject go = Object.Instantiate(Prefab, at + Vector3.up * 0.2f, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+            GameObject go = Object.Instantiate(Prefab, at + Vector3.up * 0.2f, ModRandom.Turn("cosmetic", name));
             SettlerCairn cairn = go.GetComponent<SettlerCairn>();
             if (cairn == null || !cairn.Valid) return null;
             ZDO zdo = cairn._nview.GetZDO();
@@ -165,7 +165,7 @@ namespace VikingColonies.Citizens
             int perStack = Mathf.Max(1, drop.m_itemData.m_shared.m_maxStackSize);
             for (int left = amount; left > 0; left -= perStack)
             {
-                GameObject dropped = Object.Instantiate(prefab, at + Vector3.up + Random.insideUnitSphere * 0.5f, Quaternion.identity);
+                GameObject dropped = Object.Instantiate(prefab, at + Vector3.up + ModRandom.InsideUnitSphere("cosmetic", item) * 0.5f, Quaternion.identity);
                 dropped.GetComponent<ItemDrop>()?.SetStack(Mathf.Min(left, perStack));
             }
         }

@@ -106,7 +106,7 @@ namespace VikingColonies.DevTools
                 ? $"vc_bugreport: written ({report.Loaded} here) to {FilePath} — attach it to your report with BepInEx/LogOutput.log " +
                   "(type it near the settler or building with the trouble: only what your game has loaded is in it). " +
                   "'vc_bugreport form', or Report a problem in the Town Hall's window, opens the bug form with it filled in."
-                : $"vc_bugreport: couldn't write the report ({report.FileError}); attach BepInEx/LogOutput.log instead");
+                : $"vc_bugreport: couldn't write the report ({ReportProblem.Shown(report.FileError)}); attach BepInEx/LogOutput.log instead");
         }
 
         /// <summary>One part of the report; a part that fails leaves a note instead, and its error goes to the log in full.</summary>
@@ -141,12 +141,8 @@ namespace VikingColonies.DevTools
             return text.ToString();
         }
 
-        private static string Scrub(string line)
-        {
-            string home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
-            string scrubbed = line.Replace(BepInEx.Paths.BepInExRootPath, "<BepInEx>").Replace(BepInEx.Paths.GameRootPath, "<game>");
-            return string.IsNullOrEmpty(home) ? scrubbed : scrubbed.Replace(home, "~");
-        }
+        private static string Scrub(string line) => ReportPaths.Scrub(line, BepInEx.Paths.BepInExRootPath, BepInEx.Paths.GameRootPath,
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
 
         private static string Network()
         {
@@ -392,7 +388,7 @@ namespace VikingColonies.DevTools
                 outward.y = 0f;
                 outward.Normalize();
                 bool inside = string.Equals(args[1], "in", System.StringComparison.OrdinalIgnoreCase);
-                GroundPoint spot = IndoorRules.Spot(huts[pick].Chest, huts[pick].Door, huts[pick].Inward, c.Id);   // his floor spot, as at night
+                GroundPoint spot = AI.CitizenAI.ShelterSpot(huts[pick].Chest, huts[pick].Door, huts[pick].Inward, c.Id, chest.y);   // his floor spot, as at night
                 to = inside ? new Vector3(spot.X, chest.y, spot.Z) : OnGround(door.transform.position + outward * 5f);
                 if (!inside)   // somewhere he can get to out there (not up a slope)
                     foreach (float distance in new[] { 5f, 4f, 6f, 3f, 7f })
@@ -476,7 +472,8 @@ namespace VikingColonies.DevTools
         public override string Help => "VikingColonies (test worlds): 'vc_settlers add <1-50>' spawns that many jobless settlers into the colony of the nearest " +
                                        "Town Hall (within 100 m); 'vc_settlers remove <1-50>' removes up to that many of its jobless settlers without a bed, " +
                                        "'vc_settlers remove <name>' the settler of that name (the one nearest you if several share it); " +
-                                       "'vc_settlers forget' takes the settlers marked missing off its Town Hall's roster";
+                                       "'vc_settlers forget' takes the settlers marked missing off its Town Hall's roster; 'vc_settlers sizes' prints each " +
+                                       "loaded settler's level (another mod's stars) and size";
         public override bool IsCheat => true;
 
         public override void Run(string[] args)
@@ -491,6 +488,16 @@ namespace VikingColonies.DevTools
                 TownHallModule module = near != null && Vector3.Distance(near.transform.position, p.transform.position) <= 100f ? near.GetComponent<TownHallModule>() : null;
                 BuildCommand.Print(module == null ? "vc_settlers: no Town Hall within 100 m"
                     : $"vc_settlers: {module.ForgetForTest()} missing settlers taken off colony {near.ColonyId.Substring(0, 8)}'s roster");
+                return;
+            }
+            if (args != null && args.Length >= 1 && args[0] == "sizes")
+            {
+                // A player's report (1.4.3): StarLevelSystem's stars made settlers bigger. Their level and size, for a test with it.
+                List<Citizen> loaded = Citizen.All.Where(c => c != null && c.Body != null).ToList();
+                foreach (Citizen c in loaded)
+                    BuildCommand.Print($"vc_settlers: {c.CitizenName} level {c.Body.GetLevel()}, size x{c.transform.localScale.x:0.00}");
+                BuildCommand.Print($"vc_settlers: sizes of {loaded.Count} settlers, {loaded.Count(c => c.Body.GetLevel() > 1)} with stars, " +
+                                   $"{loaded.Count(c => Mathf.Abs(c.transform.localScale.x - 1f) > 0.01f)} not their own size");
                 return;
             }
             bool byName = args != null && args.Length >= 2 && args[0] == "remove" && !int.TryParse(args[1], out _);
@@ -528,7 +535,7 @@ namespace VikingColonies.DevTools
                     : $"vc_settlers: removed {extra.Count} jobless settlers without a bed from colony {hall.ColonyId.Substring(0, 8)}");
                 return;
             }
-            var rng = new System.Random();
+            var rng = ColonyRandom.For("vc_settlers", "");
             for (int i = 0; i < count; i++)
             {
                 Vector3 at = hall.transform.position + Quaternion.Euler(0f, i * 360f / count, 0f) * Vector3.forward * (3f + i % 3);
@@ -712,7 +719,7 @@ namespace VikingColonies.DevTools
                 // 'anyway' (tests): a storehouse past its colony rules only, one per colony and a Builder's Hut first (the
                 // gallery shows five in one colony); never past the ground or anything else in the way.
                 bool anyway = args.Any(a => a.Equals("anyway", System.StringComparison.OrdinalIgnoreCase));
-                bool colonyRuleOnly = verdict.Red == RedReason.OnlyOneStorehouse || verdict.Red == RedReason.NeedsBuilderHut;
+                bool colonyRuleOnly = verdict.Red == RedReason.OnlyOneStorehouse || verdict.Red == RedReason.NeedsBuilderHut || verdict.Red == RedReason.OnlyOneMeadHall;
                 if (verdict.Colour == SiteColour.Red && !(anyway && colonyRuleOnly))
                 {
                     BuildCommand.Print($"vc_place: not placed{site}");

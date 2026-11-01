@@ -551,7 +551,7 @@ namespace VikingColonies.Jobs
                 _rescanTimer = 0f;
                 return;
             }
-            Object.Instantiate(prefab, plot, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+            Object.Instantiate(prefab, plot, ModRandom.Turn("cosmetic", Citizen.CitizenName));
             _plantFailures.Remove(Key(plot));
             Citizen.Carry.Remove(_crop.Seed, _crop.SeedCount);
             Citizen.SaveCarry();
@@ -620,6 +620,7 @@ namespace VikingColonies.Jobs
                 if (lying != null && Vector3.Distance(lying.transform.position, at) <= Foraging.GatherRadius) _dropsBefore.Add(IdOf(lying.gameObject));
             nview.InvokeRPC("RPC_Pick", 0);
             Citizen.Practise(WorkSkill.Farming);
+            Colony.Deeds.Count(Citizen.ColonyId, DeedKinds.Gathered, Mathf.Max(1, crop.m_amount));   // the colony's deeds (1.5.1)
             Log.Info($"{Citizen.CitizenName} harvests the {Utils.GetPrefabName(crop.gameObject)} at ({at.x:0.0}, {at.z:0.0})");
             s_claims.Release(id, Citizen.Id);
             _picked.Add(id, Time.time);

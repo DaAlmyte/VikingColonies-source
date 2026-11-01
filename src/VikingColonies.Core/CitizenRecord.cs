@@ -34,6 +34,7 @@ namespace VikingColonies.Core
         /// <summary>The guard's skill (1.1), and its practice; written only when set.</summary>
         public float Fighting, FightingXp;
         public float Hauling, HaulingXp;   // a courier's (1.5)
+        public float Cooking, CookingXp;   // a cook's (1.6)
         /// <summary>A guard's tally of monsters killed (1.3); written only when set.</summary>
         public int Kills;
         public int LastMealDay = Meals.NeverAte;   // the day he last ate
@@ -63,6 +64,8 @@ namespace VikingColonies.Core
         public string WhyMood = "";
         /// <summary>His last meals, newest last (at most <see cref="MealMemory.Remembered"/>).</summary>
         public List<string> LastMeals = new List<string>();
+        /// <summary>Their last pastimes, "Archery@3", newest last (at most <see cref="PastimeMemory.Remembered"/>, 1.6).</summary>
+        public List<string> LastPastimes = new List<string>();
         /// <summary>The last day he spent the evening by the colony's burning fire, and whether two others were there.</summary>
         public int EveningDay = NoDay;
         public bool EveningCompany;
@@ -139,7 +142,9 @@ namespace VikingColonies.Core
             if (Crafting > 0f || CraftingXp > 0f) fields.Add(Pair("crafting", RecordCodec.FormatFloats(new[] { Crafting, CraftingXp })));
             if (Fighting > 0f || FightingXp > 0f) fields.Add(Pair("fighting", RecordCodec.FormatFloats(new[] { Fighting, FightingXp })));
             if (Hauling > 0f || HaulingXp > 0f) fields.Add(Pair("hauling", RecordCodec.FormatFloats(new[] { Hauling, HaulingXp })));
+            if (Cooking > 0f || CookingXp > 0f) fields.Add(Pair("cooking", RecordCodec.FormatFloats(new[] { Cooking, CookingXp })));
             if (Kills > 0) fields.Add(Pair("kills", RecordCodec.FormatInt(Kills)));
+            if (LastPastimes.Count > 0) fields.Add(Pair("pastimes", string.Join(",", LastPastimes.Select(m => (m ?? "").Replace(',', ' ')))));
             return RecordCodec.Encode(fields);
         }
 
@@ -152,6 +157,7 @@ namespace VikingColonies.Core
             float[] crafting = RecordCodec.ParseFloats(RecordCodec.Get(f, "crafting"), 2) ?? new[] { 0f, 0f };
             float[] fighting = RecordCodec.ParseFloats(RecordCodec.Get(f, "fighting"), 2) ?? new[] { 0f, 0f };
             float[] hauling = RecordCodec.ParseFloats(RecordCodec.Get(f, "hauling"), 2) ?? new[] { 0f, 0f };
+            float[] cooking = RecordCodec.ParseFloats(RecordCodec.Get(f, "cooking"), 2) ?? new[] { 0f, 0f };
             return new CitizenRecord
             {
                 Id = RecordCodec.Get(f, "id"),
@@ -184,6 +190,7 @@ namespace VikingColonies.Core
                 Mood = ValidMood(RecordCodec.ParseInt(RecordCodec.Get(f, "mood"), global::VikingColonies.Core.Mood.Unknown)),
                 WhyMood = RecordCodec.Get(f, "whymood"),
                 LastMeals = RecordCodec.Get(f, "meals").Split(',').Where(m => m.Length > 0).Reverse().Take(MealMemory.Remembered).Reverse().ToList(),
+                LastPastimes = RecordCodec.Get(f, "pastimes").Split(',').Where(m => m.Length > 0).Reverse().Take(PastimeMemory.Remembered).Reverse().ToList(),
                 EveningDay = RecordCodec.ParseInt(RecordCodec.Get(f, "evening"), NoDay),
                 EveningCompany = RecordCodec.Get(f, "company") == "1",
                 HitDay = RecordCodec.ParseInt(RecordCodec.Get(f, "hitday"), NoDay),
@@ -196,6 +203,8 @@ namespace VikingColonies.Core
                 FightingXp = fighting[1],
                 Hauling = hauling[0],
                 HaulingXp = hauling[1],
+                Cooking = cooking[0],
+                CookingXp = cooking[1],
                 Kills = System.Math.Max(0, RecordCodec.ParseInt(RecordCodec.Get(f, "kills"), 0)),
             };
         }
@@ -210,6 +219,7 @@ namespace VikingColonies.Core
                 case WorkSkill.Crafting: return Crafting;
                 case WorkSkill.Fighting: return Fighting;
                 case WorkSkill.Hauling: return Hauling;
+                case WorkSkill.Cooking: return Cooking;
                 default: return 0f;
             }
         }
@@ -224,6 +234,7 @@ namespace VikingColonies.Core
                 case WorkSkill.Crafting: return SettlerSkill.Raise(ref Crafting, ref CraftingXp, amount);
                 case WorkSkill.Fighting: return SettlerSkill.Raise(ref Fighting, ref FightingXp, amount);
                 case WorkSkill.Hauling: return SettlerSkill.Raise(ref Hauling, ref HaulingXp, amount);
+                case WorkSkill.Cooking: return SettlerSkill.Raise(ref Cooking, ref CookingXp, amount);
                 default: return false;
             }
         }

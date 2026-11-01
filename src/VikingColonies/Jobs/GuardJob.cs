@@ -108,7 +108,7 @@ namespace VikingColonies.Jobs
         {
             _tower = tower;
             _module = tower != null ? tower.GetComponent<WatchtowerModule>() : null;
-            _patrolAt = Time.time + GuardDuty.PatrolDelay(Random.value);
+            _patrolAt = Time.time + GuardDuty.PatrolDelay(ModRandom.Value("jitter", Citizen != null ? Citizen.CitizenName : ""));
         }
 
         /// <summary>He holds a weapon: with <c>Guards.Enabled</c> he stays out on duty (CitizenAI asks).</summary>
@@ -591,6 +591,7 @@ namespace VikingColonies.Jobs
         private void HoldGear()
         {
             Humanoid body = Citizen.Body;
+            if (SettlerPose.HandsBusy(body)) return;   // a practice bow at a pastime (1.6), or seated: the gear waits
             if (_weapon != null && !body.IsItemEquiped(_weapon)) body.EquipItem(_weapon, false);
             if (_shield != null && _weapon != null && !_ranged && !body.IsItemEquiped(_shield)
                 && WeaponKinds.Of(_weapon.m_shared.m_itemType.ToString(), _weapon.m_shared.m_skillType.ToString()) == WeaponKind.OneHanded)
@@ -1134,7 +1135,7 @@ namespace VikingColonies.Jobs
                     return;
                 }
                 // A spot outside the building, on his tower's side (1.2: its chest is inside, so his rounds went through doors).
-                Vector3 at = near[Random.Range(0, near.Count)].transform.position, toTower = towerAt - at;
+                Vector3 at = near[ModRandom.Range("spot", Citizen.CitizenName, 0, near.Count)].transform.position, toTower = towerAt - at;
                 toTower.y = 0f;
                 _patrolTo = toTower.sqrMagnitude > 0.01f ? at + toTower.normalized * 5f : at;
                 _patrolStuck.Reset();
@@ -1148,7 +1149,7 @@ namespace VikingColonies.Jobs
         private void EndPatrol()
         {
             _patrolTo = null;
-            _patrolAt = Time.time + GuardDuty.PatrolDelay(Random.value);
+            _patrolAt = Time.time + GuardDuty.PatrolDelay(ModRandom.Value("jitter", Citizen.CitizenName));
         }
 
         /// <summary>At his tower he heals, full in about a minute (settlers have no healing of their own).</summary>

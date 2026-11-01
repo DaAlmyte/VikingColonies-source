@@ -48,7 +48,13 @@ namespace VikingColonies.DevTools
         private sealed class Seen
         {
             public bool Fought, Fled, FoughtBelowHalf;
+            /// <summary>How far the nearest watched creature was when they were first seen running (-1: never).</summary>
+            public float FledAt = -1f;
         }
+
+        // A settler whose trait a check changes, and the trait to give back (put back in the finally too: the review of 1.5.1).
+        private static Citizen s_traitOf;
+        private static string s_traitWas;
 
         public static IEnumerator Run(Player player)
         {
@@ -104,13 +110,22 @@ namespace VikingColonies.DevTools
                 }
                 yield return new WaitForSeconds(3f);
 
-                // The colony's other settlers wait 45 m off, out of the fights until the guard's check: a Neck that turns on
-                // one walking by sends the lumberjack running, as it should (the fix pass's run: one strolled past the spot).
+                // The lumberjack's nature fixed for the test: a timid one runs from a Neck going for them, as it should, so checks
+                // 1, 7 and 9 failed whenever the hut hired a timid settler (the night of 2026-10-26: Brynja, timid, ran from all
+                // three). Hardworking changes only how fast they work. Given back at the end; check 3 makes them brave for itself.
+                s_traitOf = lumber;
+                s_traitWas = lumber.Record.Trait;
+                lumber.Record.Trait = Traits.Name(Trait.Hardworking);
+
+                // The colony's other settlers wait out of the fights until the guard's check: a Neck that turns on one walking
+                // by sends the lumberjack running, as it should (the fix pass's run: one strolled past the spot). On the hall's
+                // left, 40 m and more from the arena and the Troll: paused, they can't run, and 25 m ahead the Troll went for
+                // them and killed all three, so check 3's lumberjack never ran and check 5 had no one to hire (2026-10-25).
                 List<Citizen> others = Citizen.All.Where(c => c != null && c != lumber && c.ColonyId == colony).ToList();
                 for (int i = 0; i < others.Count; i++)
                 {
                     CitizenAI parked = others[i].GetComponent<CitizenAI>();
-                    parked?.PlaceForTest(OnGround(hallAt + forward * 30f + right * (2f * i)));
+                    parked?.PlaceForTest(OnGround(hallAt - right * 30f + forward * (2f * i)));
                     parked?.PauseForTest(600f);
                 }
                 // Each fight on open ground 12 m to the player's right, clear of the hall and the hut: a Neck put "4 m ahead"
@@ -187,13 +202,53 @@ namespace VikingColonies.DevTools
                 Check($"At 40% health a settler runs from a Neck ({lumber.CitizenName}: ran {seen.Fled}, fought {seen.Fought})", seen.Fled && !seen.Fought);
                 yield return Calm(origin, lumber);
 
-                // 3. A Troll sends them running (20 s: a brave settler waits till it is within 6 m; one run before the fix it came no nearer in 10).
+                // 3. A Troll sends them running, a brave settler too, in time (1.5.1: the release run's brave lumberjack waited
+                //    till 6 m, 0.16's brave range, and the Troll's first blow, 278, killed them as they turned; brave was 9 m, and
+                //    one who started at 7.2 m was still caught, 2026-10-25: from a strong monster the brave run at 12 m now).
+                //    The Troll starts 14 m off and comes on (20 s: one run before the 1.5.0 fix it came no nearer in 10).
+                //    The distance they started running at is told (settlers look for monsters every half second, a Troll
+                //    gains about 3.5 m in that: the review of 1.5.1); what counts is that they run and live.
                 at = ToArena(lumber, arena);
                 Heal(lumber, 1f);
-                Character troll = Spawn("Troll", OnGround(at + forward * 9f), made);
+                lumber.Record.Trait = Traits.Name(Trait.Brave);   // this check only
+                Character troll = Spawn("Troll", OnGround(at + forward * 14f), made);
+                MonsterAI trollBrain = troll != null ? troll.GetComponent<MonsterAI>() : null;
+                if (trollBrain != null) s_setAlerted?.Invoke(trollBrain, new object[] { true });
+                bool trollCame = troll != null, broughtOn = false;
+                float trollNearest = float.PositiveInfinity;
+                string statusLast = "";
                 seen = new Seen();
-                yield return Watch(lumber, new List<Character> { troll }, 20f, seen, () => seen.Fled);
-                Check($"A Troll sends a settler running ({lumber.CitizenName}: ran {seen.Fled}, fought {seen.Fought})", seen.Fled && !seen.Fought);
+                yield return Watch(lumber, new List<Character> { troll }, 20f, seen, () => seen.Fled, t =>
+                {
+                    // What the Troll did, told with the result (the night of 2026-10-26 it failed with nothing in the log to say why).
+                    if (troll == null || troll.IsDead()) return;
+                    float now = Vector3.Distance(troll.transform.position, lumber.transform.position);
+                    trollNearest = Mathf.Min(trollNearest, now);
+                    statusLast = lumber.Status ?? "";
+                    // The game's Troll doesn't always come on: the release run of 2026-10-26 had it hang back at 13.6 m for all
+                    // 20 s while the lumberjack kept clear of a falling log, so the check judged nothing (the night before,
+                    // the same "ran False at -1.0 m"). Still beyond 12 m after 10 s, it's put 11 m off, on the line it came
+                    // from, and its own brain takes it from there: what's checked is that they run then, and live.
+                    if (broughtOn || t < 10f || now <= 12f) return;
+                    broughtOn = true;
+                    Vector3 from = troll.transform.position - lumber.transform.position;
+                    from.y = 0f;
+                    Vector3 spot = OnGround(lumber.transform.position + (from.sqrMagnitude > 0.01f ? from.normalized : forward) * 11f);
+                    troll.transform.position = spot;
+                    Rigidbody trollBody = troll.GetComponent<Rigidbody>();
+                    if (trollBody != null) trollBody.position = spot;   // the transform alone can be put back (the storehouse test)
+                });
+                yield return new WaitForSeconds(4f);   // still alive once away
+                bool lived = lumber != null && lumber.Body != null && !lumber.Body.IsDead();
+                lumber.Record.Trait = Traits.Name(Trait.Hardworking);
+                Check($"A Troll sends a settler running, a brave one too, in time ({(lumber != null ? lumber.CitizenName : "gone")}: ran {seen.Fled} " +
+                      $"at {seen.FledAt:0.0} m, fought {seen.Fought}, alive {lived}; the Troll came {trollCame}, nearest {trollNearest:0.0} m, brought on {broughtOn}, " +
+                      $"their status '{statusLast}')", seen.Fled && !seen.Fought && lived);
+                if (!lived)
+                {
+                    Check("Checks 4, 6, 5 and 8 not run: the lumberjack died in check 3", false);
+                    yield break;
+                }
                 yield return Calm(origin, lumber);
 
                 // 4. Two Necks at once on a settler at 56%: they fight, break off at half and run, and live (the plan's Review Focus).
@@ -277,6 +332,7 @@ namespace VikingColonies.DevTools
             }
             finally
             {
+                GiveTraitBack();
                 DevHelpers.ClearMonsters(origin, 90f, animalsToo: true);
                 foreach (Citizen c in Citizen.All.Where(c => c != null && !before.Contains(c.Id)).ToList()) Remove(c.gameObject);
                 foreach (GameObject go in made.Where(g => g != null)) Remove(go);
@@ -306,13 +362,29 @@ namespace VikingColonies.DevTools
                 if (status.StartsWith("$vc_status_fighting_off"))
                 {
                     seen.Fought = true;
-                    if (who.Body.GetHealthPercentage() < 0.45f) seen.FoughtBelowHalf = true;
+                    // Well below half while still fighting (40%): a bite that lands just as they reach half can take them a little
+                    // under it before they break off. Since 1.5.1 they break off the moment they're at half, not at their next look
+                    // half a second on (StandUp.LookAgainNow): before, two Necks' bites took them under 40% in that half second
+                    // (both night runs, 2026-10-25).
+                    if (who.Body.GetHealthPercentage() < 0.40f) seen.FoughtBelowHalf = true;
                 }
-                if (status == "$vc_status_fleeing" || status == "$vc_status_sheltering") seen.Fled = true;
+                if ((status == "$vc_status_fleeing" || status == "$vc_status_sheltering") && !seen.Fled)
+                {
+                    seen.Fled = true;
+                    seen.FledAt = monsters.Where(m => m != null && !m.IsDead()).Select(m => Vector3.Distance(m.transform.position, who.transform.position))
+                        .DefaultIfEmpty(-1f).Min();
+                }
                 each?.Invoke(t);
                 if (done != null && done()) yield break;
                 yield return new WaitForSeconds(0.25f);
             }
+        }
+
+        private static void GiveTraitBack()
+        {
+            if (s_traitOf != null && s_traitWas != null) s_traitOf.Record.Trait = s_traitWas;
+            s_traitOf = null;
+            s_traitWas = null;
         }
 
         /// <summary>The creatures gone and the settler calm again (a flee ends 15 s after the last threat).</summary>

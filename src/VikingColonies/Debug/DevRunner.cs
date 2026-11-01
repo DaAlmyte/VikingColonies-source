@@ -13,7 +13,8 @@ namespace VikingColonies.DevTools
 {
     /// <summary>
     /// The test toolkit's background work: keeps vc_speed's game speed while the game isn't paused, rewrites the report
-    /// for 'vc_report auto', and runs the command file (Developer › CommandFile, off by default; needs devcommands).
+    /// for 'vc_report auto', and runs the command file (Developer › CommandFile, off by default; needs devcommands); with
+    /// the command file on, it writes the heartbeat and shows the test-run banner while the runner's status is fresh.
     /// </summary>
     internal sealed class DevRunner : MonoBehaviour
     {
@@ -38,6 +39,12 @@ namespace VikingColonies.DevTools
 
         /// <summary>The runner's sign of life (0.24.1): rewritten every 5 s while the game runs (with CommandFile on).</summary>
         public static string HeartbeatPath => Path.Combine(Paths.BepInExRootPath, "VikingColonies-heartbeat.txt");
+        /// <summary>The test-run banner's status (2026-10-25), kept by scripts/ingame.py while it drives the game.</summary>
+        public static string RunStatusPath => Path.Combine(Paths.BepInExRootPath, "VikingColonies-run-status.txt");
+
+        private float _bannerTimer;
+        private RunBanner _banner;
+        private bool _bannerUp;
 
         private float _reportTimer;
         private float _fileTimer;
@@ -63,6 +70,7 @@ namespace VikingColonies.DevTools
         private void Update()
         {
             Heartbeat();
+            Banner();
             if (Player.m_localPlayer == null)
             {
                 if (Speed != 1)
@@ -98,7 +106,9 @@ namespace VikingColonies.DevTools
         {
             _heartbeatTimer -= Time.unscaledDeltaTime;
             if (_heartbeatTimer > 0f || !ColonyConfig.CommandFile.Value) return;
-            _heartbeatTimer = HeartbeatSeconds;
+            // Every second while the game runs fast (the fast clock, 2026-10-25): a stretch's wait ends on the game's clock, and
+            // 5 s of real time at 3x would be 15 s of game time late.
+            _heartbeatTimer = Speed > 1 ? 1f : HeartbeatSeconds;
             string popup = PopupText();
             if (popup != _popupTold)
             {
@@ -107,11 +117,60 @@ namespace VikingColonies.DevTools
             }
             try
             {
-                string world = Player.m_localPlayer != null && ZNet.instance != null ? ZNet.instance.GetWorldName() : "menu";
-                File.WriteAllText(HeartbeatPath, $"time {DateTime.Now:yyyy-MM-ddTHH:mm:ss}\nframes {Time.frameCount}\nworld {world}\n" +
-                                                 $"popup {(popup.Length > 0 ? popup : "none")}\n");
+                bool inWorld = Player.m_localPlayer != null && ZNet.instance != null;
+                File.WriteAllText(HeartbeatPath, Core.Heartbeat.Text(DateTime.Now, Time.frameCount, inWorld ? ZNet.instance.GetWorldName() : "menu",
+                                                                     popup, inWorld ? ZNet.instance.GetTimeSeconds() : -1, Time.timeScale));
             }
             catch (Exception) { }   // being read, or not writable: next time; never the rest of the dev runner's work
+        }
+
+        /// <summary>
+        /// The test-run banner (the player, 2026-10-25: "show which test is running ingame and what stage it is at"): once a
+        /// second, with CommandFile on only, the runner's status. A fresh one is shown from the main menu on; a stale or
+        /// missing one (the run ended, or its runner died) takes the banner away.
+        /// </summary>
+        private void Banner()
+        {
+            _bannerTimer -= Time.unscaledDeltaTime;
+            if (_bannerTimer > 0f) return;
+            _bannerTimer = FileCheckSeconds;
+            if (!ColonyConfig.CommandFile.Value)
+            {
+                if (_bannerUp) SetBanner(null, 0);
+                return;
+            }
+            RunStatus status = null;
+            try
+            {
+                if (File.Exists(RunStatusPath))
+                    // Shared for writing and deleting: the runner replaces the file whole, and mustn't be refused meanwhile.
+                    using (var stream = new FileStream(RunStatusPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    using (var reader = new StreamReader(stream, System.Text.Encoding.UTF8))
+                        status = RunStatus.Parse(reader.ReadToEnd());
+            }
+            catch (Exception) { return; }   // replaced this moment: as it was until the next second
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            SetBanner(status != null && status.IsFresh(now) ? status : null, now);
+        }
+
+        private void SetBanner(RunStatus status, long now)
+        {
+            try
+            {
+                if (status == null)
+                {
+                    if (_banner != null) _banner.enabled = false;
+                    if (_bannerUp) Log.Event("Dev: the run banner is down");
+                    _bannerUp = false;
+                    return;
+                }
+                if (_banner == null) _banner = gameObject.AddComponent<RunBanner>();
+                _banner.Show(status.Lines(now));
+                _banner.enabled = true;
+                if (!_bannerUp) Log.Event($"Dev: the run banner is up ({status.Scenario})");
+                _bannerUp = true;
+            }
+            catch (Exception) { }   // a test tool's banner: never the rest of the dev runner's work
         }
 
         /// <summary>The popup on screen, "header - body" ("" when none).</summary>
@@ -156,7 +215,7 @@ namespace VikingColonies.DevTools
             catch (IOException) { return; }   // still being written: next second
             foreach (string line in lines)
             {
-                var answer = new List<string> { $"[{DateTime.Now:HH:mm:ss}] > {line}" };
+                var answer = new List<string> { $"[{BugReport.Clock(DateTime.Now)}] > {line}" };
                 if (state == CommandFileState.Refuse) answer.Add($"  refused: the command file runs only in a test world (its name must start with {TestWorlds.NameStart}); this is {world}");
                 else if (!CommandFile.IsAllowed(line)) answer.Add("  refused: only vc_ commands and a few harmless dev commands run from the file");
                 else

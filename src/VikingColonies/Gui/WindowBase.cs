@@ -74,10 +74,11 @@ namespace VikingColonies.Gui
                 Build(_panel.transform);
                 _creative = CreativeBar.Attach(_panel.transform, Height);
                 BuildCreative(_creative);
-                _close = UiKit.Button(_panel.transform, L("$vc_close"), CloseX, 25f, 140f, 36f, Close);
+                _close = UiKit.Button(_panel.transform, L("$vc_close"), CloseX, 25f, Core.CampWindowLayout.CloseWidth, 36f, Close);
                 _panel.AddComponent<WindowDriver>().Window = this;
             }
             Target = target;
+            ScaleToSetting();
             _title.text = L(Title);   // per building: one window serves every hut
             Opened();
             Refresh();
@@ -87,6 +88,18 @@ namespace VikingColonies.Gui
                 _panel.SetActive(true);
                 GUIManager.BlockInput(true);
             }
+        }
+
+        /// <summary>
+        /// Windows.Scale (1.5.1): the panel at the player's size, made to fit the screen (the canvas's height); a change applies
+        /// at the next opening.
+        /// </summary>
+        private void ScaleToSetting()
+        {
+            RectTransform canvas = GUIManager.CustomGUIFront != null ? GUIManager.CustomGUIFront.transform as RectTransform : null;
+            float screen = canvas != null ? canvas.rect.height : 0f;
+            float scale = Core.WindowScale.Fit(Config.ColonyConfig.WindowScale.Value, Height, screen);
+            _panel.transform.localScale = new Vector3(scale, scale, 1f);
         }
 
         public void Close()
